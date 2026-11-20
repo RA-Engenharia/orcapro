@@ -476,6 +476,7 @@
     contraventamento: { aguas: "extremos", tipo: "madeira", fita: { b: 0.06, e: 0.002, aproveitamento: 0.75 } }, vedacaoRigida: false,
     vergas: null, origem: { x: 0, y: 0 }, nome: "Casa de duas águas"
   };
+  /* QUIOSQUE ABERTO sobre pilares do modelo (BIM) — parâmetros OPCIONAIS (ausentes = o de sempre, byte a byte): pilaresX = posições X (ao longo da cumeeira) dos pilares das 2 faces, SUBCONJUNTO das linhas das tesouras com os 2 cantos; semPilarOitao = sem pilar no meio do oitão */
   function t2Parametros(p) {
     var q = mescla(T2_PADRAO, p || {});
     if (q.sistema !== "tesoura" && q.sistema !== "cumeeira") throw new Error("madtipologias T2: sistema deve ser \"tesoura\" ou \"cumeeira\"");
@@ -502,8 +503,20 @@
     function add(o) { o.p0 = o.p0.map(function (v) { return rd(v, 4); }); o.p1 = o.p1.map(function (v) { return rd(v, 4); }); M.push(o); return o; }
     var P3 = function (x, z, y) { return [x, z, y]; }, cumeeira = p.sistema === "cumeeira";
     /* pilares do perímetro: faces Y=0 e Y=b (esquerda/direita da NBR 6123 na convenção do motor) e oitões X=0 e X=a (frente/fundo) */
-    xs.forEach(function (x, kx) { [0, b].forEach(function (z) { add({ id: "P" + (++n), g: "P", p0: P3(x, z, p.baseZ), p1: P3(x, z, Hp), face: z === 0 ? "esquerda" : "direita", s: x, trib: (kx === 0 || kx === nCol) ? a / nCol / 2 : a / nCol, pinJ: true }); }); });
-    [0, a].forEach(function (x) {
+    /* QUIOSQUE (pilaresX): os pilares ficam só nas linhas informadas (subconjunto das linhas das tesouras, com os 2 cantos); o frechal vence o vão entre eles e a tesoura do meio assenta nele */
+    var xp = null;
+    if (p.pilaresX && p.pilaresX.length) {
+      xp = [];
+      p.pilaresX.forEach(function (x0) { var kk = 0, q; for (q = 1; q < xs.length; q++) if (Math.abs(xs[q] - x0) < Math.abs(xs[kk] - x0)) kk = q; if (Math.abs(xs[kk] - x0) > 0.15) throw new Error("madtipologias T2: pilar em x = " + x0 + " m não cai numa linha de tesoura (a ≤ 15 cm)"); if (xp.indexOf(xs[kk]) < 0) xp.push(xs[kk]); });
+      xp.sort(function (u, v) { return u - v; });
+      if (Math.abs(xp[0]) > 1e-9 || Math.abs(xp[xp.length - 1] - a) > 1e-9 || xp.length < 2) throw new Error("madtipologias T2: os pilares têm de incluir as duas extremidades (x = 0 e x = a)");
+    }
+    (xp || xs).forEach(function (x, kx) {
+      var trib = xp ? ((kx === 0 ? 0 : (x - xp[kx - 1]) / 2) + (kx === xp.length - 1 ? 0 : (xp[kx + 1] - x) / 2)) : ((kx === 0 || kx === nCol) ? a / nCol / 2 : a / nCol);
+      [0, b].forEach(function (z) { add({ id: "P" + (++n), g: "P", p0: P3(x, z, p.baseZ), p1: P3(x, z, Hp), face: z === 0 ? "esquerda" : "direita", s: x, trib: trib, pinJ: true }); });
+    });
+    if (p.semPilarOitao) zsOit = [0, b];
+    else [0, a].forEach(function (x) {
       zsOit.forEach(function (z, kz) {
         if (kz === 0 || kz === zsOit.length - 1) return;
         var central = cumeeira && Math.abs(z - b / 2) < 1e-6;
@@ -598,12 +611,15 @@
     if (!p.vedacaoRigida) {
       /* paredes: MÍNIMO de 2 painéis contraventados por fachada (primeiro e último vão; fachada de um vão só = o vão único, e o auditor avisa). Padrão: DIAGONAIS DE MADEIRA em X (DP, só tração, E4 r10);
          tipo "fita": fita metálica FP (modelo antigo). Com vedacaoRigida (alvenaria/OSB estrutural informada pelo usuário) nada entra: a vedação tem de ser projetada para a força informada. */
-      var fxp = 0, bb2 = [[0, xs[1]], [xs[xs.length - 2], a]], zO = zsOit.length > 2 ? [[zsOit[0], zsOit[1]], [zsOit[zsOit.length - 2], zsOit[zsOit.length - 1]]] : [[zsOit[0], zsOit[1]]];
+      var fxp = 0, bb2 = xp ? (xp.length <= 2 ? [[xp[0], xp[1]]] : [[xp[0], xp[1]], [xp[xp.length - 2], xp[xp.length - 1]]]) : [[0, xs[1]], [xs[xs.length - 2], a]], zO = zsOit.length > 2 ? [[zsOit[0], zsOit[1]], [zsOit[zsOit.length - 2], zsOit[zsOit.length - 1]]] : [[zsOit[0], zsOit[1]]];
       var diagP = function (e, plano, c) { fxp++; var A = plano === "x" ? P3(e[0], c, p.baseZ) : P3(c, e[0], p.baseZ), B = plano === "x" ? P3(e[1], c, Hp) : P3(c, e[1], Hp); return mad ? { id: "DP" + fxp, g: "DP", p0: A, p1: B, tracao: true, mad: true } : { id: "FP" + fxp, g: "FP", p0: A, p1: B, tracao: true }; };
       [0, b].forEach(function (z) { bb2.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "x", z)); }); }); });
       [0, a].forEach(function (x) { zO.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "z", x)); }); }); });
     }
-    return { p: p, membros: M, info: { tesouraTipo: howe ? "howe" : (fink ? "fink" : "pratt"), nBI: fink ? 2 * nF - 1 : 2 * nH, dzBI: fink ? 1.5 * dzF : dz, nF: nF, kF: kF, dzF: dzF, lpBS: dzF * sc, zsBIint: zsBIint, xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+    var infoT2 = { tesouraTipo: howe ? "howe" : (fink ? "fink" : "pratt"), nBI: fink ? 2 * nF - 1 : 2 * nH, dzBI: fink ? 1.5 * dzF : dz, nF: nF, kF: kF, dzF: dzF, lpBS: dzF * sc, zsBIint: zsBIint, xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr };
+    if (xp) infoT2.pilaresX = xp;
+    if (p.semPilarOitao) infoT2.semPilarOitao = true;
+    return { p: p, membros: M, info: infoT2 };
   }
 
   /* ---- HOWE: FOLGA CONSTRUTIVA (HOWE-REFERENCIA §4, decisão do RT 17/11/2026) ----

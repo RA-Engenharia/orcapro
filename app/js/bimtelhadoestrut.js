@@ -1274,12 +1274,24 @@
     /* O TELHADO DESENHADO = A ESTRUTURA DO MOTOR (js/madtelhadodesenhado.js): com calcMadeira.motor as peças estruturais são os MEMBROS do motor com os sólidos cortados
        (encaixe de carpinteiro), o frechal assenta no topo da parede e a pilha caibro/ripa/telha começa no topo dos banzos/terças (terça embutida no plano do banzo).
        Sem calcMadeira.motor (ou se a geometria do motor não vale mais) = o modelo do SINAPI de antes, byte a byte. */
-    var MOT = null;
+    var MOT = null, calculandoMotor = false;
     if (CMX && CMX.motor && mat !== "aco" && M.tesoura && !M.obra) {
       var MDes = dep("MadTelhadoDes", "./madtelhadodesenhado.js");
       if (MDes && MDes.geometriaMundo) {
-        try { MOT = MDes.geometriaMundo(t, CMX.motor, { caixas: estado && estado.caixas, H0: H0, vaos: opc.vaos || vaosDeFamilias(estado, opc.avaliarFam) }); } catch (eMot) { MOT = { ok: false, motivo: "geometria do motor: " + (eMot && eMot.message ? eMot.message : eMot) }; }
-        if (!MOT.ok) { avisos.push("Madeira do motor NÃO aplicada ao desenho (fica a geometria do SINAPI com as seções calculadas): " + MOT.motivo); MOT = null; }
+        /* O CÁLCULO PESADO EM SEGUNDO PLANO (0,35 a 0,8 s a frio na thread da tela): só no navegador e só na derivação da tela (opc.assincrono); a geometria fica "calculando…" (a do SINAPI, no meio-tempo), o Worker
+           semeia o cache e a tela refaz sozinha (BIM.editarReconstruir). Sem Worker (Node/testes/exportações) = a mesma função, síncrona, resultado idêntico. */
+        var calculando = false;
+        if (opc.assincrono && global.BimTelhadoEstrut && global.BimTelhadoEstrut._telaViva && MDes.aquecer && MDes.assincrono && MDes.assincrono() && MDes.payloadValido && MDes.payloadValido(CMX.motor) && !MDes.emCache(CMX.motor)) {
+          var dentro = true;   /* aquecer() que termina NA HORA (sem Worker ou já calculado) chama o aviso ainda aqui dentro: refazer a tela no meio da derivação seria reentrância — só o aviso vindo DEPOIS refaz */
+          try { calculando = !!MDes.aquecer(CMX.motor, function () { if (dentro) return; try { if (global.BIM && global.BIM.editarReconstruir) global.BIM.editarReconstruir(); } catch (eRec) { /* sem editor aberto */ } }); } catch (eAq) { calculando = false; }
+          dentro = false;
+        }
+        if (calculando) MOT = { ok: false, calculando: true, motivo: "calculando…" };
+        else {
+          try { MOT = MDes.geometriaMundo(t, CMX.motor, { caixas: estado && estado.caixas, H0: H0, vaos: opc.vaos || vaosDeFamilias(estado, opc.avaliarFam) }); } catch (eMot) { MOT = { ok: false, motivo: "geometria do motor: " + (eMot && eMot.message ? eMot.message : eMot) }; }
+        }
+        if (MOT.calculando) calculandoMotor = true;
+        if (!MOT.ok) { avisos.push(MOT.calculando ? "Madeira do motor: calculando… (em segundo plano; por enquanto fica a geometria do SINAPI com as seções calculadas — a tela se refaz sozinha quando terminar)" : "Madeira do motor NÃO aplicada ao desenho (fica a geometria do SINAPI com as seções calculadas): " + MOT.motivo); MOT = null; }
       }
     }
     /* o material e a forma do pilar do modelo: só é MADEIRA o que diz que é; sem informação = NÃO madeira (nunca se transforma pilar de concreto/aço em madeira) */
@@ -2146,6 +2158,7 @@
              espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo, fiadas: fiadasInfo,
              quantitativo: Q.itens, premissas: prem, avisos: avisos,
              removidas: ed.removidas, editadas: ed.editadas, problemas: ed.problemas, sobreporOrfas: ed.orfas };
+    if (typeof calculandoMotor !== "undefined" && calculandoMotor) resMod.calculando = true;   /* geometria do motor em segundo plano: este pacote é PROVISÓRIO (SINAPI) — orçamento, exportação e pranchas não o leem (BIM.editarEstado completa na hora) */
     if (M.obra) resMod.conjunto = conj;   /* só o conjunto leva o campo: o pacote dos outros modelos sai byte a byte igual */
     return resMod;
   }

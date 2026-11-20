@@ -19,11 +19,13 @@
   var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
   var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
     "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
-    "madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js"];
+    "madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js",
+    "madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js"];      /* o encaixe de carpinteiro + a geometria do telhado desenhado: mensagem "geometria" (abaixo) */
   var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
     "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
     "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
-    "madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas" };
+    "madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas",
+    "madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes" };
   var ETAPAS = ["preparar", "deck", "dimensionar", "ligacoes", "fonte", "auditoria", "orcamento"];
   var NOME_ETAPA = { preparar: "Montando o modelo, as cargas e o vento (NBR 6123, com vento oblíquo e abertura dominante)", dimensionar: "Dimensionando as seções no catálogo e verificando (NBR 7190, 2ª ordem)",
     deck: "Deck: tábuas, barrotes, vigas, pilaretes, estabilidade lateral, guarda-corpo e escada (NBR 7190-1, 6120, 14718)", ligacoes: "Ligações: pinos, chapas, placa de base e chumbadores", fonte: "Lista de peças com geometria", auditoria: "Pente-fino do projeto (peças sem apoio, esbeltez, verga, reforço)", orcamento: "Itens do orçamento, com preço e fonte" };
@@ -142,7 +144,15 @@
     anexarDeck(res, dk); res.ligacoesDeck = dk.ligacoes; return res;
   }
 
-  var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
+  /** A GEOMETRIA DO TELHADO DESENHADO (js/madtelhadodesenhado.js calcularMotor: membros do motor + sólidos cortados do madencaixe, 0,35 a 0,8 s a frio) em segundo plano.
+      motor = calcMadeira.motor (params + sec, só números e texto). Devolve o resultado em TEXTO JSON (Infinity/NaN preservados): a página faz MadTelhadoDes.semearMotor(motor, texto) e o cache fica igual ao do cálculo síncrono.
+      Sem Worker (Node/testes) é a mesma função, chamada direto. */
+  function geometria(motor) {
+    var MD = G("MadTelhadoDes") || require("./madtelhadodesenhado.js");
+    return MD.paraTexto(MD.calcularMotor(motor));
+  }
+
+  var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, geometria: geometria, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
   if (!NO_WORKER) {
     global.MadEngWorker = API;
     if (typeof module !== "undefined" && module.exports) module.exports = API;
@@ -166,6 +176,10 @@
         if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
         var r = rodar(m.sol, function (p) { p.tipo = "progresso"; p.id = m.id; global.postMessage(p); });
         global.postMessage({ tipo: "fim", id: m.id, ms: Date.now() - t0, texto: JSON.stringify(r) });
+      } else if (m.tipo === "geometria") {
+        if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
+        var tg = geometria(m.motor);
+        global.postMessage({ tipo: "fim-geometria", id: m.id, ms: Date.now() - t0, texto: tg });
       }
     } catch (e) {
       global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.message : String(e), pilha: e && e.stack ? String(e.stack).slice(0, 1200) : "" });

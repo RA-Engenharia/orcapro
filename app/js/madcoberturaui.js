@@ -93,8 +93,8 @@
 
   /* ------------------------------------------------------------ a configuração do telhado (o que a pessoa SOBRESCREVEU) */
   function cfgDe(t) {
-    var c = t && t.calcMadeira && t.calcMadeira.cfg ? t.calcMadeira.cfg : null, p = UI_ESTADO.pref;
-    return { apoio: c ? c.apoio : p.apoio, tesoura: c ? c.tesoura : p.tesoura, fechamento: c ? c.fechamento : p.fechamento, aparente: c ? !!c.aparente : p.aparente, ligacaoOculta: c ? !!c.ligacaoOculta : p.ligacaoOculta, forro: c ? !!c.forro : p.forro };
+    var c = t && t.calcMadeira && t.calcMadeira.cfg ? (MC() && MC().cfgEfetiva ? MC().cfgEfetiva(t.calcMadeira) : t.calcMadeira.cfg) : null, p = UI_ESTADO.pref;   /* o cálculo gravado pelo laço segue laço: Recalcular e a vigia NÃO o trocam por tesoura */
+    return { sistema: c ? c.sistema : null, apoio: c ? c.apoio : p.apoio, tesoura: c ? c.tesoura : p.tesoura, fechamento: c ? c.fechamento : p.fechamento, aparente: c ? !!c.aparente : p.aparente, ligacaoOculta: c ? !!c.ligacaoOculta : p.ligacaoOculta, forro: c ? !!c.forro : p.forro };
   }
 
   /* ------------------------------------------------------------ calcular */
@@ -192,6 +192,8 @@
     if (c.espApoio) h += "<p style=\"margin:0 0 6px\">Apoios a no máximo <b>" + virg(c.espApoio) + " m</b> (escolhido pelo laço de cálculo); terças a " + virg(c.espTerca) + " m (vão da telha / caibro).</p>";
     if (c.eta) h += "<p style=\"margin:0 0 6px;font-size:12px\">Aproveitamento (η): " + Object.keys(c.eta).filter(function (k) { return c.eta[k] != null; }).map(function (k) { return esc(k) + " " + virg(c.eta[k], 3); }).join("; ") + ".</p>";
     if (c.tipologia) h += "<p style=\"margin:0 0 6px\">Tipologia: <b>" + esc(c.tipologia.tipo) + (c.tipologia.variante ? " · tesoura " + esc(c.tipologia.variante) : "") + "</b> (" + (c.tipologia.auto ? "automática pela forma e pelo vão" : "escolhida") + "). " + esc(c.tipologia.criterio || "") + (c.tipologia.fonte ? ' <span style="font-size:11px;color:#6b7280">Fonte: ' + esc(c.tipologia.fonte) + "</span>" : "") + "</p>";
+    var sg = tid && MC() ? MC().situacao(estado() || {}, tid).sugestaoTesoura : null;
+    if (sg) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Sugestão:</b> " + esc(sg.texto) + ' <button type="button" class="btn" data-mcob-acao="tesoura">Trocar para tesoura</button></p>';
     if (c.sugestao) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Sugestão:</b> " + esc(c.sugestao) + "</p>";
     if (c.motor && tid) { var dz = deslocamentoTxt(tid); if (dz) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Cota:</b> " + esc(dz) + "</p>"; }
     if (c.motor) h += "<p style=\"margin:0 0 6px;font-size:12px\">As peças do modelo são os <b>membros do motor</b> com os sólidos cortados (encaixe de carpinteiro)" + (c.motor.origem === "migrado" ? ' — <b>MIGRADO</b> do cálculo anterior (cópia guardada): use <b>Recalcular</b> para fechar o cálculo' : "") + ".</p>";
@@ -208,6 +210,7 @@
     ov.addEventListener("click", function (ev) {
       var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-mcob-acao") : null; if (!a) return;
       if (a === "recalcular") calcular(tid, {});
+      if (a === "tesoura") calcular(tid, { cfg: { sistema: "tesoura", aparente: false } });   /* ação EXPLÍCITA: só aqui o cálculo do laço vira tesoura */
       if (a === "saidas") gerarSaidas(tid);
       if (a === "modulo") abrirNoModulo(tid);
       if (a === "limpar") { aplicarOps([MC().opLimpar(tid)], "mc-limpar-" + tid); status("Cálculo removido: o telhado volta às seções de partida do SINAPI."); }

@@ -1088,6 +1088,8 @@
     var esfBar = {}, nEluDiag = {};      /* A2 (r13): máximo da tração ELU de cada diagonal de madeira, somado depois à F1d = Nd/150 (6.6.4: "os seus efeitos devem ser acrescidos") */
     var ESF_G = { BS: 1, BI: 1, PD: 1, DG: 1, T: 1, CM: 1, CB: 1, DX: 1, DP: 1, LB: 1 };
     var spanX = p.a / I.nCol, travB = p.cobertura.travBaixo;
+    /* QUIOSQUE (pilaresX): o frechal só tem apoio nos PILARES — o vão (ELU: L0/L1; ELS: cortes) é a maior distância entre pilares, não o espaçamento das tesouras */
+    var spanFR = spanX; if (I.pilaresX && I.pilaresX.length > 1) { spanFR = 0; I.pilaresX.forEach(function (x, i) { if (i) spanFR = Math.max(spanFR, x - I.pilaresX[i - 1]); }); }
     elu.forEach(function (cb) {
       var rc = r.combinacoes[cb.id]; if (!rc) return; var car = durClasse(cb), pf = perfil(car), fnd = {}; FK = KREF / pf.kmod;
       M.barras.forEach(function (b) {
@@ -1105,7 +1107,7 @@
           var v = null, s = sec[g], base = { b: b.b, h: b.h, classe: CL, perfil: pf };
           if (g === "P" || g === "PO" || g === "PC") { var bt = betas(b); v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: bt[0] * bt[2], L0z: bt[1] * bt[2], L1: 0.01, classe: CL, perfil: pf })); }
           else if (g === "T" || g === "CM" || g === "FR") {
-            var vao = g === "FR" ? spanX : (b.mem.nos && b.mem.nos.length ? spanX : b.mem.p1[0] - b.mem.p0[0]); if (g === "CM" && p.sistema === "cumeeira") vao = vaoCM;
+            var vao = g === "FR" ? spanFR : (b.mem.nos && b.mem.nos.length ? spanX : b.mem.p1[0] - b.mem.p0[0]); if (g === "CM" && p.sistema === "cumeeira") vao = vaoCM;
             var bal = b.L; v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: vao, L0z: vao, L1: MD.L1PorBorda(e.Mz, { cima: 0.5, baixo: travB || Math.min(vao, 2) }), classe: CL, perfil: pf }));
           }
           else if (g === "CB") { var Lr = (p.b / 2) * I.sc; v = MD.barra2022(MD.deAnalise(e, { b: s.b, h: s.h, L0y: Lr, L0z: 0.5, L1: MD.L1PorBorda(e.Mz, { cima: 0.5, baixo: travB || Lr / 2 }), classe: CL, perfil: pf })); }
@@ -1184,14 +1186,14 @@
     var D = function (cb, id) { return re.combinacoes[cb].desloc[id] || [0, 0, 0]; }, fm = {}, flech = {};
     function dfin(id) { var g = D("g", id), qd = D("q", id); return [0, 1, 2].map(function (k) { return g[k] * (1 + PHI) + qd[k] * (1 + psi2 * PHI); }); }
     function reg(chave, grp, valor, lim, extra) { var e = valor / lim; if (!fm[chave] || e > fm[chave].eta) fm[chave] = ext({ mm: Math.round(valor * 1e5) / 100, limite_mm: Math.round(lim * 1e5) / 100, eta: e, grupo: grp }, extra || {}); flech[grp] = Math.max(flech[grp] || 0, e); }
-    var supX = function (m) { return p.sistema === "tesoura" ? I.xs : (m.g === "CM" ? [0, p.a].concat(M.barras.filter(function (b) { return b.grupo === "PC"; }).map(function (b) { return b.mem.p0[0]; })) : I.xs); };
+    var supX = function (m) { if (m.g === "FR" && I.pilaresX && I.pilaresX.length > 1) return I.pilaresX; return p.sistema === "tesoura" ? I.xs : (m.g === "CM" ? [0, p.a].concat(M.barras.filter(function (b) { return b.grupo === "PC"; }).map(function (b) { return b.mem.p0[0]; })) : I.xs); };
     var porMem = {}; M.barras.forEach(function (b) { if (b.grupo !== "AD") (porMem[b.m] = porMem[b.m] || []).push(b); });
     G.membros.forEach(function (m) {
       if (m.tracao || ["P", "PO", "PC", "PD", "DG", "DX", "DV", "DP"].indexOf(m.g) >= 0) return;
       var bs = porMem[m.id] || []; if (!bs.length) return;
       var ids = [], vistos = {}; bs.forEach(function (b) { [b.i, b.j].forEach(function (n) { if (!vistos[n]) { vistos[n] = 1; ids.push(n); } }); });
       var eixo = Math.abs(m.p1[0] - m.p0[0]) > 0.9 * norm(m.p0, m.p1) ? 0 : (m.g === "BI" ? 1 : 1), pos = function (n) { return eixo === 0 ? nodo[n].x + p.origem.x : nodo[n].z + p.origem.y; };
-      var sup = m.g === "BI" ? [0, p.b] : (m.g === "BS" || m.g === "CB" ? [] : supX(m)), vao = (m.g === "BI") ? p.b : spanX;
+      var sup = m.g === "BI" ? [0, p.b] : (m.g === "BS" || m.g === "CB" ? [] : supX(m)), vao = (m.g === "BI") ? p.b : (m.g === "FR" ? spanFR : spanX);
       if (m.g === "CM" && p.sistema === "cumeeira") vao = vaoCM;
       if (m.g === "BS" || m.g === "CB") {
         // vão: do apoio do frechal até a cumeeira (só a parte interna; ponta do beiral = balanço)

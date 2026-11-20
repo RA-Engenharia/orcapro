@@ -10902,7 +10902,8 @@ edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.mat
 edit.sprites = [];
 if (S._b2Limpar3d) S._b2Limpar3d();
 tR.a = performance.now();
-var st = BimEdit.aplicar(edit.ops);
+var tvTE = window.BimTelhadoEstrut; if (tvTE) tvTE._telaViva = true;
+var st; try { st = BimEdit.aplicar(edit.ops); } finally { if (tvTE) tvTE._telaViva = false; }
 tR.b = performance.now();
 edit.estado = st;
 var instEls = [];
@@ -15830,6 +15831,11 @@ refazer: function () { return !!(S && S._editRefazer && S._editRefazer()); },
 editarEstado: function () {
 if (!S || !S.edit) return null;
 var st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
+if (window.MadTelhadoDes && MadTelhadoDes.pendentes && MadTelhadoDes.pendentes() > 0 && (st.telhados || []).some(function (t) { return t && t.pacote && t.pacote.calculando; })) {
+MadTelhadoDes.completarAgora();
+if (S._editReconstruir) S._editReconstruir();
+st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
+}
 var r = { estado: st, ops: (S.edit.ops || []).length, refazer: (S.edit.redo || []).length };
 Object.defineProperty(r, 'qto', { enumerable: true, configurable: true, get: function () { var q = BimEdit.qto(st, S._famAval); Object.defineProperty(r, 'qto', { value: q, enumerable: true, writable: true, configurable: true }); return q; } });
 return r;

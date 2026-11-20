@@ -14414,7 +14414,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     edit.sprites = [];
     if (S._b2Limpar3d) S._b2Limpar3d();   /* B2: eixos da rodada anterior */
     tR.a = performance.now();
-    var st = BimEdit.aplicar(edit.ops);
+    /* TELA VIVA: só a reconstrução da CENA pode pedir a geometria do motor da madeira ao Worker ("calculando…"); toda outra derivação (orçamento, exportação, pranchas) é síncrona */
+    var tvTE = window.BimTelhadoEstrut; if (tvTE) tvTE._telaViva = true;
+    var st; try { st = BimEdit.aplicar(edit.ops); } finally { if (tvTE) tvTE._telaViva = false; }
     tR.b = performance.now();
     edit.estado = st;
     /* B5: tubos, conexões deduzidas, ralos/caixas e os pontos de ligação (js/biminstui.js) */
@@ -20727,6 +20729,12 @@ window.BIM = {
   editarEstado: function () {
     if (!S || !S.edit) return null;
     var st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
+    /* o pacote do telhado "calculando…" é PROVISÓRIO (geometria do SINAPI): quem lê o estado (orçamento, exportação, pranchas) recebe o definitivo — termina o cálculo na hora e refaz a cena */
+    if (window.MadTelhadoDes && MadTelhadoDes.pendentes && MadTelhadoDes.pendentes() > 0 && (st.telhados || []).some(function (t) { return t && t.pacote && t.pacote.calculando; })) {
+      MadTelhadoDes.completarAgora();
+      if (S._editReconstruir) S._editReconstruir();
+      st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
+    }
     /* FLUIDEZ (17/10/2026): o quantitativo do modelo inteiro (BimEdit.qto, ~60 ms no modelo médio) era calculado em
        TODA chamada — e o clique, as Propriedades, a seleção e o kit chamam editarEstado() várias vezes só pelo estado.
        Agora ele é calculado quando alguém LÊ .qto (mesmo valor, mesmo momento; nada fica guardado). */

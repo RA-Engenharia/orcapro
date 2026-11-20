@@ -68055,7 +68055,7 @@ if (ES && ES.modelar) saida.telhados.forEach(function (t) {
 if (!t || !t.ok || !t.modelo) return;
 var pk = null, tm = t;
 if (t.modo === "extrusao" && t.calcMadeira && t.calcMadeira.motor) { tm = null; try { tm = perimetroVirtual(t); } catch (eV) { tm = null; } if (!tm) { (t.avisos = t.avisos || []).push("Madeira do motor NÃO aplicada ao desenho: o perfil da extrusão deixou de ser simétrico de 2 águas (ou o retângulo virtual não fecha). O cálculo da madeira continua gravado; volte o perfil ao simétrico ou use o telhado por contorno."); tm = t; } }
-try { pk = ES.modelar(tm, saida, { ctxCob: ctx.cob }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
+try { pk = ES.modelar(tm, saida, { ctxCob: ctx.cob, assincrono: !!(ES && ES._telaViva) }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
 if (!pk) return;
 t.pacote = pk;
 if (pk.ok) {
@@ -70785,12 +70785,22 @@ if (tel && M.familias.indexOf(tel.familia) < 0) avisos.push("O modelo \"" + M.ro
 if (M.obra) prem.push("Modelo: " + M.rotulo + " — " + (CJ.calc && CJ.calc.ok ? "terças pelo motor NBR 14762 (biapoiadas, isoladas)" : "terças com perfil de partida, NÃO verificadas pelo motor") + "; o restante a conferir pelo cálculo.");
 else prem.push("Modelo: " + M.rotulo + " — PRÉ-DIMENSIONADO, confirmar no cálculo (" + (mat === "aco" ? "Metálica" : "módulo Madeira, NBR 7190") + ").");
 var CMX = t.calcMadeira && typeof t.calcMadeira === "object" ? t.calcMadeira : null;
-var MOT = null;
+var MOT = null, calculandoMotor = false;
 if (CMX && CMX.motor && mat !== "aco" && M.tesoura && !M.obra) {
 var MDes = dep("MadTelhadoDes", "./madtelhadodesenhado.js");
 if (MDes && MDes.geometriaMundo) {
+var calculando = false;
+if (opc.assincrono && global.BimTelhadoEstrut && global.BimTelhadoEstrut._telaViva && MDes.aquecer && MDes.assincrono && MDes.assincrono() && MDes.payloadValido && MDes.payloadValido(CMX.motor) && !MDes.emCache(CMX.motor)) {
+var dentro = true;
+try { calculando = !!MDes.aquecer(CMX.motor, function () { if (dentro) return; try { if (global.BIM && global.BIM.editarReconstruir) global.BIM.editarReconstruir(); } catch (eRec) { } }); } catch (eAq) { calculando = false; }
+dentro = false;
+}
+if (calculando) MOT = { ok: false, calculando: true, motivo: "calculando…" };
+else {
 try { MOT = MDes.geometriaMundo(t, CMX.motor, { caixas: estado && estado.caixas, H0: H0, vaos: opc.vaos || vaosDeFamilias(estado, opc.avaliarFam) }); } catch (eMot) { MOT = { ok: false, motivo: "geometria do motor: " + (eMot && eMot.message ? eMot.message : eMot) }; }
-if (!MOT.ok) { avisos.push("Madeira do motor NÃO aplicada ao desenho (fica a geometria do SINAPI com as seções calculadas): " + MOT.motivo); MOT = null; }
+}
+if (MOT.calculando) calculandoMotor = true;
+if (!MOT.ok) { avisos.push(MOT.calculando ? "Madeira do motor: calculando… (em segundo plano; por enquanto fica a geometria do SINAPI com as seções calculadas — a tela se refaz sozinha quando terminar)" : "Madeira do motor NÃO aplicada ao desenho (fica a geometria do SINAPI com as seções calculadas): " + MOT.motivo); MOT = null; }
 }
 }
 function pilarInfo(c) {
@@ -71537,6 +71547,7 @@ paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), 
 espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo, fiadas: fiadasInfo,
 quantitativo: Q.itens, premissas: prem, avisos: avisos,
 removidas: ed.removidas, editadas: ed.editadas, problemas: ed.problemas, sobreporOrfas: ed.orfas };
+if (typeof calculandoMotor !== "undefined" && calculandoMotor) resMod.calculando = true;
 if (M.obra) resMod.conjunto = conj;
 return resMod;
 }
@@ -156430,10 +156441,13 @@ return s === "tesoura" || s === "cumeeira" ? s : base;
 }
 function t2Params(est, o) {
 var t = est.t2, be = t.beiral || {}, sis = sistemaT2(est, o);
-return { nome: est.obra.nome || "Casa de duas águas", a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5),
+var pT2 = { nome: est.obra.nome || "Casa de duas águas", a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5),
 beiral: { frente: num(be.frente, 0.8), fundo: num(be.fundo, 0.8), esq: num(be.esq, 0.8), dir: num(be.dir, 0.8) }, sistema: sis, vMaxPilar: num(t.vMaxCumeeira, 4),
 telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: sis === "tesoura" && t.sistema === "tesoura-howe" ? "howe" : (sis === "tesoura" && t.sistema === "tesoura-fink" ? "fink" : "pratt") },
 cumeeira: { sCaibro: num(t.sCaibro, 1), pilaresIntermediarios: null, assento: t.assento === "fixo" ? "fixo" : "deslizante", tirante: false }, vergas: null };
+if (Array.isArray(t.pilaresX) && t.pilaresX.length) pT2.pilaresX = t.pilaresX.map(function (v) { return num(v, 0); });
+if (t.semPilarOitao) pT2.semPilarOitao = true;
+return pT2;
 }
 function secoesPartidaT2(est, o, sis) {
 var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.2)), P = { forma: "quadrado", b: b, h: b };
@@ -157098,11 +157112,13 @@ try {
 var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
 var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
 "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
-"madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js"];
+"madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js",
+"madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js"];
 var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
 "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
 "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
-"madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas" };
+"madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas",
+"madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes" };
 var ETAPAS = ["preparar", "deck", "dimensionar", "ligacoes", "fonte", "auditoria", "orcamento"];
 var NOME_ETAPA = { preparar: "Montando o modelo, as cargas e o vento (NBR 6123, com vento oblíquo e abertura dominante)", dimensionar: "Dimensionando as seções no catálogo e verificando (NBR 7190, 2ª ordem)",
 deck: "Deck: tábuas, barrotes, vigas, pilaretes, estabilidade lateral, guarda-corpo e escada (NBR 7190-1, 6120, 14718)", ligacoes: "Ligações: pinos, chapas, placa de base e chumbadores", fonte: "Lista de peças com geometria", auditoria: "Pente-fino do projeto (peças sem apoio, esbeltez, verga, reforço)", orcamento: "Itens do orçamento, com preço e fonte" };
@@ -157206,7 +157222,11 @@ var res = { ok: !aud.achados.length && !dk.semSolucao && (!dk.ligacoes || dk.lig
 fonte: { pecas: pecas, volume_por_material_m3: MT.volumePorMaterial(pecas) }, t7: { areas: f.areas, apoiosDiretos: f.apoiosDiretos }, auditoria: { achados: aud.achados.slice(), porRegra: aud.porRegra, ok: aud.ok }, orcamento: orc, avisos: [], avisosAnalise: [], ms: Date.now() - t0 };
 anexarDeck(res, dk); res.ligacoesDeck = dk.ligacoes; return res;
 }
-var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
+function geometria(motor) {
+var MD = G("MadTelhadoDes") || require("./madtelhadodesenhado.js");
+return MD.paraTexto(MD.calcularMotor(motor));
+}
+var API = { MOTORES: MOTORES, GLOBAL_DE: GLOBAL_DE, ETAPAS: ETAPAS, NOME_ETAPA: NOME_ETAPA, solicitacao: solicitacao, rodar: rodar, geometria: geometria, _projetarDeck: projetarDeck, _anexarDeck: anexarDeck };
 if (!NO_WORKER) {
 global.MadEngWorker = API;
 if (typeof module !== "undefined" && module.exports) module.exports = API;
@@ -157228,6 +157248,10 @@ global.postMessage({ tipo: "motores", id: m.id, carregados: carregados, faltam: 
 if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
 var r = rodar(m.sol, function (p) { p.tipo = "progresso"; p.id = m.id; global.postMessage(p); });
 global.postMessage({ tipo: "fim", id: m.id, ms: Date.now() - t0, texto: JSON.stringify(r) });
+} else if (m.tipo === "geometria") {
+if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
+var tg = geometria(m.motor);
+global.postMessage({ tipo: "fim-geometria", id: m.id, ms: Date.now() - t0, texto: tg });
 }
 } catch (e) {
 global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.message : String(e), pilha: e && e.stack ? String(e.stack).slice(0, 1200) : "" });
@@ -163263,8 +163287,19 @@ var zsOit = []; for (j = 0; j <= 2 * nH; j += m) zsOit.push(j * dz);
 var howe = p.sistema === "tesoura" && p.tesoura.tipo === "howe", eE = B.esq, eD = B.dir, n = 0, nc = 0, tipF = B.frente * sc, tipB = B.fundo * sc;
 function add(o) { o.p0 = o.p0.map(function (v) { return rd(v, 4); }); o.p1 = o.p1.map(function (v) { return rd(v, 4); }); M.push(o); return o; }
 var P3 = function (x, z, y) { return [x, z, y]; }, cumeeira = p.sistema === "cumeeira";
-xs.forEach(function (x, kx) { [0, b].forEach(function (z) { add({ id: "P" + (++n), g: "P", p0: P3(x, z, p.baseZ), p1: P3(x, z, Hp), face: z === 0 ? "esquerda" : "direita", s: x, trib: (kx === 0 || kx === nCol) ? a / nCol / 2 : a / nCol, pinJ: true }); }); });
-[0, a].forEach(function (x) {
+var xp = null;
+if (p.pilaresX && p.pilaresX.length) {
+xp = [];
+p.pilaresX.forEach(function (x0) { var kk = 0, q; for (q = 1; q < xs.length; q++) if (Math.abs(xs[q] - x0) < Math.abs(xs[kk] - x0)) kk = q; if (Math.abs(xs[kk] - x0) > 0.15) throw new Error("madtipologias T2: pilar em x = " + x0 + " m não cai numa linha de tesoura (a ≤ 15 cm)"); if (xp.indexOf(xs[kk]) < 0) xp.push(xs[kk]); });
+xp.sort(function (u, v) { return u - v; });
+if (Math.abs(xp[0]) > 1e-9 || Math.abs(xp[xp.length - 1] - a) > 1e-9 || xp.length < 2) throw new Error("madtipologias T2: os pilares têm de incluir as duas extremidades (x = 0 e x = a)");
+}
+(xp || xs).forEach(function (x, kx) {
+var trib = xp ? ((kx === 0 ? 0 : (x - xp[kx - 1]) / 2) + (kx === xp.length - 1 ? 0 : (xp[kx + 1] - x) / 2)) : ((kx === 0 || kx === nCol) ? a / nCol / 2 : a / nCol);
+[0, b].forEach(function (z) { add({ id: "P" + (++n), g: "P", p0: P3(x, z, p.baseZ), p1: P3(x, z, Hp), face: z === 0 ? "esquerda" : "direita", s: x, trib: trib, pinJ: true }); });
+});
+if (p.semPilarOitao) zsOit = [0, b];
+else [0, a].forEach(function (x) {
 zsOit.forEach(function (z, kz) {
 if (kz === 0 || kz === zsOit.length - 1) return;
 var central = cumeeira && Math.abs(z - b / 2) < 1e-6;
@@ -163344,12 +163379,15 @@ zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; [[bb[0
 var fv = 0;
 if (!cumeeira) selB.forEach(function (bb) { for (k = 1; k < 2 * nH; k++) { var zk = fink ? (k <= zsBIint.length ? zsBIint[k - 1] : null) : zH(k); if (zk == null) continue; [[bb[0], bb[1]], [bb[1], bb[0]]].forEach(function (d) { add(mad ? { id: "DV" + (++fv), g: "DV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true, mad: true } : { id: "FV" + (++fv), g: "FV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true }); }); } });
 if (!p.vedacaoRigida) {
-var fxp = 0, bb2 = [[0, xs[1]], [xs[xs.length - 2], a]], zO = zsOit.length > 2 ? [[zsOit[0], zsOit[1]], [zsOit[zsOit.length - 2], zsOit[zsOit.length - 1]]] : [[zsOit[0], zsOit[1]]];
+var fxp = 0, bb2 = xp ? (xp.length <= 2 ? [[xp[0], xp[1]]] : [[xp[0], xp[1]], [xp[xp.length - 2], xp[xp.length - 1]]]) : [[0, xs[1]], [xs[xs.length - 2], a]], zO = zsOit.length > 2 ? [[zsOit[0], zsOit[1]], [zsOit[zsOit.length - 2], zsOit[zsOit.length - 1]]] : [[zsOit[0], zsOit[1]]];
 var diagP = function (e, plano, c) { fxp++; var A = plano === "x" ? P3(e[0], c, p.baseZ) : P3(c, e[0], p.baseZ), B = plano === "x" ? P3(e[1], c, Hp) : P3(c, e[1], Hp); return mad ? { id: "DP" + fxp, g: "DP", p0: A, p1: B, tracao: true, mad: true } : { id: "FP" + fxp, g: "FP", p0: A, p1: B, tracao: true }; };
 [0, b].forEach(function (z) { bb2.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "x", z)); }); }); });
 [0, a].forEach(function (x) { zO.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "z", x)); }); }); });
 }
-return { p: p, membros: M, info: { tesouraTipo: howe ? "howe" : (fink ? "fink" : "pratt"), nBI: fink ? 2 * nF - 1 : 2 * nH, dzBI: fink ? 1.5 * dzF : dz, nF: nF, kF: kF, dzF: dzF, lpBS: dzF * sc, zsBIint: zsBIint, xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+var infoT2 = { tesouraTipo: howe ? "howe" : (fink ? "fink" : "pratt"), nBI: fink ? 2 * nF - 1 : 2 * nH, dzBI: fink ? 1.5 * dzF : dz, nF: nF, kF: kF, dzF: dzF, lpBS: dzF * sc, zsBIint: zsBIint, xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr };
+if (xp) infoT2.pilaresX = xp;
+if (p.semPilarOitao) infoT2.semPilarOitao = true;
+return { p: p, membros: M, info: infoT2 };
 }
 var FOLGA_HOWE = 0.010;
 function segDist(a, b, c, d) {
@@ -168164,38 +168202,79 @@ var h1 = 5381, j; for (j = 0; j < s1.length; j++) h1 = ((h1 << 5) + h1 + s1.char
 return (h1 >>> 0).toString(16) + ":" + s1.length;
 }
 var s = [VERSAO, lido.tipo, lido.a, lido.b, r3(lido.incl), typeof lido.beiral === "number" ? r3(lido.beiral) : lido.beiral.todos.map(r3).join("/"), lido.tipoId || "-", r3(lido.cotaApoio), r3(lido.baseZ),
-apoio ? apoio.tipo : "-", arr(lido.eixoD).map(r3).join("/"), (cfg && cfg.tesoura) || "-", lido.tipo === "T4" ? ((cfg && cfg.fechamento) || (apoio && apoio.tipo === "pilares" ? "aberto" : "fechado")) : "-", cfg && cfg.aparente ? "A" : "-", arr(apoio && apoio.pontos).map(function (q) { return r3(q.x) + "," + r3(q.z); }).join(";"), cfg && cfg.classe || "-"].join("|");
+apoio ? apoio.tipo : "-", arr(lido.eixoD).map(r3).join("/"), (cfg && cfg.tesoura) || "-", lido.tipo === "T4" ? ((cfg && cfg.fechamento) || (apoio && apoio.tipo === "pilares" ? "aberto" : "fechado")) : "-", cfg && cfg.aparente ? "A" : "-", arr(apoio && apoio.pontos).map(function (q) { return r3(q.x) + "," + r3(q.z); }).join(";"), cfg && cfg.classe || "-"].concat(cfg && cfg._pil ? [cfg._pil] : []).join("|");
 var h = 5381, i; for (i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
 return (h >>> 0).toString(16) + ":" + s.length;
 }
-function sistemaVia(lido, ap) {
+function sistemaVia(lido, ap, cfg) {
 if ((ap.tipo === "paredes" && (lido.tipo === "T2" || lido.tipo === "T3" || lido.tipo === "T4")) || (ap.tipo === "pilares" && lido.tipo === "T4")) return { sistema: "tesoura", via: "motor" };
+if (ap.tipo === "pilares" && lido.tipo === "T2") { var pt = pilaresTesoura(lido, ap, cfg); if (pt && pt.ok) return { sistema: "tesoura", via: "motor", quiosque: pt }; }
 if (ap.tipo === "pilares") return { sistema: "vigas", via: "laco" };
 return { sistema: "terca", via: "laco" };
 }
+var TOL_PILAR_LINHA = 0.15;
+function pilaresTesoura(lido, ap, cfg) {
+cfg = cfg || {};
+if (!lido || lido.tipo !== "T2" || !ap || ap.tipo !== "pilares" || cfg.aparente || cfg.sistema === "laco" || (cfg.pontos && cfg.pontos.length)) return null;
+var MDx = dep("MadTelhadoDes", "./madtelhadodesenhado.js"); if (!MDx || !MDx.quadro) return null;
+var pil = arr(ap.pilares); if (pil.length < 2) return null;
+var l = axisLido(lido); if (l.erroEixo) return null;
+var a = l.a, b = l.b, q = MDx.quadro(lido), f0 = [], fb = [], interiores = 0;
+pil.forEach(function (pl) {
+var dx = pl.x - q.O[0], dz = pl.z - q.O[1], X = dx * q.u[0] + dz * q.u[1], Y = dx * q.v[0] + dz * q.v[1];
+if (X < -TOL_PILAR_LINHA || X > a + TOL_PILAR_LINHA) return;
+var o = { pl: pl, X: X, Y: Y };
+if (Math.abs(Y) <= TOL_PILAR_LINHA) { o.face = "frente"; f0.push(o); } else if (Math.abs(Y - b) <= TOL_PILAR_LINHA) { o.face = "fundo"; fb.push(o); } else interiores++;
+});
+function pxs(L) { return L.map(function (o) { return o.X; }).sort(function (x, y) { return x - y; }); }
+function falta(L, alvo) { return !L.some(function (o) { return Math.abs(o.X - alvo) <= TOL_PILAR_LINHA; }); }
+var nome = function (v) { return "x " + virg(v) + " m"; }, mot = null;
+[[f0, "frente (z = 0)"], [fb, "fundo (z = " + virg(b) + " m)"]].forEach(function (c) { [0, a].forEach(function (x) { if (!mot && falta(c[0], x)) mot = "não há pilar do modelo no canto " + nome(x) + " da face " + c[1]; }); });
+if (!mot) f0.forEach(function (o) { if (!mot && falta(fb, o.X)) mot = "o pilar em " + nome(o.X) + " da face da frente não tem par na face do fundo"; });
+if (!mot) fb.forEach(function (o) { if (!mot && falta(f0, o.X)) mot = "o pilar em " + nome(o.X) + " da face do fundo não tem par na face da frente"; });
+if (mot) return { ok: false, motivo: "Quiosque sobre pilares (tesoura do motor T2): " + mot + ". Lance os pilares nos 4 cantos do vão (e nas linhas das tesouras) ou use \"aparente\" (vigas + terças)." };
+var xs0 = pxs(f0), linhas = [], k;
+xs0.forEach(function (x) { if (!linhas.length || x - linhas[linhas.length - 1] > TOL_PILAR_LINHA) linhas.push(x); });
+function cabe(n) { var i, ok = true; linhas.forEach(function (x) { var m = Infinity; for (i = 0; i <= n; i++) m = Math.min(m, Math.abs(a * i / n - x)); if (m > TOL_PILAR_LINHA) ok = false; }); return ok; }
+var n1 = null, n2 = null, nMin = Math.max(1, Math.ceil(a / 3.2 - 1e-9)), nMin2 = Math.max(1, Math.ceil(a / 2.4 - 1e-9));
+for (k = nMin; k <= nMin + 3 && n1 == null; k++) if (cabe(k)) n1 = k;
+if (n1 == null) return { ok: false, motivo: "Quiosque sobre pilares (tesoura do motor T2): os pilares estão em " + linhas.map(nome).join("; ") + " e não caem numa grade regular de tesouras de até 3,2 m (a ≤ 15 cm). Alinhe os pilares em espaçamento regular ou use \"aparente\" (vigas + terças)." };
+for (k = Math.max(nMin2, n1 + 1); k <= nMin2 + 3 && n2 == null; k++) if (cabe(k)) n2 = k;
+var gap = 0; for (k = 1; k < linhas.length; k++) gap = Math.max(gap, linhas[k] - linhas[k - 1]);
+var usados = [];
+[f0, fb].forEach(function (L) { L.forEach(function (o) { usados.push({ id: o.pl.id, pl: o.pl, X: r3(o.X), face: o.face }); }); });
+return { ok: true, pilaresX: linhas.map(function (x, i) { return i === 0 ? 0 : (i === linhas.length - 1 ? a : r3(x)); }), usados: usados, nCol: n1, tentativas: n2 ? [a / n1, a / n2] : [a / n1], vMax: Math.max(4, r3(gap), a / n1 + 1e-6), interiores: interiores };
+}
 function tipologiaDe(lido, ap, cfg) {
 var MDx = dep("MadTelhadoDes", "./madtelhadodesenhado.js"); if (!MDx || !MDx.escolher || !ap || !ap.tipo) return null;
-var sv = sistemaVia(lido, ap), tr = trama(lido, modeloMadeira(sv.sistema, lido)); if (!tr) return null;
+var sv = sistemaVia(lido, ap, cfg), tr = trama(lido, modeloMadeira(sv.sistema, lido)); if (!tr) return null;
 var lE = axisLido(lido);
-return MDx.escolher(lE && !lE.erroEixo ? lE : lido, ap, cfg || {}, tr);
+return MDx.escolher(lE && !lE.erroEixo ? lE : lido, ap, sv.quiosque ? ext({}, cfg || {}, { _quiosque: true }) : (cfg || {}), tr);
 }
-function chaveCfg(cfg, tip) { return tip && tip.variante ? ext({}, cfg || {}, { tesoura: tip.variante }) : (cfg || {}); }
+function chaveCfg(cfg, tip, ap) {
+var o = tip && tip.variante ? ext({}, cfg || {}, { tesoura: tip.variante }) : (cfg || {});
+if (tip && tip.quiosque && ap) o = ext({}, o, { _pil: arr(ap.pilares).slice().sort(function (p, q) { return String(p.id) < String(q.id) ? -1 : 1; }).map(function (p) { return [p.id, r3(p.b), r3(p.h), r3(p.d), p.circ ? "c" : "r", p.madeira ? "M" : "-", p.mat || ""].join(":"); }).join(";") });
+return o;
+}
+function cfgEfetiva(c) { var cf = c && c.cfg || {}; return (!cf.sistema && !c.motor && /laço/i.test(String(c.sistema || ""))) ? ext({}, cf, { sistema: "laco" }) : cf; }
 function preparar(estado, id, cfg, opc) {
 cfg = cfg || {}; opc = opc || {};
 var lido = lerTelhado(estado, id); if (!lido.ok) return lido;
 var ap = detectarApoio(estado, lido, cfg);
 if (!ap.tipo && lido.virtualDe) return { ok: false, motivo: "Telhado por extrusão (perfil simétrico): as paredes precisam estar nas PONTAS do perfil (a até ~12 cm do contorno do perfil) para o frechal assentar nelas; senão a madeira ficaria no ar. Mova as paredes para as pontas do perfil ou use o telhado por contorno com o beiral desejado.", apoio: ap };
 if (!ap.tipo) return { ok: false, motivo: ap.motivo, apoio: ap };
-var sistema, via;
-if ((ap.tipo === "paredes" && (lido.tipo === "T2" || lido.tipo === "T3" || lido.tipo === "T4")) || (ap.tipo === "pilares" && lido.tipo === "T4")) { sistema = "tesoura"; via = "motor"; }
+var sistema, via, ptq = lido.tipo === "T2" && ap.tipo === "pilares" ? pilaresTesoura(lido, ap, cfg) : null;
+if ((ap.tipo === "paredes" && (lido.tipo === "T2" || lido.tipo === "T3" || lido.tipo === "T4")) || (ap.tipo === "pilares" && lido.tipo === "T4") || (ptq && ptq.ok)) { sistema = "tesoura"; via = "motor"; }
 else if (lido.tipo === "T4") return { ok: false, motivo: "Telhado sextavado/oitavado (T4): o módulo calcula sobre PAREDES em todo o contorno (os pilares são os do próprio motor). Lance as paredes no perímetro." };
 else if (ap.tipo === "pilares") { sistema = "vigas"; via = "laco"; }
 else { sistema = "terca"; via = "laco"; }
 var modelo = modeloMadeira(sistema, lido), tr = trama(lido, modelo); if (!tr) return { ok: false, motivo: "Modelo de madeira desconhecido: " + modelo };
 var pe = pesos(lido, tr), classe = cfg.classe || CLASSE_PADRAO;
-var tip = tipologiaDe(lido, ap, cfg), cfgChave = chaveCfg(cfg, tip);
+var tip = tipologiaDe(lido, ap, cfg), cfgChave = chaveCfg(cfg, tip, ap);
 var prep = { ok: true, id: String(id), lido: lido, apoio: ap, cfg: clone(cfg), via: via, sistema: sistema, modelo: modelo, trama: tr, pesos: pe, classe: classe, chave: chaveDe(lido, cfgChave, ap), avisos: [], tipologia: tip };
 if (ap.aviso) prep.avisos.push(ap.aviso);
+if (ptq && ptq.ok) prep.quiosque = ptq;
+else if (ptq) prep.avisos.push(ptq.motivo + " Calculei pelo laço de vigas + terças.");
 if (via === "motor") {
 if (lido.tipo === "T4" && ap.tipo === "pilares") {
 var falt = [];
@@ -168209,7 +168288,7 @@ var EnM = EN(); if (!EnM) return { ok: false, motivo: "O motor da madeira engenh
 var tes = tip && tip.variante ? tip.variante : (cfg.tesoura === "howe" || cfg.tesoura === "fink" ? cfg.tesoura : "pratt");
 if (lido.tipo === "T3" && tes === "fink") { tes = "pratt"; prep.avisos.push("Tesoura Fink só existe para 2 águas; nas 4 águas usei Pratt."); }
 if (tip && tip.aviso) prep.avisos.push(tip.aviso);
-var sTes = ESP_APOIO_MAX, tentativas = cfg.tentativas || (lido.tipo === "T4" ? [3.2] : [3.2, 2.4]);
+var sTes = ESP_APOIO_MAX, tentativas = cfg.tentativas || (prep.quiosque ? prep.quiosque.tentativas.slice() : (lido.tipo === "T4" ? [3.2] : [3.2, 2.4]));
 prep.tesoura = tes; prep.tentativas = tentativas.slice(); prep.tentativa = 0; prep.sTes = tentativas[0];
 var e = EnM.estadoPadrao(), ob = opc.obra || {};
 e.tip = lido.tipo; e.obra = ext({}, e.obra, clone(ob));
@@ -168255,6 +168334,7 @@ e.t3 = { vao: l.b, comp: l.a, peDireito: Math.max(l.peDireito, 1.2), incl: l.inc
 var bl = l.beiral;
 e.t2 = { vao: l.b, comp: l.a, peDireito: Math.max(l.peDireito, 1.2), incl: l.incl, cotaPiso: l.baseZ, beiral: { frente: bl.eave[0], fundo: bl.eave[1], esq: bl.gable[0], dir: bl.gable[1] }, sistema: prep.tesoura === "howe" ? "tesoura-howe" : (prep.tesoura === "fink" ? "tesoura-fink" : "tesoura"),
 sTes: prep.sTes, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: prep.trama.espTerca, telhaPeso: pe.total, telhaDescricao: desc, assento: "deslizante", vergasVidro: false };
+if (prep.quiosque) { e.t2.pilaresX = prep.quiosque.pilaresX.slice(); e.t2.semPilarOitao = true; e.t2.vMaxCumeeira = prep.quiosque.vMax; }
 }
 void o;
 return e;
@@ -168277,7 +168357,10 @@ if (prep.lido.tipo === "T3") m.push("vento: a NBR 6123 não traz coeficientes de
 if (comMotor) m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): caibros e ripas — seguem o SINAPI/catálogo da telha; a estrutura de madeira (tesouras, terças, espigões, frechal, cumeeira) é a do motor, com os sólidos cortados");
 else m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): montante (sarrafos), caibros e ripas" + (sm.semPeca.length ? "; " + sm.semPeca.join("; ") : "") + " — seguem o SINAPI/catálogo; a geometria da tesoura do BIM é a do SINAPI, as seções são as do motor");
 var Fup = 0; try { Object.keys(res.reacoes || {}).forEach(function (k) { var v = res.reacoes[k]; (Array.isArray(v) ? v : [v]).forEach(function (x) { if (fin(x) && x < Fup) Fup = x; }); }); } catch (e) { Fup = 0; }
-m.push("ligação frechal × parede (chumbador/cinta) NÃO verificada" + (Fup < 0 ? " — arrancamento de " + virg(-Fup, 1) + " kN no apoio" : "") + ": projeto do RT");
+if (prep.quiosque) {
+m.push("vento: o motor T2 calcula a edificação FECHADA (Tabela 5 da NBR 6123, pressão nas faces levada aos pilares, abertura dominante); a cobertura isolada de quiosque ABERTO (coeficientes próprios da norma) NÃO foi verificada — confirmar com o RT");
+m.push("pilares do modelo: base (chumbadores/fundação), contraventamento no plano dos pilares e ligação frechal × topo do pilar NÃO verificados" + (Fup < 0 ? " — arrancamento de " + virg(-Fup, 1) + " kN no apoio" : "") + ": projeto do RT");
+} else m.push("ligação frechal × parede (chumbador/cinta) NÃO verificada" + (Fup < 0 ? " — arrancamento de " + virg(-Fup, 1) + " kN no apoio" : "") + ": projeto do RT");
 return m;
 }
 function pecasDoMotor(prep, res) {
@@ -168300,7 +168383,8 @@ if (pSobre) aviso = (aviso ? aviso + "; " : "") + pSobre + " pilar(es) do motor 
 return { lista: out.slice(0, 90), semPeca: sem, aviso: aviso, truncado: out.length > 90, pilaresSobreParede: pSobre };
 }
 function pilaresDoModelo(prep, res) {
-var out = { motivos: [], avisos: [] }, ap = prep.apoio, sec = res && res.secoes && res.secoes.P;
+var out = { motivos: [], avisos: [] }, ap = prep.apoio, sec = res && res.secoes && res.secoes.P, q2 = prep.quiosque;
+if (q2 && ap && ap.tipo === "pilares" && prep.lido && prep.lido.tipo === "T2") return pilaresDoQuiosque(prep, res, q2, sec);
 if (!(prep.lido && prep.lido.tipo === "T4" && ap && ap.tipo === "pilares" && sec)) return out;
 var A = fin(sec.b) ? sec.b : sec.d, B = fin(sec.h) ? sec.h : sec.d; if (!(A > 0) || !(B > 0)) return out;
 var calc = [A, B].sort(function (x, y) { return x - y; }), cm = function (v) { return virg(v * 100, 0); }, menores = [], naoMad = [], visto = {};
@@ -168316,6 +168400,38 @@ if (naoMad.length) out.motivos.push("T4 sobre pilares do modelo: " + naoMad.join
 if (out.motivos.length) out.avisos.push("Pilar calculado pelo motor: " + cm(A) + "×" + cm(B) + " cm (madeira). Troque os pilares do modelo por essa seção (ou maior) e recalcule para fechar.");
 return out;
 }
+function pilaresDoQuiosque(prep, res, q2, sec) {
+var out = { motivos: [], avisos: [] }, cm = function (v) { return virg(v * 100, 0); }, A = sec && (fin(sec.b) ? sec.b : sec.d), B = sec && (fin(sec.h) ? sec.h : sec.d);
+if (!(A > 0) || !(B > 0)) { out.motivos.push("T2 sobre pilares do modelo: o motor não devolveu a seção do pilar — não há como conferir os pilares do modelo"); return out; }
+var calc = [A, B].sort(function (x, y) { return x - y; }), menores = [], naoMad = [], visto = {};
+q2.usados.forEach(function (u) {
+var pl = u.pl, onde = "(" + (u.face === "frente" ? "frente" : "fundo") + ", " + "x " + virg(u.X) + " m)";
+if (visto[pl.id]) return; visto[pl.id] = 1;
+var pb = pl.circ ? pl.d : pl.b, ph = pl.circ ? pl.d : (pl.h != null ? pl.h : pl.b), mod = [pb, ph].sort(function (x, y) { return x - y; });
+if (mod[0] < calc[0] - 0.004 || mod[1] < calc[1] - 0.004) menores.push("pilar do modelo " + pl.id + " " + cm(pb) + "×" + cm(ph) + " cm < calculado " + cm(A) + "×" + cm(B) + " cm " + onde);
+if (!pl.madeira) naoMad.push("pilar do modelo " + pl.id + " " + onde + (pl.mat ? " é \"" + pl.mat + "\"" : " sem material de madeira informado"));
+});
+if (menores.length) out.motivos.push("T2 sobre pilares do modelo: " + menores.join("; ") + " — o cálculo vale para o pilar calculado, não para o do modelo");
+if (naoMad.length) out.motivos.push("T2 sobre pilares do modelo: " + naoMad.join("; ") + " — não é de madeira; o cálculo (NBR 7190) assume pilar de madeira " + cm(A) + "×" + cm(B) + " cm");
+if (out.motivos.length) out.avisos.push("Pilar calculado pelo motor: " + cm(A) + "×" + cm(B) + " cm (madeira). Troque os pilares do modelo por essa seção (ou maior) e recalcule para fechar.");
+if (q2.interiores) out.avisos.push(q2.interiores + " pilar(es) do modelo fora das 2 faces (no interior da planta) NÃO entram no cálculo: a tesoura vence o vão entre as faces.");
+var fr = res && res.secoes && res.secoes.FR, frb = fr && (fin(fr.b) ? fr.b : fr.d), frh = fr && (fin(fr.h) ? fr.h : fr.d), eFR = res && res.pior && res.pior.FR;
+if (!(frb > 0) || !(frh > 0)) out.motivos.push("T2 sobre pilares do modelo: o frechal (viga que liga os pilares) saiu SEM seção calculada pelo motor");
+else if (!(fin(Number(eFR)))) out.motivos.push("T2 sobre pilares do modelo: o frechal " + cm(frb) + "×" + cm(frh) + " cm não tem η verificado no resultado do motor");
+else if (Number(eFR) > 1 + 1e-9) out.motivos.push("T2 sobre pilares do modelo: o frechal " + cm(frb) + "×" + cm(frh) + " cm reprova (η = " + virg(Number(eFR), 2) + ")");
+var MTq = dep("MadTipologias", "./madtipologias.js");
+if (MTq && MTq.T2 && prep.sol && prep.sol.proj && prep.sol.proj.params) {
+try {
+var G = MTq.T2.geometria(clone(prep.sol.proj.params)), frs = G.membros.filter(function (m) { return m.g === "FR"; }), bis = G.membros.filter(function (m) { return m.g === "BI"; }), ps = G.membros.filter(function (m) { return m.g === "P"; });
+var noFR = function (x) { return frs.length > 0 && frs.every(function (f) { return arr(f.nos).some(function (n) { return Math.abs(n[0] - x) < 1e-6; }); }); };
+var soltas = bis.filter(function (m) { return !noFR(m.p0[0]); }).length + ps.filter(function (m) { return !noFR(m.p0[0]); }).length, noMeio = bis.filter(function (m) { return !ps.some(function (p2) { return Math.abs(p2.p0[0] - m.p0[0]) < 1e-6; }); }).length, vao = 0;
+ps.map(function (m) { return m.p0[0]; }).filter(function (x, i, v) { return v.indexOf(x) === i; }).sort(function (x, y) { return x - y; }).forEach(function (x, i, v) { if (i) vao = Math.max(vao, x - v[i - 1]); });
+if (soltas) out.motivos.push("T2 sobre pilares do modelo: " + soltas + " tesoura(s)/pilar(es) do motor não caem em nó do frechal — o apoio da tesoura na viga não se confirma");
+else if (frb > 0 && frh > 0) out.avisos.push("Tesouras apoiadas no frechal (viga sobre os pilares, " + cm(frb) + "×" + cm(frh) + " cm, vão máximo entre pilares " + virg(vao) + " m): " + bis.length + " tesoura(s), " + (bis.length - noMeio) + " sobre pilar e " + noMeio + " no meio do vão, apoiada(s) no frechal.");
+} catch (eG) { out.motivos.push("T2 sobre pilares do modelo: não consegui conferir o apoio das tesouras no frechal (" + String(eG && eG.message || eG).slice(0, 80) + ")"); }
+}
+return out;
+}
 function concluirMotor(prep, res) {
 var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA && SA.preliminar ? SA.preliminar(res) : { preliminar: !res.ok, motivos: [] };
 var sm = secoesDoMotor(res, prep), pm = pecasDoMotor(prep, res), motivos = arr(pre.motivos).slice();
@@ -168328,7 +168444,7 @@ var pilMod = pilaresDoModelo(prep, res); extra = pilMod.motivos.concat(extra);
 if (!fecha && prep.tentativa + 1 < prep.tentativas.length) return { ok: true, repetir: true, tentativa: tent, motivo: motivos[0] || "não fechou" };
 var calc = montarCalc(prep, { sistema: "tesouras " + (prep.tesoura === "howe" ? "Howe" : prep.tesoura === "fink" ? "Fink" : "Pratt") + " (" + prep.lido.tipo + ", motor de madeira engenharada)", secoes: sm.secoes, semPeca: comMotor ? [] : sm.semPeca.concat(pm.semPeca), preliminar: !fecha || extra.length > 0, motivos: motivos.concat(extra),
 espApoio: prep.sTes, espTerca: prep.trama.espTerca, eta: { max: r3(etaMax) }, v0: res.v0, avisos: pilMod.avisos.concat(arr(res.avisos).slice(0, 3), pm.aviso ? [pm.aviso] : []), pecasMotor: pm.lista,
-naoVerificado: ["ligação frechal × parede (chumbador/cinta)"], tentativas: tent });
+naoVerificado: prep.quiosque ? ["ligação frechal × topo do pilar, base e contraventamento dos pilares; vento de cobertura isolada"] : ["ligação frechal × parede (chumbador/cinta)"], tentativas: tent });
 var MDp = dep("MadTelhadoDes", "./madtelhadodesenhado.js"); if (MDp && MDp.payload) { var pl = MDp.payload(prep, res); if (pl) { calc.motor = pl; delete calc.pecasMotor; } }
 if (prep.tipologia) calc.tipologia = { tipo: prep.tipologia.tipo, variante: prep.tipologia.variante, auto: !!prep.tipologia.auto, criterio: prep.tipologia.criterio, fonte: prep.tipologia.fonte };
 var itOrc = arr(res.orcamento && res.orcamento.itens).filter(function (i) { return /pino|chapa|parafuso|chumbador|aço|aco|cinta|sela|cubo/i.test(String(i.descricao || "")) && !/MLC|frete|montagem|ícamento|içamento|verniz|stain/i.test(String(i.descricao || "")); });
@@ -168391,6 +168507,7 @@ preliminar: !!partes.preliminar, motivos: arr(partes.motivos).slice(0, 8), secoe
 pesoTelha: prep.pesos.telha, pesoTrama: prep.pesos.total - prep.pesos.telha, pesoTotal: prep.pesos.total, modelo: prep.modelo,
 cfg: { apoio: prep.cfg.apoio || null, tesoura: prep.cfg.tesoura || null, fechamento: prep.cfg.fechamento || null, aparente: !!prep.cfg.aparente, ligacaoOculta: !!prep.cfg.ligacaoOculta, forro: !!prep.cfg.forro }
 };
+if (prep.cfg.sistema === "laco") c.cfg.sistema = "laco";
 if (partes.espApoio != null) c.espApoio = r3(partes.espApoio);
 if (partes.espTerca != null) c.espTerca = r3(partes.espTerca);
 if (ap.tipo === "pilares" && ap.pontos.length) c.pontosApoio = ap.pontos.slice(0, 48);
@@ -168436,10 +168553,14 @@ var t = achar(estado, id); if (!t) return { calculado: false, motivo: "telhado i
 var c = t.calcMadeira; if (!c) return { calculado: false };
 var lido = lerTelhado(estado, id);
 if (!lido.ok) return { calculado: true, desatualizado: true, preliminar: !!c.preliminar, motivo: lido.motivo, calc: c };
-var ap = detectarApoio(estado, lido, c.cfg || {}), nova;
+var cf = cfgEfetiva(c), ap = detectarApoio(estado, lido, cf), nova, sug = null;
 if ((c.versao || 1) === 1 && !c.motor) nova = chaveDe(lido, c.cfg || {}, ap, 1);
-else nova = chaveDe(lido, chaveCfg(c.cfg || {}, tipologiaDe(lido, ap, c.cfg || {})), ap);
-return { calculado: true, desatualizado: nova !== c.chave, preliminar: !!c.preliminar, calc: c, chaveNova: nova };
+else nova = chaveDe(lido, chaveCfg(cf, tipologiaDe(lido, ap, cf), ap), ap);
+if (cf !== (c.cfg || {}) && lido.tipo === "T2" && ap.tipo === "pilares") {
+var pt = pilaresTesoura(lido, ap, ext({}, c.cfg || {}));
+if (pt && pt.ok) sug = { tesoura: true, texto: "Este telhado de 2 águas sobre pilares foi calculado pelo laço de vigas + terças. Os pilares do modelo encaixam na TESOURA T2 apoiada no frechal (PRELIMINAR): o cálculo atual foi mantido; use \"Trocar para tesoura\" para recalcular." };
+}
+return { calculado: true, desatualizado: nova !== c.chave, preliminar: !!c.preliminar, calc: c, chaveNova: nova, sugestaoTesoura: sug };
 }
 function pecasCalculadas(t) {
 var out = {}; arr(t && t.pacote && t.pacote.pecas).forEach(function (o) { if (!o.calc) return; var k = o.p; out[k] = out[k] || { n: 0, b: o.w, h: o.h, m: 0 }; out[k].n++; out[k].m += o.L || 0; });
@@ -168460,7 +168581,7 @@ VERSAO: VERSAO, GRADE_TERCA: GRADE_TERCA, GRADE_CAIBRO: GRADE_CAIBRO, MAPA_GRUPO
 lerTelhado: lerTelhado, lerTelhadoObj: lerTelhadoObj, axisLido: axisLido, tipologiaDe: tipologiaDe, detectarApoio: detectarApoio, modeloMadeira: modeloMadeira, trama: trama, pesos: pesos, lacoVigas: lacoVigas,
 preparar: preparar, concluirMotor: concluirMotor, concluirLaco: concluirLaco, rodarLaco: rodarLaco, proximaTentativa: proximaTentativa, calcularSync: calcularSync,
 secoesDoMotor: secoesDoMotor, pecasDoMotor: pecasDoMotor, opAplicar: opAplicar, opLimpar: opLimpar, situacao: situacao, pecasCalculadas: pecasCalculadas, encaixe: encaixe, resumo: resumo, chaveDe: chaveDe,
-montarEstadoMadeira: montarEstadoMadeira, vaosDosPontos: vaosDosPontos
+cfgEfetiva: cfgEfetiva, montarEstadoMadeira: montarEstadoMadeira, vaosDosPontos: vaosDosPontos, pilaresTesoura: pilaresTesoura, pilaresDoModelo: pilaresDoModelo
 };
 global.MadCobertura = MadCobertura;
 if (typeof module !== "undefined" && module.exports) module.exports = MadCobertura;
@@ -168506,7 +168627,7 @@ if (lido.tipo === "T1") {
 R.criterio = "1 água (vão " + virg(lido.b) + " m): sem tesoura — terças contínuas sobre as paredes/pontaletes (laço de cálculo; o T1 do módulo é o quiosque de pilares, não a cobertura de 1 água de parede)";
 R.fonte = "COBERTURA-BIM-REFERENCIA.md (decisão do sistema por apoio)"; return R;
 }
-if (!ap || !(ap.tipo === "paredes" || (ap.tipo === "pilares" && lido.tipo === "T4")) || cfg.sistema === "laco") {
+if (!ap || !(ap.tipo === "paredes" || (ap.tipo === "pilares" && (lido.tipo === "T4" || (lido.tipo === "T2" && cfg._quiosque)))) || cfg.sistema === "laco") {
 R.criterio = (lido.tipo === "T2" ? "2 águas" : "4 águas") + " com apoio " + (ap && ap.tipo || "—") + ": " + (ap && ap.tipo === "laje" ? "terças sobre pontaletes na laje" : "vigas sobre pilares + terças") + " (a tesoura só vence o vão apoiada nas paredes)";
 R.fonte = "COBERTURA-BIM-REFERENCIA.md (apoio detectado no modelo)"; return R;
 }
@@ -168529,13 +168650,17 @@ var lim = limiteFinkSimples(lido.incl), MTp = MT(), esp = tr && tr.espTerca ? tr
 if (man) {
 R.variante = cfg.tesoura; R.auto = false;
 R.criterio = "2 águas, vão " + virg(lido.b) + " m: tesoura " + cfg.tesoura + " escolhida pelo usuário (a automática seria " + (nF === 2 ? "Fink simples" : "Pratt") + ")";
-R.fonte = "escolha do usuário"; return R;
+R.fonte = "escolha do usuário";
+if (ap.tipo === "pilares") { R.quiosque = true; R.criterio += " — QUIOSQUE aberto: tesoura apoiada no frechal (viga) sobre os pilares do modelo"; }
+return R;
 }
+if (ap.tipo === "pilares") R.quiosque = true;
 if (nF === 2) {
 R.variante = "fink"; R.criterio = "2 águas, vão " + virg(lido.b) + " m (inclinação " + virg(lido.incl, 1) + " %): nF = " + nF + " painel(is) de alma por água (banzo superior ≤ 2,5 m) ⇒ tesoura FINK simples (W); vale até " + virg(lim) + " m de vão"; R.fonte = FONTE_FINK;
 } else {
 R.variante = "pratt"; R.criterio = "2 águas, vão " + virg(lido.b) + " m (inclinação " + virg(lido.incl, 1) + " %): nF = " + nF + " (> 2: a Fink simples só vai até " + virg(lim) + " m) ⇒ tesoura PRATT"; R.fonte = FONTE_PRATT;
 }
+if (R.quiosque) R.criterio += " — QUIOSQUE aberto: tesoura apoiada no frechal (viga) sobre os pilares do modelo";
 return R;
 }
 function arred(o) {
@@ -168555,14 +168680,72 @@ return !!m && typeof m === "object" && m.v === VERSAO && (m.tip === "T2" || m.ti
 }
 var CACHE_R = [], CACHE_M = [];
 function chaveMotor(m) { try { return JSON.stringify([m.tip, m.params, m.sec]); } catch (e) { return null; } }
+function calcularMotor(m) {
+var r;
+if (m.tip === "T4") r = resolverT4(m);
+else {
+var TPp = TP(), Mt = MT(), T3p = T3(); if (!TPp || !Mt || !T3p) throw new Error("os motores de madeira (madencaixetip/madtipologias/madt3) não carregaram");
+var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : T3p.geometria(clone(m.params));
+r = TPp.resolverT3(G, clone(m.sec)); delete r.cfg;
+}
+return r;
+}
+function guardarMotor(k, r) { if (!k) return; for (var i = CACHE_R.length - 1; i >= 0; i--) if (CACHE_R[i].k === k) CACHE_R.splice(i, 1); CACHE_R.unshift({ k: k, r: r }); if (CACHE_R.length > 4) CACHE_R.length = 4; }
+function emCache(m) { var k = chaveMotor(m); if (k) for (var i = 0; i < CACHE_R.length; i++) if (CACHE_R[i].k === k) return true; return false; }
 function resolverMotor(m) {
 var k = chaveMotor(m);
 if (k) for (var i = 0; i < CACHE_R.length; i++) if (CACHE_R[i].k === k) return CACHE_R[i].r;
-if (m.tip === "T4") { var r4 = resolverT4(m); if (k) { CACHE_R.unshift({ k: k, r: r4 }); if (CACHE_R.length > 4) CACHE_R.length = 4; } return r4; }
-var TPp = TP(), Mt = MT(), T3p = T3(); if (!TPp || !Mt || !T3p) throw new Error("os motores de madeira (madencaixetip/madtipologias/madt3) não carregaram");
-var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : T3p.geometria(clone(m.params)), r = TPp.resolverT3(G, clone(m.sec));
-if (k) { CACHE_R.unshift({ k: k, r: r }); if (CACHE_R.length > 4) CACHE_R.length = 4; }
+var r = calcularMotor(m); guardarMotor(k, r); return r;
+}
+function paraTexto(r) { return JSON.stringify(r, function (k, v) { return typeof v === "number" && !isFinite(v) ? { "$nf": String(v) } : v; }); }
+function deTexto(t) {
+var r = JSON.parse(t, function (k, v) { return v && typeof v === "object" && !Array.isArray(v) && typeof v["$nf"] === "string" && Object.keys(v).length === 1 ? Number(v["$nf"]) : v; });
+if (r && r.pecas && r.espigaoDesceM != null) r.pecas._espigaoDesceM = r.espigaoDesceM;
 return r;
+}
+function semearMotor(m, texto) { var k = chaveMotor(m); if (!k) return false; guardarMotor(k, deTexto(texto)); return true; }
+function cacheMotor() { return CACHE_R.map(function (c) { return { k: c.k, r: c.r }; }); }
+var PEND = {}, FEITO = {}, CBS = {}, FORCAR = {};
+function assincrono() { return typeof global.Worker === "function" && typeof global.document !== "undefined" && !global.__madSemWorker; }
+function statusTela(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) { } }
+function verPagina() { try { var mv = /[?&]v=([^&]+)/.exec(String(global.location && global.location.search || "")); return mv ? "?v=" + mv[1] : ""; } catch (e) { return ""; } }
+function chamarPronto(k, r) { var l = CBS[k] || []; delete CBS[k]; l.forEach(function (cb) { try { cb(r); } catch (e) { } }); }
+function pendentes() { return Object.keys(FORCAR).length; }
+function completarAgora() { var ks = Object.keys(FORCAR), n = 0; ks.forEach(function (k) { var f = FORCAR[k]; if (f) { f(); n++; } }); return n; }
+function aquecer(motor, aoPronto, opc) {
+opc = opc || {};
+var k = chaveMotor(motor);
+if (!k || !payloadValido(motor)) { if (aoPronto) aoPronto({ ok: false, motivo: "sem geometria do motor" }); return false; }
+if (emCache(motor)) { if (aoPronto) aoPronto({ ok: true, cache: true }); return false; }
+if (aoPronto) (CBS[k] = CBS[k] || []).push(aoPronto);
+if (PEND[k]) return true;
+var fabrica = opc.criarWorker || (assincrono() && !FEITO[k] ? function () { return new global.Worker("js/madengworker.js" + verPagina()); } : null), wk = null, tm = null;
+function fim() { if (tm) { try { clearTimeout(tm); } catch (e) { } tm = null; } try { if (wk && wk.terminate) wk.terminate(); } catch (e2) { } wk = null; }
+function sincrono(motivo) {
+fim(); delete PEND[k]; delete FORCAR[k]; FEITO[k] = true;
+var ok = true, msg = null; try { resolverMotor(motor); } catch (e) { ok = false; msg = e && e.message ? e.message : String(e); }
+if (!opc.silencioso) statusTela(ok ? "Madeira do motor: geometria pronta." : "Madeira do motor: " + msg);
+chamarPronto(k, { ok: ok, sincrono: true, motivo: ok ? motivo : msg });
+}
+if (!fabrica) { sincrono(null); return false; }
+PEND[k] = true; FORCAR[k] = function () { delete CBS[k]; sincrono("forçado: alguém precisa da geometria agora"); };
+if (!opc.silencioso) statusTela("Madeira do motor: calculando…");
+try { wk = fabrica(); } catch (eW) { wk = null; }
+if (!wk) { sincrono("o navegador recusou o processo paralelo"); return false; }
+wk.onmessage = function (ev) {
+var m = ev && ev.data || {};
+if (m.tipo === "fim-geometria") {
+var ok = false, msg = null; fim();
+try { ok = semearMotor(motor, m.texto); } catch (e) { ok = false; msg = e && e.message ? e.message : String(e); }
+if (!ok) { sincrono(msg || "resultado do Worker ilegível"); return; }
+delete PEND[k]; delete FORCAR[k]; FEITO[k] = true; if (!opc.silencioso) statusTela("Madeira do motor: geometria pronta.");
+chamarPronto(k, { ok: true, worker: true, ms: m.ms });
+} else if (m.tipo === "erro") sincrono(m.mensagem || "o Worker falhou");
+};
+wk.onerror = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); sincrono("o processo paralelo falhou"); };
+if (typeof setTimeout === "function") tm = setTimeout(function () { if (PEND[k]) sincrono("o processo paralelo não respondeu em " + Math.round((opc.tempoMs || 60000) / 1000) + " s"); }, opc.tempoMs || 60000);
+try { wk.postMessage({ tipo: "geometria", id: k.length, motor: { v: motor.v, tip: motor.tip, variante: motor.variante, params: motor.params, sec: motor.sec } }); } catch (eP) { sincrono("não consegui enviar ao processo paralelo"); return false; }
+return !!PEND[k];
 }
 function resolverT4(m) {
 var Me = ME(), T4m = dep("MadT4", "./madt4.js"), LG = dep("MadT4Lig", "./madt4lig.js"); if (!Me || !T4m || !LG) throw new Error("os motores do T4 (madt4/madt4lig) não carregaram");
@@ -168664,7 +168847,9 @@ else { cmp("beiral frente", p.beiral && p.beiral.frente, be.eave[0], 0.006); cmp
 cmp("pé-direito", p.peDireito, Math.max(lido.peDireito, 1.2), 0.011);
 if (dif.length) return { ok: false, motivo: "o telhado mudou depois do cálculo (" + dif.join("; ") + "): recalcule a madeira", desatualizado: true };
 var fr = quadro(lido), cx = caixasDe(opc.caixas), paredes = cx.paredes.filter(function (w) { return w.topo >= lido.cotaApoio - 0.6 && w.base < lido.cotaApoio; });
-var chaveM = chaveMotor(motor), chaveW = chaveM ? chaveM + "|" + JSON.stringify([fr.O, fr.u, fr.v, r3(lido.cotaApoio), paredes.map(function (w) { return [w.cx, w.cz, w.ux, w.uz, w.hx, w.hz, w.base, w.topo]; }), opc.vaos || null]) : null;
+var chaveM = chaveMotor(motor), chaveW = chaveM ? chaveM + "|" + JSON.stringify([motor.apoio || null, fr.O, fr.u, fr.v, r3(lido.cotaApoio), paredes.map(function (w) { return [w.cx, w.cz, w.ux, w.uz, w.hx, w.hz, w.base, w.topo]; }), opc.vaos || null,
+cx.paredes.map(function (w) { return [w.id, w.cx, w.cz, w.ux, w.uz, w.hx, w.hz, w.base, w.topo]; }), cx.lajes.map(function (l) { return [l.id, l.tipo, l.base, l.topo, l.poli]; }),
+arr(opc.caixas).filter(function (c) { return c && c.tipo === "pilar"; }).map(function (c) { return [c.id, c.cx, c.cy, c.cz, c.comprimento, c.espessura, c.altura, c.material || c.mat || null]; }), opc.H0 == null ? null : r3(num(opc.H0, 0))]) : null;
 if (chaveW) for (var ic = 0; ic < CACHE_M.length; ic++) if (CACHE_M[ic].k === chaveW) return CACHE_M[ic].r;
 var Rm; try { Rm = resolverMotor(motor); } catch (e) { return { ok: false, motivo: "o motor de encaixes falhou: " + (e && e.message ? e.message : e) }; }
 var frMin = Infinity; Rm.pecas.forEach(function (P) { if (P.g !== "FR" || P.aco) return; arr(Me.vertices(Me.solidoDe(P))).forEach(function (q) { if (q[2] < frMin) frMin = q[2]; }); });
@@ -168680,6 +168865,7 @@ var papel = PAPEL[P.g]; if (!papel) return;
 var ext = Me.extensaoAxial(P); if (!ext) return;
 var pm = [(P.p0[0] + P.p1[0]) / 2, (P.p0[1] + P.p1[1]) / 2, 0], pw = W([pm[0], pm[1], 0]);
 var naParede = paredes.some(function (w) { return noRet(w, pw[0], pw[2], 0.25); });
+if (motor.tip === "T2" && motor.apoio === "pilares" && papel === "pilar") { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "usa o pilar do modelo nessa linha (T2 quiosque sobre pilares: o frechal e as tesouras assentam nele)" + (motor.sec && motor.sec.P ? "; pilar calculado " + virg(num(motor.sec.P.b != null ? motor.sec.P.b : motor.sec.P.d, 0) * 100, 0) + "×" + virg(num(motor.sec.P.h != null ? motor.sec.P.h : motor.sec.P.d, 0) * 100, 0) + " cm: o do modelo tem de ser igual ou maior" : "") }); return; }
 if (motor.tip === "T4" && motor.apoio === "pilares" && papel === "pilar") { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "usa o pilar do modelo nesse vértice (T4 aberto sobre pilares)" + (motor.sec && motor.sec.P ? "; pilar calculado " + virg(num(motor.sec.P.b != null ? motor.sec.P.b : motor.sec.P.d, 0) * 100, 0) + "×" + virg(num(motor.sec.P.h != null ? motor.sec.P.h : motor.sec.P.d, 0) * 100, 0) + " cm: o do modelo tem de ser igual ou maior" : "") }); return; }
 if (papel === "pilar" && paredes.some(function (w) { return apoioParede(w, pw[0], pw[2], opc.vaos); })) { sobParede++; descartadas.push({ id: P.id, g: P.g, motivo: "pilar sobre parede do modelo: o frechal assenta na parede" }); return; }
 if (naParede && P.g === "DP") { dpParede++; descartadas.push({ id: P.id, g: P.g, motivo: "contraventamento de madeira DENTRO da parede de alvenaria do modelo (a parede contraventa)" }); return; }
@@ -168713,7 +168899,7 @@ if (TOPO_PLANO[P.g]) { if (dz > D) D = dz; } else if (dz > dzE) dzE = dz;
 if (!pecas.length) return { ok: false, motivo: "o motor não devolveu peças" };
 if (!isFinite(D)) D = 0;
 if (isFinite(dzE) && dzE > D + 0.01) avisos.push("o espigão passa " + virg((dzE - D) * 100, 1) + " cm do plano das terças (aresta a desbastar no canteiro): os caibros cruzam esse trecho");
-if (sobParede) avisos.push(motor.tip === "T4" && motor.apoio === "pilares" ? sobParede + " pilar(es) do motor NÃO viram peça: o frechal assenta nos pilares do modelo, nos vértices" : sobParede + " pilar(es) do motor ficam SOBRE parede do modelo: o frechal assenta na parede e não se cria pilar");
+if (sobParede) avisos.push((motor.tip === "T4" || motor.tip === "T2") && motor.apoio === "pilares" ? sobParede + " pilar(es) do motor NÃO viram peça: o frechal assenta nos pilares do modelo, " + (motor.tip === "T4" ? "nos vértices" : "nas linhas das tesouras") : sobParede + " pilar(es) do motor ficam SOBRE parede do modelo: o frechal assenta na parede e não se cria pilar");
 if (dpParede) avisos.push(dpParede + " diagonal(is) de contraventamento da parede (DP) NÃO viram peça: ficariam dentro da parede de alvenaria — a verificação da estabilidade das paredes fica com o RT (PRELIMINAR)");
 avisos.unshift("Cota: a estrutura do motor SOBE " + virg(s * 100, 1) + " cm sobre a cota de apoio (o frechal assenta no topo da parede) e a telha fica " + virg(D * 100, 1) + " cm acima do plano do telhado desenhado — uma superfície só (a telha do pacote É a telha do telhado; nada é desenhado duas vezes).");
 var conf = conferirEncontros(pecas, cx, { H0: H0 });
@@ -168844,7 +169030,7 @@ out.ok = !!(out.memorial && out.memorial.ok);
 return out;
 }
 var MadTelhadoDes = { VERSAO: VERSAO, PAPEL: PAPEL, escolher: escolher, limiteFinkSimples: limiteFinkSimples, payload: payload, payloadValido: payloadValido, geometriaMundo: geometriaMundo,
-conferirEncontros: conferirEncontros, caixasDe: caixasDe, quadro: quadro, migrar: migrar, migrarTudo: migrarTudo, volumeAssinado: volumeAssinado, resolverMotor: resolverMotor, estadoDoModulo: estadoDoModulo, solicitar: solicitar, saidas: saidas };
+conferirEncontros: conferirEncontros, caixasDe: caixasDe, quadro: quadro, migrar: migrar, migrarTudo: migrarTudo, volumeAssinado: volumeAssinado, resolverMotor: resolverMotor, calcularMotor: calcularMotor, semearMotor: semearMotor, paraTexto: paraTexto, deTexto: deTexto, emCache: emCache, aquecer: aquecer, pendentes: pendentes, completarAgora: completarAgora, assincrono: assincrono, cacheMotor: cacheMotor, estadoDoModulo: estadoDoModulo, solicitar: solicitar, saidas: saidas };
 global.MadTelhadoDes = MadTelhadoDes;
 if (typeof module !== "undefined" && module.exports) module.exports = MadTelhadoDes;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -168924,8 +169110,8 @@ s.src = "js/" + arq + (versao() ? "?v=" + encodeURIComponent(versao()) : ""); s.
 });
 }
 function cfgDe(t) {
-var c = t && t.calcMadeira && t.calcMadeira.cfg ? t.calcMadeira.cfg : null, p = UI_ESTADO.pref;
-return { apoio: c ? c.apoio : p.apoio, tesoura: c ? c.tesoura : p.tesoura, fechamento: c ? c.fechamento : p.fechamento, aparente: c ? !!c.aparente : p.aparente, ligacaoOculta: c ? !!c.ligacaoOculta : p.ligacaoOculta, forro: c ? !!c.forro : p.forro };
+var c = t && t.calcMadeira && t.calcMadeira.cfg ? (MC() && MC().cfgEfetiva ? MC().cfgEfetiva(t.calcMadeira) : t.calcMadeira.cfg) : null, p = UI_ESTADO.pref;
+return { sistema: c ? c.sistema : null, apoio: c ? c.apoio : p.apoio, tesoura: c ? c.tesoura : p.tesoura, fechamento: c ? c.fechamento : p.fechamento, aparente: c ? !!c.aparente : p.aparente, ligacaoOculta: c ? !!c.ligacaoOculta : p.ligacaoOculta, forro: c ? !!c.forro : p.forro };
 }
 function pedirLocal(depois) {
 var ov = janela("Onde é a obra?", '<p>O vento da cobertura (NBR 6123) sai do V0 do local. Digite as <b>coordenadas</b> da obra (ex.: <code>−19,92 −43,94</code>) ou cole o link do mapa.</p>' +
@@ -169015,6 +169201,8 @@ h += '<table style="border-collapse:collapse;font-size:12px;margin:6px 0"><tr><t
 if (c.espApoio) h += "<p style=\"margin:0 0 6px\">Apoios a no máximo <b>" + virg(c.espApoio) + " m</b> (escolhido pelo laço de cálculo); terças a " + virg(c.espTerca) + " m (vão da telha / caibro).</p>";
 if (c.eta) h += "<p style=\"margin:0 0 6px;font-size:12px\">Aproveitamento (η): " + Object.keys(c.eta).filter(function (k) { return c.eta[k] != null; }).map(function (k) { return esc(k) + " " + virg(c.eta[k], 3); }).join("; ") + ".</p>";
 if (c.tipologia) h += "<p style=\"margin:0 0 6px\">Tipologia: <b>" + esc(c.tipologia.tipo) + (c.tipologia.variante ? " · tesoura " + esc(c.tipologia.variante) : "") + "</b> (" + (c.tipologia.auto ? "automática pela forma e pelo vão" : "escolhida") + "). " + esc(c.tipologia.criterio || "") + (c.tipologia.fonte ? ' <span style="font-size:11px;color:#6b7280">Fonte: ' + esc(c.tipologia.fonte) + "</span>" : "") + "</p>";
+var sg = tid && MC() ? MC().situacao(estado() || {}, tid).sugestaoTesoura : null;
+if (sg) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Sugestão:</b> " + esc(sg.texto) + ' <button type="button" class="btn" data-mcob-acao="tesoura">Trocar para tesoura</button></p>';
 if (c.sugestao) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Sugestão:</b> " + esc(c.sugestao) + "</p>";
 if (c.motor && tid) { var dz = deslocamentoTxt(tid); if (dz) h += "<p style=\"margin:0 0 6px;font-size:12px;color:#b9770e\"><b>Cota:</b> " + esc(dz) + "</p>"; }
 if (c.motor) h += "<p style=\"margin:0 0 6px;font-size:12px\">As peças do modelo são os <b>membros do motor</b> com os sólidos cortados (encaixe de carpinteiro)" + (c.motor.origem === "migrado" ? ' — <b>MIGRADO</b> do cálculo anterior (cópia guardada): use <b>Recalcular</b> para fechar o cálculo' : "") + ".</p>";
@@ -169031,6 +169219,7 @@ var ov = janela("Madeira calculada — telhado " + tid, htmlResultado(tid, c)); 
 ov.addEventListener("click", function (ev) {
 var a = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-mcob-acao") : null; if (!a) return;
 if (a === "recalcular") calcular(tid, {});
+if (a === "tesoura") calcular(tid, { cfg: { sistema: "tesoura", aparente: false } });
 if (a === "saidas") gerarSaidas(tid);
 if (a === "modulo") abrirNoModulo(tid);
 if (a === "limpar") { aplicarOps([MC().opLimpar(tid)], "mc-limpar-" + tid); status("Cálculo removido: o telhado volta às seções de partida do SINAPI."); }

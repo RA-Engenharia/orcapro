@@ -1757,7 +1757,7 @@
           if (!t || !t.ok || !t.modelo) return;
           var pk = null, tm = t;
           if (t.modo === "extrusao" && t.calcMadeira && t.calcMadeira.motor) { tm = null; try { tm = perimetroVirtual(t); } catch (eV) { tm = null; } if (!tm) { (t.avisos = t.avisos || []).push("Madeira do motor NÃO aplicada ao desenho: o perfil da extrusão deixou de ser simétrico de 2 águas (ou o retângulo virtual não fecha). O cálculo da madeira continua gravado; volte o perfil ao simétrico ou use o telhado por contorno."); tm = t; } }   /* extrusão simétrica: a estrutura é derivada do perímetro virtual; o telhado continua "perfil" */
-          try { pk = ES.modelar(tm, saida, { ctxCob: ctx.cob }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
+          try { pk = ES.modelar(tm, saida, { ctxCob: ctx.cob, assincrono: !!(ES && ES._telaViva) }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
           if (!pk) return;
           t.pacote = pk;
           if (pk.ok) {
