@@ -130,7 +130,7 @@
     "tesoura-leve": tipo("tesoura-leve", "Tesoura com coluna treliçada (perfil leve)", "Treliçado", "livre", "Galpão leve de serralheria: coluna treliçada de dois U com travejamento em cantoneira e tesoura de banzos paralelos (ou trapezoidal) em duas águas apoiada pelos dois banzos na coluna; terças em metalon.",
       comTrelica({ vao: 20, peDireito: 6, inclinacao: 10, base: "rotulada", forma: "paralelos", alturaTrelica: 0, larguraColuna: 0.30, painelColuna: 0.5, subPaineis: 0, padrao: "howe",
                    maoFrancesa: "BR 3/8\" (D 9,53 mm) Gerdau", banzoColuna: "U 100 x 40 x 4,76", travejamento: "L 25,4 x 3,17 (serie pol) ArcelorMittal", banzo: "U 100 x 40 x 3,04", diagonal: "L 25,4 x 3,17 (serie pol) ArcelorMittal", montante: "L 25,4 x 3,17 (serie pol) ArcelorMittal",
-                   terca: "TR 40 x 100 x 2 Tuper", barraCv: "BR 3/8\" (D 9,53 mm) Gerdau", pilar: "U 100 x 40 x 4,76", viga: "U 100 x 40 x 3,04" })),
+                   terca: "TR 40 x 100 x 2 Tuper", tercaBorda: "Ue 250 x 85 x 25 x 2,66", barraCv: "BR 3/8\" (D 9,53 mm) Gerdau", pilar: "U 100 x 40 x 4,76", viga: "U 100 x 40 x 3,04", escora: "TQ 80 x 80 x 2 Tuper", escoraColuna: "TQ 90 x 90 x 4 VMB" })),
     "coluna-trelicada": tipo("coluna-trelicada", "Coluna treliçada", "Industrial pesado", "livre", "Pilar treliçado (dois banzos e travejamento em zigue-zague) com viga de alma cheia: pé-direito alto e rigidez com pouco aço.", { vao: 20, peDireito: 10, larguraColuna: 0.8, banzoColuna: "W 200 x 26,6 Gerdau", travejamento: "TQ 60 x 60 x 3,6 VMB", painelColuna: 1.0, escora: "TQ 90 x 90 x 4 VMB", viga: "W 460 x 52,0 Gerdau", tapamento: "TR 250 x 150 x 7,1 VMB" })
   };
   /* o que fica NÃO VERIFICADO em cada tipologia (a tela mostra antes de gerar; o cálculo põe em "não verificados") */
@@ -216,7 +216,7 @@
     var ks = ["pilar", "terca"];
     if (t === "alma-cheia-1" || t === "alma-cheia-2" || t === "misula" || t === "atirantado" || t === "ponte" || t === "mezanino" || t === "multivao" || t === "shed" || t === "coluna-trelicada") ks.push("viga");
     if (/^trelica|^tesoura/.test(t)) ks = ks.concat(["banzo", "diagonal", "montante", "escora"]);
-    if (t === "tesoura-leve") ks = ks.concat(["banzoColuna", "travejamento"]).concat(p.maoFrancesa ? ["maoFrancesa"] : []);
+    if (t === "tesoura-leve") ks = ks.concat(["banzoColuna", "travejamento", "escoraColuna"]).concat(p.tercaBorda ? ["tercaBorda"] : []).concat(p.maoFrancesa ? ["maoFrancesa"] : []);
     if (p.fechamento === "fechado") ks.push("tapamento");
     if (p.correntes > 0) ks.push("barraCorrente");
     if (p.contraventamento === "X-barra") ks.push("barraCv"); else if (p.contraventamento === "X-cantoneira") ks.push("cantoneiraCv");
@@ -710,7 +710,11 @@
       if (k + 1 >= nP) return;
       Q.tel.forEach(function (tl, j) {
         var a = no("t" + k + ":" + j, tl.x, tl.y, z), b = no("t" + (k + 1) + ":" + j + "'", tl.x, tl.y, zs[k + 1]);
-        var o = barra({ a: a, b: b, ferr: "terca", cat: p.terca, just: "base", giro: tl.giro, papel: "Terça", grupo: "terca", aco: acoDe(p, p.terca), nome: "Terça " + (j + 1) + " — vão " + (k + 1), calc: {} });
+        /* TERÇA DE BORDA (tesoura leve, 20/11): as que caem nas faixas de borda do cpe médio da NBR 6123 (largura y = h ou 0,15·b,
+           o menor — a MESMA regra do js/acovento.js) ao longo dos beirais e dos oitões levam perfil próprio; as internas, o seu */
+        var cT = p.terca, yF = Math.min(p.peDireito, 0.15 * p.vao), ehBorda = !!p.tercaBorda && (tl.x < yF - 1e-6 || tl.x > p.vao - yF + 1e-6 || zs[k] < yF - 1e-6 || zs[k + 1] > zs[nP - 1] - yF + 1e-6);
+        if (ehBorda) cT = p.tercaBorda;
+        var o = barra({ a: a, b: b, ferr: "terca", cat: cT, just: "base", giro: tl.giro, papel: ehBorda ? "Terça de borda" : "Terça", grupo: "terca", aco: acoDe(p, cT), nome: (ehBorda ? "Terça de borda " : "Terça ") + (j + 1) + " — vão " + (k + 1), calc: {} });
         (tl.aguas || [tl.agua]).forEach(function (ag) { (tercasPorAgua[ag] = tercasPorAgua[ag] || []).push(o.id); });
       });
     });
@@ -759,7 +763,7 @@
     });
     if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água e ANCORADAS por corrente diagonal até a terça da cumeeira no pórtico (" + nAncC + " diagonais) — travam as terças no eixo fraco" + (catsAnc.length ? " — diagonal de ancoragem " + catsAnc.join(", ") + " (A ≥ A da corrente/(n·cos β): leva a força da linha / cos β)" : "") + (p.correntesAuto ? "; " + p.correntes + " linha(s) pela regra do cálculo: o trecho do eixo fraco entre correntes ancoradas até " + String(LIMITE_LZ_CORRENTE).replace(".", ",") + " m (vão " + String(esp).replace(".", ",") + " m / " + (p.correntes + 1) + ")" : " (escolha do engenheiro)") + ".");
     /* escoras do banzo de baixo (treliças) */
-    zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + es.pt, ferr: "viga", cat: p.escora, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, p.escora), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
+    zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { var cE = es.coluna && p.escoraColuna ? p.escoraColuna : p.escora; barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + es.pt, ferr: "viga", cat: cE, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, cE), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
     /* MÃOS-FRANCESAS (tesoura leve): de cada nó do banzo de baixo sob uma terça até a terça, a ±a ao longo do comprimento
        (a = a distância vertical: 45°), em par — barra redonda só de tração: quando o banzo de baixo comprimido (sucção) tenta
        sair do plano, a mão-francesa do outro lado traciona e o segura na terça */
@@ -1045,7 +1049,37 @@
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + " " + h + '" width="' + w + '" height="' + h + '" data-tipologia="' + esc(t) + '" role="img" aria-label="' + esc(TIPOS[t].rotulo) + '">' + base + lin.join("") + ter.join("") + "</svg>";
   }
 
-  var MetalPorticos = { TIPOS: TIPOS, ORDEM: ORDEM, COMUM: COMUM, PADROES: PADROES, padrao: padrao, normalizar: normalizar, validar: validar, motorDe: motorDe, modelo: modelo, gerar: gerar,
+  /* ================================================================ PRÉ-CONFIGURAÇÕES (20/11/2026)
+   * "Pedido Gabriel" (Metalúrgica Alumetal, Castanhal-PA): galpão 20 m de frente × 30 m de fundo em tesoura leve, 6 pórticos a
+   * cada 6 m, pé-direito 6 e 8 m, com e sem estrutura solar (+0,15 kN/m² permanente, premissa editável), com os perfis que JÁ
+   * PASSARAM no cálculo (docs/alumetal/COMPARATIVO.md, seção 11). O vento é o de Castanhal (−1,30; −47,92), categoria II. */
+  var PRESETS = {
+    "pedido-gabriel": {
+      rotulo: "Pedido Gabriel — galpão 20 × 30 m (Alumetal)", tipo: "tesoura-leve",
+      base: { vao: 20, nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
+              diagonal: "TQ 50,8 x 50,8 x 1,25 Tuper", montante: "TQ 60 x 60 x 1,11 Tuper", travejamento: "TQ 38 x 38 x 0,95 Tuper",
+              terca: "Ue 250 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", banzoColuna: "U 300 x 100 x 3,75", banzo: "TR 50 x 100 x 3,75 Tuper",
+              escora: "TQ 80 x 80 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB", tapamento: "TR 250 x 100 x 6,4 VMB",
+              barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "BR 1/2\" (D 12,70 mm) Gerdau",
+              vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },
+      solar: 0.15, instalacoes: 0.10,
+      variantes: [{ id: "pd8-sem-solar", rotulo: "PD 8 m, sem solar", peDireito: 8, solar: false }, { id: "pd8-solar", rotulo: "PD 8 m, com solar", peDireito: 8, solar: true },
+                  { id: "pd6-sem-solar", rotulo: "PD 6 m, sem solar", peDireito: 6, solar: false }, { id: "pd6-solar", rotulo: "PD 6 m, com solar", peDireito: 6, solar: true }]
+    }
+  };
+  function presetPar(id, vid) {
+    var P = PRESETS[id]; if (!P) return null;
+    var v = P.variantes.filter(function (x) { return x.id === vid; })[0] || P.variantes[0], p = clone(P.base);
+    p.peDireito = v.peDireito; p.permanenteExtra = r6(P.instalacoes + (v.solar ? P.solar : 0));
+    return p;
+  }
+  /* as 4 variantes lado a lado no modelo (x0 = i·(vão + 10 m)) */
+  function presetVariantes(id) {
+    var P = PRESETS[id]; if (!P) return [];
+    return P.variantes.map(function (v, i) { var p = presetPar(id, v.id); p.x0 = i * (p.vao + 10); return { id: v.id, rotulo: v.rotulo, tipo: P.tipo, par: p }; });
+  }
+
+  var MetalPorticos = { PRESETS: PRESETS, presetPar: presetPar, presetVariantes: presetVariantes, TIPOS: TIPOS, ORDEM: ORDEM, COMUM: COMUM, PADROES: PADROES, padrao: padrao, normalizar: normalizar, validar: validar, motorDe: motorDe, modelo: modelo, gerar: gerar,
                         misulaMedidas: misulaMedidas, tolLeitor: tolLeitor, parGalpaoBIM: parGalpaoBIM, parGalpao: parGalpao, entradaLivre: entradaLivre, presetLivre: presetLivre, NAO_VERIFICA: NAO_VERIFICA, calcular: calcular, esquema: esquema, consoleCota: consoleCota };
   global.MetalPorticos = MetalPorticos;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalPorticos;

@@ -53,7 +53,7 @@
     if (t === "tesoura-leve") {
       c.push(["forma", "Tesoura", "sel", [["paralelos", "Banzos paralelos (duas águas)"], ["trapezoidal", "Trapezoidal (banzo de baixo reto)"]]], ["padrao", "Alma", "sel", [["howe", "Montante em todo nó, diagonais descendo para o meio"], ["warren", "Warren (montante só nas terças: banzo de cima com painel dobrado)"]]],
              ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/20)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
-             ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_U.concat(S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["montante", "Perfil dos montantes (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["escora", "Escora longitudinal (banzo de baixo e coluna)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
+             ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_U.concat(S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["montante", "Perfil dos montantes (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
              ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
     }
     else if (/^trelica|^tesoura/.test(t)) {
@@ -72,7 +72,8 @@
       ["rodaMax", "Reação MÁX. por roda, com impacto (kN) — fabricante", "num"], ["rodaMin", "Reação mín. por roda (kN) — fabricante", "num"], ["rodaTransv", "Força transversal por roda (kN) — fabricante", "num"], ["forcaLong", "Força longitudinal por trilho (kN) — fabricante", "num"], ["entreEixos", "Distância entre as rodas de um lado (m)", "num"], ["capacidade", "Capacidade da ponte (t) — só dado", "num"]);
     if (t === "mezanino") c.push(["largura", "Largura do mezanino (m, da lateral esquerda)", "num"], ["cotaPiso", "Cota do piso — topo do aço (m)", "num"], ["espSec", "Espaçamento das secundárias (m)", "num"], ["vigaMez", "Viga do mezanino", "cat", S_PRINC], ["secMez", "Secundária do mezanino", "cat", S_PRINC], ["pilarMez", "Pilar do mezanino", "cat", S_PRINC.concat(S_TUBO)],
       ["uso", "Uso do piso (NBR 6120, Tabela 10)", "sel", usos()], ["qInformado", "Sobrecarga informada (kN/m²; só se o uso pede)", "num"], ["gPiso", "Permanente do piso (kN/m²)", "num"]);
-    c.push(["terca", "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
+    if (t === "tesoura-leve") c.push(["tercaBorda", "Terça das faixas de borda (vento local, NBR 6123)", "cat", S_TERCA.concat(["TUPER-TR"])]);
+    c.push(["terca", t === "tesoura-leve" ? "Perfil das terças internas" : "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
     c.push(["tapamento", "Coluna de tapamento (oitão fechado)", "cat", S_TUBO.concat(S_PRINC)]);
     if (true) c.push(["barraCv", "Barra do X (contraventamento)", "cat", S_BARRA], ["cantoneiraCv", "Cantoneira do X (contraventamento)", "cat", S_L]);
     c.push(["x0", "Origem X (m)", "num"], ["z0", "Origem Z (m)", "num"], ["cota", "Cota da base (m)", "num"]);
@@ -154,6 +155,11 @@
       var raiz = document.querySelector('[data-mpo="dlg"]'); this._dlg.raiz = raiz;
       if (raiz) {
         raiz.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-mpo-tipo]") : null; if (b && !self._dlg.alvo) self.trocarTipo(b.getAttribute("data-mpo-tipo")); });
+        raiz.addEventListener("click", function (ev) {
+          var c = ev.target && ev.target.closest, b1 = c ? ev.target.closest("[data-mpo-preset]") : null, b4 = c ? ev.target.closest("[data-mpo-preset4]") : null;
+          if (b1) { var q = b1.getAttribute("data-mpo-preset").split(":"); self.usarPreset(q[0], q[1]); }
+          if (b4) self.gerarPreset4(b4.getAttribute("data-mpo-preset4"));
+        });
         var tm = null;
         raiz.addEventListener("input", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) { clearTimeout(tm); tm = setTimeout(function () { self.previa(); }, 200); } });
         raiz.addEventListener("change", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) self.previa(); });
@@ -187,7 +193,21 @@
         else h += '<input data-mpo-c="' + id + '" inputmode="decimal" value="' + esc(v === "" || v == null ? "" : br(v, c[2] === "int" ? 0 : 3)) + '">';
         h += "</label>";
       });
+      /* pré-configuração "Pedido Gabriel" (tesoura leve): uma variante no formulário, ou as 4 lado a lado no modelo */
+      var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
+      if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
+        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button></div>' + h;
       if (el) el.innerHTML = h;
+    },
+    /* a variante no formulário */
+    usarPreset: function (id, vid) { var d = this._dlg, M = MP(); if (!d || !M) return false; var p = M.presetPar(id, vid); if (!p) return false; d.par = M.normalizar(M.PRESETS[id].tipo, p); this.desenharCampos(); this.previa(); return true; },
+    /* as 4 variantes no modelo (sem calcular: cada uma se calcula pela tela de cálculo, uma por vez) */
+    gerarPreset4: function (id) {
+      var M = MP(); if (!M) return []; var vs = M.presetVariantes(id), out = [], self = this;
+      try { UI.fecharModal(); } catch (e) {} this._dlg = null;
+      vs.forEach(function (v) { var r = self.criar(v.tipo, v.par, { calcular: false }); out.push({ id: v.id, ok: !!(r && r.ok !== false) }); });
+      toast("Pedido Gabriel: " + out.filter(function (x) { return x.ok; }).length + " de " + vs.length + " variantes criadas lado a lado (PD 8/6 m, com/sem solar).", "ok", 8000);
+      return out;
     },
     ler: function () {
       var d = this._dlg; if (!d) return null;

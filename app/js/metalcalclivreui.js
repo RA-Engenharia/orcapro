@@ -242,7 +242,7 @@
         '<main class="ml-palco" data-ml-passo="' + U.passo + '">' + (U.passo === 1 ? passoEstrutura() : U.passo === 2 ? passoCargas() : passoCalcular()) + "</main></div>" +
         '<footer class="ml-rod"><span class="ml-msg">' + esc(U.passo === 3 ? "O sistema decide nós, flambagem e travamentos; o que ele não sabe vira aviso, nunca número chutado." : "Os dados ficam salvos na obra.") + "</span>" +
         (U.passo > 1 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo - 1) + '">Voltar</button>' : "") +
-        (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button></footer>";
+        (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button>" + '<button class="ml-bt" data-ml-acao="corrigir" title="Calcula, troca toda peça que não passa pelo perfil mais leve da mesma família que atende (e alivia a que tem folga), refaz até fechar e aplica no modelo (Ctrl+Z desfaz)"' + (U.calculando ? " disabled" : "") + ">Calcular e corrigir</button></footer>";
     } else if (U.modo === "calculando") {
       h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
     } else if (U.modo === "resultado") {
@@ -486,7 +486,7 @@
       : '<div class="ml-prob" data-ml="nao-verificado"><h4>Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") + "</div>";
     if (U.ligAuto && U.ligAuto.r === r && global.MetalLigAutoUI) { try { h += MetalLigAutoUI.quadroHtml(U.ligAuto); } catch (eQ) {} }
     var ajC = ajustesCota(); if (ajC.length) h += '<div class="ml-card" data-ml="ajuste-cota" style="border-color:var(--ml-aviso)"><h4>Ajuste de cota das fundações</h4><ul class="ml-l">' + ajC.map(function (x) { return '<li class="ml-aviso">' + esc(x.texto) + "</li>"; }).join("") + '</ul><button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="ajustar-topos">Ajustar o topo das fundações (' + ajC.length + ")</button></div>";
-    if (r.trocas) h += '<div class="ml-card" data-ml="trocas" style="border-color:var(--ml-aco)"><b>' + r.trocas + " peça(s) com perfil novo</b> (o mais leve que passa): " + esc(Object.keys(r.pecas).filter(function (k) { return r.pecas[k].mudou; }).map(function (k) { return r.pecas[k].membro + " " + r.pecas[k].de + " → " + r.pecas[k].para; }).slice(0, 12).join("; ")) + (r.aplicado ? ' <span class="ml-chip ok">aplicado no modelo</span>' : ' — <button class="ml-bt mini pri" data-ml-acao="aplicar">Aplicar os perfis no modelo</button>') + "</div>";
+    if (r.trocas) h += '<div class="ml-card" data-ml="trocas" style="border-color:var(--ml-aco)"><b>' + r.trocas + " peça(s) com perfil novo</b> (o mais leve que passa): " + esc(Object.keys(r.pecas).filter(function (k) { return r.pecas[k].mudou; }).map(function (k) { var mb = r.membros && r.membros[r.pecas[k].membro]; return r.pecas[k].membro + " " + r.pecas[k].de + " → " + r.pecas[k].para + (mb && isFinite(mb.razao) ? " (razão " + String(Math.round(mb.razao * 100) / 100).replace(".", ",") + ")" : ""); }).slice(0, 40).join("; ")) + (r.aplicado ? ' <span class="ml-chip ok">aplicado no modelo</span>' : ' — <button class="ml-bt mini pri" data-ml-acao="aplicar">Aplicar os perfis no modelo</button>') + "</div>";
     h += '<div class="ml-card"><h4>Barras (estado-limite último e deslocamentos)</h4><table class="ml-t" data-ml="barras"><thead><tr><th>Barra</th><th>Peça</th><th>Perfil</th><th>Razão</th><th></th><th>Governa</th><th>Flecha / desloc.</th></tr></thead><tbody>' +
       r.modelo.membros.map(function (m) {
         var v = r.membros[m.id] || {}, sv = r.servico.filter(function (s) { return s.membro === m.id; }).sort(function (a, b) { return b.razao - a.razao; })[0];
@@ -602,6 +602,7 @@
     if (a === "pranchas-dxf") return baixarDxf();
     if (a === "pranchas-dwg") return explicarDwg();
     if (a === "aplicar") return aplicar();
+    if (a === "corrigir") return calcularCorrigir();
     if (a === "ver3d") return verEm3D();
     if (a === "memorial") return memorial();
     if (a === "memorial-docx") return memorialDocx();
@@ -978,11 +979,16 @@
          não mexe na linha das barras (a assinatura não muda) e mantém a família do nó como o cálculo o tratou */
       U.ligAuto = null;
       if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "erro", 8000); } }
-      U.calculando = false; U.r = r; U.modo = "resultado"; render();
+      U.calculando = false; U.r = r; U.modo = "resultado";
+      /* CALCULAR E CORRIGIR (20/11/2026): o otimizador já trocou os grupos que não passavam (e aliviou os com folga) — aplica no modelo */
+      var corr = U.corrigir; U.corrigir = false; if (corr) estado().otimizar = corr.otimizarAntes;
+      render();
+      if (corr && r && r.ok) { if (r.trocas) aplicar(); else toast("Calcular e corrigir: nenhuma peça precisou trocar.", "ok", 6000); }
       status(r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA (" + r.falhas + " falha(s))") + " — " + fmt(r.peso, 0) + " kg de aço." : "Estrutura desenhada: " + (r.motivo || "não calculou"));
     }, 40);
     return true;
   }
+  function calcularCorrigir() { var e = estado(); U.corrigir = { otimizarAntes: !!e.otimizar }; e.otimizar = true; return calcular(); }
   function aplicar() {
     var r = U.r, D = DL(), M = MU(); if (!r || !r.ok || !r.trocas || !D || !M) return;
     if (barrarVelho()) return;   /* VÍNCULOS: a troca de perfis de um modelo que já não existe */
@@ -1144,6 +1150,7 @@
       return e;
     },
     calcular: function () { if (!lic("calcular a estrutura desenhada")) return false; estado(); garantir(); return calcular(); },
+    calcularCorrigir: function () { if (!lic("calcular a estrutura desenhada")) return false; estado(); garantir(); return calcularCorrigir(); },
     /* a trava na função, para quem integra e para o teste */
     licenca: function (acao) { return lic(acao || "usar a função"); },
     resultado: function () { return U.r; },
