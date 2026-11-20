@@ -1215,6 +1215,8 @@ dl.atalhos dd { margin: 0; color: var(--texto-fraco); }
    --graf-aviso é o token certo: ele existe justamente para "atenção, em TEXTO". */
 tr.tr-aviso-insumo td { padding: 4px 16px 8px 16px !important; border-bottom: 1px solid var(--linha); background: rgba(234,88,12,.05); font-size: var(--t-peq); color: var(--graf-aviso); }
 tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+tr.tr-analitico-inline > td { padding: 0 !important; background: var(--bg-card, transparent); border-bottom: 1px solid var(--linha); }
+.an-embutido .an { padding: 8px 16px 10px; }
 .pill.sicro { background: rgba(161,98,7,.15); color: #865206; }
 .pill.seinfra { background: rgba(13,148,136,.15); color: #096c63; }
 .pill.setop { background: rgba(124,58,237,.15); color: #7027eb; }

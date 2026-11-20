@@ -70005,6 +70005,11 @@ this._plAbc = t.dataset.acao === "pl-abc" ? (this._plAbc ? "" : "1") : (this._pl
 try { localStorage.setItem("orcapro:plAbc", this._plAbc); } catch (e) {}
 this.render(); return;
 }
+if (t.dataset.acao === "pl-an-toggle" || t.dataset.acao === "pl-an-abrir" || t.dataset.acao === "pl-an-fechar" || t.dataset.acao === "pl-an-item") {
+var ocAn = this.orcAtual; if (!ocAn) return;
+this._planilhaAnaliticos(ocAn, t.dataset.acao, t.dataset.item);
+return;
+}
 if (t.dataset.acao === "pl-compacta") {
 this._plCompacta = !this._plCompacta;
 try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
@@ -76668,6 +76673,26 @@ UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + 
 aplicar();
 }
 },
+_licTextoMoCoef: function (r) {
+var m = r.moCoef || {}, sem = (m.semComposicao || []).length, semMO = (m.semMO || []).length;
+var t = "Mão de obra pelo coeficiente em " + (m.itensMO || 0) + " item(ns), com o custo da hora da tabela.";
+if (sem) t += " " + sem + " item(ns) sem composição: desconto no preço.";
+if (semMO) t += " " + semMO + " item(ns) sem mão de obra na composição: desconto no preço.";
+return t;
+},
+_planilhaAnaliticos: function (orc, acao, itemRef) {
+var cfg = Orcamento.garantirConfig(orc);
+var an = cfg.analiticosPlanilha = (cfg.analiticosPlanilha && typeof cfg.analiticosPlanilha === "object") ? cfg.analiticosPlanilha : { ativo: false, abertos: {} };
+if (!an.abertos || typeof an.abertos !== "object") an.abertos = {};
+if (acao === "pl-an-toggle") an.ativo = !an.ativo;
+else if (acao === "pl-an-abrir") { an.ativo = true; an.abertos = {}; (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (i) { an.abertos[i.id] = true; }); }); }
+else if (acao === "pl-an-fechar") an.abertos = {};
+else if (acao === "pl-an-item") {
+var id = String(itemRef || "").split("|")[1];
+if (id) { if (an.abertos[id]) delete an.abertos[id]; else an.abertos[id] = true; }
+}
+this.persistir(); this.render();
+},
 licitacaoDesconto: function () {
 var self = this, orc = this.orcAtual;
 if (!orc || typeof Licitacao === "undefined") return;
@@ -76675,7 +76700,8 @@ var licD = Licitacao.cfg(orc) || {}, tabD = (licD.leitura && licD.leitura.tabela
 var basePronta = (String(tabD.seinfra || "").trim() && typeof AnaliticoBases !== "undefined" && typeof LicitacaoDocs !== "undefined")
 ? AnaliticoBases.carregar("SEINFRA").then(function (ent) { baseAux = LicitacaoDocs.baseDe(ent && ent.pacote); return baseAux; }, function () { return null; })
 : Promise.resolve(null);
-var optsD = function () { return { incidencia: (UI.el("lic-desc-inc") || {}).value, base: baseAux }; };
+var optsD = function () { return { incidencia: (UI.el("lic-desc-inc") || {}).value, base: baseAux, moCoeficiente: !!(UI.el("lic-desc-mo") || {}).checked }; };
+var moChk = Licitacao.moCoefEscolhido(orc) ? " checked" : "";
 UI.modal("Desconto linear sobre a referência do órgão",
 '<p style="font-size:13px;margin-top:0">O percentual é sobre o preço de referência <b>com BDI</b> da planilha do órgão, no total da proposta. ' +
 'Quantidade, descrição e unidade não mudam. É possível desfazer depois.</p>' +
@@ -76683,6 +76709,7 @@ UI.modal("Desconto linear sobre a referência do órgão",
 '<div class="field"><label>Onde o desconto incide</label><select id="lic-desc-inc">' +
 '<option value="todos">Linear: igual em todos os itens</option><option value="MAT">Só no material</option>' +
 '<option value="MO">Só na mão de obra</option><option value="EQ">Só no equipamento</option></select></div>' +
+'<div class="field" id="lic-desc-mo-box"><label style="font-weight:normal;cursor:pointer"><input type="checkbox" id="lic-desc-mo"' + moChk + '> Mão de obra pelo coeficiente (mantém o custo da hora da tabela e da convenção). Material e equipamento: no preço.</label></div>' +
 '<div id="lic-desc-prev" class="muted" style="font-size:13px;min-height:54px">Informe o percentual para ver o total que resulta.</div>',
 [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -76692,7 +76719,7 @@ basePronta.then(function () {
 var r = Licitacao.aplicarDesconto(orc, pct, optsD());
 if (!r.ok) { UI.toast(r.erro, "erro"); return; }
 var g = self.persistir(); UI.fecharModal(); self.render();
-if (self._gravou(g)) UI.toast("Desconto linear de " + Util.fmtNum(r.pct, 2) + "% aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + ".", "ok");
+if (self._gravou(g)) UI.toast("Desconto linear de " + Util.fmtNum(r.pct, 2) + "% aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + "." + (r.moCoeficiente ? " " + self._licTextoMoCoef(r) : ""), "ok");
 });
 } }
 ]);
@@ -76706,6 +76733,7 @@ var s = Licitacao.simularDesconto(orc, v, optsD());
 if (!s.ok) { box.textContent = s.erro; return; }
 var h = "Total da proposta: <b>" + Util.esc(Util.fmtMoeda(s.totalAntes)) + "</b> → <b>" + Util.esc(Util.fmtMoeda(s.totalDepois)) + "</b> (" + s.itens + " item(ns)" +
 (s.semReferencia ? ", " + s.semReferencia + " sem referência ficam como estão" : "") + ").";
+if (s.moCoeficiente && s.fator == null) h += "<br>" + Util.esc(self._licTextoMoCoef(s));
 if (s.fator != null) h += "<br>" + Util.esc("Fator nos insumos: " + Util.fmtNum(s.fator, 4) + " (reduz " + Util.fmtNum((1 - s.fator) * 100, 2) + "% cada um). Desconto efetivo: " + Util.fmtNum(s.efetivo, 2) + "%.");
 if (s.semComposicao) h += "<br><b>" + s.semComposicao + " item(ns) sem composição conhecida não recebem desconto.</b>";
 if (s.auxDescontadas) h += "<br>" + Util.esc(s.auxDescontadas + " composição(ões) auxiliar(es) recebem o mesmo fator nos insumos de dentro.");
@@ -76716,8 +76744,10 @@ s.avisos.resumo.forEach(function (a) { if (a.chave === "teto" || a.chave === "ex
 box.innerHTML = h;
 };
 inp.addEventListener("input", prev);
-var incSel = UI.el("lic-desc-inc");
-if (incSel) incSel.addEventListener("change", prev);
+var incSel = UI.el("lic-desc-inc"), moChkEl = UI.el("lic-desc-mo"), moBox = UI.el("lic-desc-mo-box");
+var moVis = function () { if (moBox) moBox.style.display = (incSel && incSel.value !== "todos") ? "none" : ""; };
+if (incSel) incSel.addEventListener("change", function () { moVis(); prev(); });
+if (moChkEl) moChkEl.addEventListener("change", prev);
 basePronta.then(function () { if (UI.el("lic-desc-prev")) prev(); });
 try { inp.focus(); } catch (e) {}
 }
@@ -76909,32 +76939,33 @@ UI.modal("Desconto por item",
 'Deixe o campo do item vazio para usar o % padrão. É possível desfazer depois.</p>' +
 '<div class="field" style="max-width:200px"><label>% padrão</label><input id="lic-di-padrao" type="text" inputmode="decimal" placeholder="0" value="' + (pctPadraoInicial != null ? Util.esc(String(pctPadraoInicial).replace(".", ",")) : "") + '"></div>' +
 '<div style="overflow:auto;max-height:46vh"><table class="tbl"><thead><tr><th>Nº</th><th>Descrição</th><th>Un.</th><th>Qtd.</th><th>Base (PU c/ BDI)</th><th>% item</th><th>PU final</th><th>Total da linha</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+'<div class="field"><label style="font-weight:normal;cursor:pointer"><input type="checkbox" id="lic-di-mo"' + (Licitacao.moCoefEscolhido(orc) ? " checked" : "") + '> Mão de obra pelo coeficiente (mantém o custo da hora da tabela e da convenção). Material e equipamento: no preço.</label></div>' +
 '<div id="lic-di-prev" class="muted" style="font-size:13px;min-height:54px;margin-top:8px">Informe o % padrão ou o % de algum item para ver o total que resulta.</div>',
 [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "Aplicar desconto", classe: "primary", onClick: function () {
 var le = ler();
-var s = Licitacao.simularDescontoItens(orc, le.mapa, le.padrao);
+var s = Licitacao.simularDescontoItens(orc, le.mapa, le.padrao, { moCoeficiente: le.mo });
 if (!s.ok) { UI.toast(s.erro, "erro"); return; }
 if (!s.itens) { UI.toast("Nenhum item recebeu desconto: informe um % padrão ou o % de algum item.", "erro"); return; }
 if (!window.confirm("Aplicar o desconto em " + s.itens + " item(ns)? O total da proposta vai de " + Util.fmtMoeda(s.totalAntes) + " para " + Util.fmtMoeda(s.totalDepois) + ".")) return;
-var r = Licitacao.aplicarDescontoItens(orc, le.mapa, le.padrao);
+var r = Licitacao.aplicarDescontoItens(orc, le.mapa, le.padrao, { moCoeficiente: le.mo });
 if (!r.ok) { UI.toast(r.erro, "erro"); return; }
 var g = self.persistir(); UI.fecharModal(); self.render();
-if (self._gravou(g)) UI.toast("Desconto por item aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + ".", "ok");
+if (self._gravou(g)) UI.toast("Desconto por item aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + "." + (r.moCoeficiente ? " " + self._licTextoMoCoef(r) : ""), "ok");
 } }
 ]);
 function ler() {
 var mapa = {}, i, els = document.querySelectorAll("#modal-bg .lic-di-pct");
 for (i = 0; i < els.length; i++) { var v = String(els[i].value || "").trim(); if (v !== "") mapa[els[i].getAttribute("data-item")] = Util.num(v); }
 var p = String((UI.el("lic-di-padrao") || {}).value || "").trim();
-return { mapa: mapa, padrao: p === "" ? 0 : Util.num(p) };
+return { mapa: mapa, padrao: p === "" ? 0 : Util.num(p), mo: !!(UI.el("lic-di-mo") || {}).checked };
 }
 var timer = null;
 function prev() {
 var box = UI.el("lic-di-prev"); if (!box) return;
 var le = ler();
-var s = Licitacao.simularDescontoItens(orc, le.mapa, le.padrao);
+var s = Licitacao.simularDescontoItens(orc, le.mapa, le.padrao, { moCoeficiente: le.mo });
 if (!s.ok) { box.textContent = s.erro; return; }
 var porItem = {}; s.plano.forEach(function (x) { porItem[x.itemId] = x; });
 var trs = document.querySelectorAll("#modal-bg tr[data-lic-lin]"), i;
@@ -76945,11 +76976,12 @@ trs[i].querySelector(".lic-di-pu").textContent = Util.fmtMoeda(pu);
 trs[i].querySelector(".lic-di-tot").textContent = Util.fmtMoeda(pu * Util.num(trs[i].getAttribute("data-qtd")));
 }
 var h = "Total da proposta: <b>" + Util.esc(Util.fmtMoeda(s.totalAntes)) + "</b> → <b>" + Util.esc(Util.fmtMoeda(s.totalDepois)) + "</b> (" + s.itens + " item(ns) com desconto).";
+if (s.moCoeficiente) h += "<br>" + Util.esc(self._licTextoMoCoef(s));
 s.avisos.resumo.forEach(function (a) { if (a.chave === "teto" || a.chave === "exeq") h += "<br><b>" + Util.esc(a.texto) + "</b>"; });
 box.innerHTML = h;
 }
 var corpo = document.querySelector("#modal-bg .body");
-if (corpo) corpo.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(prev, 200); });
+if (corpo) { corpo.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(prev, 200); }); corpo.addEventListener("change", function (ev) { if (ev.target && ev.target.id === "lic-di-mo") prev(); }); }
 if (pctPadraoInicial != null) prev();
 try { var f = UI.el("lic-di-padrao"); if (f) f.focus(); } catch (e) {}
 },

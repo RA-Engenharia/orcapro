@@ -1969,11 +1969,18 @@
       var _abcBotoes = '<button class="btn sm ghost' + (_abcModo ? ' primary' : '') + '" data-acao="pl-abc" aria-pressed="' + (_abcModo ? 'true' : 'false') + '" title="' +
           (_abcModo ? 'Esconder a marca A, B ou C dos itens' : 'Marcar cada item com a classe da curva ABC: A = os itens que somam 80% do custo, B = os 15% seguintes, C = os 5% finais') + '">Curva ABC</button>' +
         (_abcModo ? '<button class="btn sm ghost' + (_abcModo === "A" ? ' primary' : '') + '" data-acao="pl-abc-a" aria-pressed="' + (_abcModo === "A" ? 'true' : 'false') + '" title="Mostrar só os itens da classe A (os poucos que decidem o preço)">Só A</button>' : '');
+      /* ANALÍTICOS NA PLANILHA: o analítico de cada item aberto embaixo dele. A escolha fica NO ORÇAMENTO
+         (config.analiticosPlanilha = { ativo, abertos: { itemId: true } }), não só na tela. */
+      var _anCfg = (orc.config && orc.config.analiticosPlanilha) || {}, _anAtivo = !!_anCfg.ativo, _anAbertos = _anCfg.abertos || {};
+      var _anBotoes = '<button class="btn sm ghost' + (_anAtivo ? ' primary' : '') + '" data-acao="pl-an-toggle" aria-pressed="' + (_anAtivo ? 'true' : 'false') + '" title="' +
+          (_anAtivo ? 'Esconder os analíticos (a composição de cada item) da planilha' : 'Mostrar o analítico (insumos, coeficientes e custos) embaixo de cada item') + '">' + (_anAtivo ? 'Ocultar analíticos' : 'Mostrar analíticos') + '</button>' +
+        (_anAtivo ? '<button class="btn sm ghost" data-acao="pl-an-abrir" title="Abrir o analítico de todos os itens">Abrir todos</button><button class="btn sm ghost" data-acao="pl-an-fechar" title="Fechar o analítico de todos os itens">Fechar todos</button>' : '');
       var html = '<div class="flex between mb"><div>' +
         (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
           (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
         '</div><div style="display:flex;gap:6px;align-items:flex-start">' +
         '<!--colmenu-->' +
+        _anBotoes +
         _abcBotoes +
         '<button class="btn sm ghost pl-ajuda" data-acao="pl-atalhos" aria-label="Atalhos da planilha" title="Atalhos de teclado e seleção de várias linhas">?</button>' +
         '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
@@ -2232,6 +2239,7 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
+              (_anAtivo ? '<button class="btn sm ico" data-acao="pl-an-item" data-item="' + e.id + '|' + it.id + '" aria-pressed="' + (_anAbertos[it.id] ? 'true' : 'false') + '" title="' + (_anAbertos[it.id] ? 'Fechar' : 'Abrir') + ' o analítico deste item">' + (_anAbertos[it.id] ? '\u25BE' : '\u25B8') + '</button>' : '') +
               (typeof OrcPrecosUI !== "undefined" ? OrcPrecosUI.botaoHtml(e.id, it) : "") +
               (Util.num(it.custoUnitario) > 0 && !(UI._insSemPreco && UI._insSemPreco(it)) ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
               (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
@@ -2249,6 +2257,9 @@
             if (nSem > 0) {
               out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + (_abcFora ? " abc-fora" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
             }
+          }
+          if (_anAtivo && _anAbertos[it.id]) {
+            out += '<tr class="tr-analitico-inline' + (recLinha ? " oculta" : "") + (_abcFora ? " abc-fora" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI.renderAnaliticoItem(it) + '</td></tr>';
           }
           return out;
         }
@@ -2580,7 +2591,7 @@
         var descI = Util.esc(it.descricao);
         var memo = it.memoria ? String(it.memoria).replace(/\n/g, " · ") : "";
         var catK = String(it.categoria || "");
-        var celCoef = UI._celCoeficiente(it);   // texto (4 casas) ou, vindo de um item do orçamento, o campo editável
+        var celCoef = (opts && opts.embutido) ? UI._coefTexto(it.coeficiente) : UI._celCoeficiente(it);   // texto (4 casas) ou, vindo de um item do orçamento, o campo editável; embutido na planilha = só leitura
         linhas += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
           '<td class="an-c-cod">' + celCod + '</td>' +
           '<td class="an-c-desc"><button type="button" class="an-desc" data-an-desc aria-expanded="false" title="' + descI + '">' + descI + '</button>' +
@@ -2753,6 +2764,56 @@
      * olhando a referência oficial, e campo editável naquele contexto sugere
      * que dá para reescrever a SINAPI — que é justamente o que não pode.
      * ----------------------------------------------------------------- */
+    /* Coeficiente só-leitura: 4 casas quando bastam; 8 quando o coeficiente é de um desconto pela produtividade (licitação) */
+    _coefTexto: function (v) {
+      var n = Util.num(v);
+      return Util.fmtNum(n, Math.abs(Math.round(n * 1e4) / 1e4 - n) < 1e-9 ? 4 : 8);
+    },
+    /* Composição do item para o analítico EMBUTIDO na planilha: a lista gravada no item (a do órgão, já com o desconto
+       pelo coeficiente quando houve) ou, sem ela, a da base já carregada. Nunca abre rede: sem composição em memória
+       devolve null e a planilha manda usar o botão "Analítico do item". */
+    _analiticoDoItem: function (it) {
+      var lista = null, cod = String(it.codigo || ""), base = null;
+      if (Array.isArray(it.insumos) && it.insumos.length) lista = it.insumos;
+      else if (cod && cod !== "—") {
+        try {
+          var fonte = it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : "PROPRIO");
+          if (fonte === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) base = Bases.obter("PROPRIA", cod);
+          else if (Orcamento.ehSinapi(fonte) && typeof Analitico !== "undefined" && Analitico.carregado && Analitico.obter) {
+            var regOk = !(typeof it.desonerado === "boolean" && Analitico.desonerado !== null && Analitico.desonerado !== undefined && Analitico.desonerado !== it.desonerado);
+            if (regOk) base = Analitico.obter(cod);
+          }
+        } catch (e) { base = null; }
+        if (base && Array.isArray(base.insumos) && base.insumos.length) lista = base.insumos;
+      }
+      if (!lista) return null;
+      var ajust = it.coeficientes || {};
+      var ordem = { MO: 0, MAT: 1, EQ: 2 }, soma = { MO: 0, MAT: 0, EQ: 0 };
+      var ins = lista.filter(function (x) { return x && typeof x === "object"; }).map(function (x, k) {
+        var c = {}, p;
+        for (p in x) c[p] = x[p];
+        if (!(Array.isArray(it.insumos) && it.insumos.length) && String(c.codigo) in ajust) c.coeficiente = Util.num(ajust[String(c.codigo)]);
+        c.custoTotal = Util.num(c.coeficiente) * Util.num(c.custoUnitario);
+        var cat = String(c.categoria || "").toUpperCase();
+        if (soma[cat] !== undefined && String(c.tipo || "").toUpperCase() !== "COMPOSICAO") soma[cat] += c.custoTotal;
+        c._k = k;
+        return c;
+      });
+      ins.sort(function (x, y) {
+        var ox = ordem[String(x.categoria || "").toUpperCase()], oy = ordem[String(y.categoria || "").toUpperCase()];
+        ox = ox === undefined ? 3 : ox; oy = oy === undefined ? 3 : oy;
+        return ox !== oy ? ox - oy : x._k - y._k;
+      });
+      return { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: Util.num(it.custoUnitario),
+        custoMO: soma.MO, custoMAT: soma.MAT, custoEQ: soma.EQ, insumos: ins };
+    },
+    /* HTML do analítico embutido embaixo do item: o MESMO desenho do modal "Analítico do item" (renderInsumos) */
+    renderAnaliticoItem: function (it) {
+      var a = UI._analiticoDoItem(it);
+      if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+      var ufAtivo = (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+      return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
+    },
     _celCoeficiente: function (ins) {
       var ctx = UI._ajusteCtx;
       var cod = String(ins.codigo || "");

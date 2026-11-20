@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.398",
+versao: "1.2.399",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -19994,11 +19994,16 @@ var _abcModo = (typeof App !== "undefined") ? String(App._plAbc || "") : "";
 var _abcBotoes = '<button class="btn sm ghost' + (_abcModo ? ' primary' : '') + '" data-acao="pl-abc" aria-pressed="' + (_abcModo ? 'true' : 'false') + '" title="' +
 (_abcModo ? 'Esconder a marca A, B ou C dos itens' : 'Marcar cada item com a classe da curva ABC: A = os itens que somam 80% do custo, B = os 15% seguintes, C = os 5% finais') + '">Curva ABC</button>' +
 (_abcModo ? '<button class="btn sm ghost' + (_abcModo === "A" ? ' primary' : '') + '" data-acao="pl-abc-a" aria-pressed="' + (_abcModo === "A" ? 'true' : 'false') + '" title="Mostrar só os itens da classe A (os poucos que decidem o preço)">Só A</button>' : '');
+var _anCfg = (orc.config && orc.config.analiticosPlanilha) || {}, _anAtivo = !!_anCfg.ativo, _anAbertos = _anCfg.abertos || {};
+var _anBotoes = '<button class="btn sm ghost' + (_anAtivo ? ' primary' : '') + '" data-acao="pl-an-toggle" aria-pressed="' + (_anAtivo ? 'true' : 'false') + '" title="' +
+(_anAtivo ? 'Esconder os analíticos (a composição de cada item) da planilha' : 'Mostrar o analítico (insumos, coeficientes e custos) embaixo de cada item') + '">' + (_anAtivo ? 'Ocultar analíticos' : 'Mostrar analíticos') + '</button>' +
+(_anAtivo ? '<button class="btn sm ghost" data-acao="pl-an-abrir" title="Abrir o analítico de todos os itens">Abrir todos</button><button class="btn sm ghost" data-acao="pl-an-fechar" title="Fechar o analítico de todos os itens">Fechar todos</button>' : '');
 var html = '<div class="flex between mb"><div>' +
 (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
 (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
 '</div><div style="display:flex;gap:6px;align-items:flex-start">' +
 '<!--colmenu-->' +
+_anBotoes +
 _abcBotoes +
 '<button class="btn sm ghost pl-ajuda" data-acao="pl-atalhos" aria-label="Atalhos da planilha" title="Atalhos de teclado e seleção de várias linhas">?</button>' +
 '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
@@ -20165,6 +20170,7 @@ UI._celulasCatLinha(_lay, _catX && _catX.porLinha[it.id]) +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
 (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
+(_anAtivo ? '<button class="btn sm ico" data-acao="pl-an-item" data-item="' + e.id + '|' + it.id + '" aria-pressed="' + (_anAbertos[it.id] ? 'true' : 'false') + '" title="' + (_anAbertos[it.id] ? 'Fechar' : 'Abrir') + ' o analítico deste item">' + (_anAbertos[it.id] ? '\u25BE' : '\u25B8') + '</button>' : '') +
 (typeof OrcPrecosUI !== "undefined" ? OrcPrecosUI.botaoHtml(e.id, it) : "") +
 (Util.num(it.custoUnitario) > 0 && !(UI._insSemPreco && UI._insSemPreco(it)) ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
 (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
@@ -20177,6 +20183,9 @@ var nSem = UI._insumosSemPrecoDe(it.codigo);
 if (nSem > 0) {
 out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + (_abcFora ? " abc-fora" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
 }
+}
+if (_anAtivo && _anAbertos[it.id]) {
+out += '<tr class="tr-analitico-inline' + (recLinha ? " oculta" : "") + (_abcFora ? " abc-fora" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="' + _lay.total + '">' + UI.renderAnaliticoItem(it) + '</td></tr>';
 }
 return out;
 }
@@ -20410,7 +20419,7 @@ var undI = Util.unidadeExibir(it.unidade);
 var descI = Util.esc(it.descricao);
 var memo = it.memoria ? String(it.memoria).replace(/\n/g, " · ") : "";
 var catK = String(it.categoria || "");
-var celCoef = UI._celCoeficiente(it);
+var celCoef = (opts && opts.embutido) ? UI._coefTexto(it.coeficiente) : UI._celCoeficiente(it);
 linhas += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
 '<td class="an-c-cod">' + celCod + '</td>' +
 '<td class="an-c-desc"><button type="button" class="an-desc" data-an-desc aria-expanded="false" title="' + descI + '">' + descI + '</button>' +
@@ -20532,6 +20541,51 @@ html += '<p class="muted" style="font-size:11.5px;margin-top:6px">' +
 '<b>' + semJust + '</b> item(ns) acima do preço de referência ainda sem justificativa registrada.</p>';
 }
 return html + blocoBases;
+},
+_coefTexto: function (v) {
+var n = Util.num(v);
+return Util.fmtNum(n, Math.abs(Math.round(n * 1e4) / 1e4 - n) < 1e-9 ? 4 : 8);
+},
+_analiticoDoItem: function (it) {
+var lista = null, cod = String(it.codigo || ""), base = null;
+if (Array.isArray(it.insumos) && it.insumos.length) lista = it.insumos;
+else if (cod && cod !== "—") {
+try {
+var fonte = it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : "PROPRIO");
+if (fonte === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) base = Bases.obter("PROPRIA", cod);
+else if (Orcamento.ehSinapi(fonte) && typeof Analitico !== "undefined" && Analitico.carregado && Analitico.obter) {
+var regOk = !(typeof it.desonerado === "boolean" && Analitico.desonerado !== null && Analitico.desonerado !== undefined && Analitico.desonerado !== it.desonerado);
+if (regOk) base = Analitico.obter(cod);
+}
+} catch (e) { base = null; }
+if (base && Array.isArray(base.insumos) && base.insumos.length) lista = base.insumos;
+}
+if (!lista) return null;
+var ajust = it.coeficientes || {};
+var ordem = { MO: 0, MAT: 1, EQ: 2 }, soma = { MO: 0, MAT: 0, EQ: 0 };
+var ins = lista.filter(function (x) { return x && typeof x === "object"; }).map(function (x, k) {
+var c = {}, p;
+for (p in x) c[p] = x[p];
+if (!(Array.isArray(it.insumos) && it.insumos.length) && String(c.codigo) in ajust) c.coeficiente = Util.num(ajust[String(c.codigo)]);
+c.custoTotal = Util.num(c.coeficiente) * Util.num(c.custoUnitario);
+var cat = String(c.categoria || "").toUpperCase();
+if (soma[cat] !== undefined && String(c.tipo || "").toUpperCase() !== "COMPOSICAO") soma[cat] += c.custoTotal;
+c._k = k;
+return c;
+});
+ins.sort(function (x, y) {
+var ox = ordem[String(x.categoria || "").toUpperCase()], oy = ordem[String(y.categoria || "").toUpperCase()];
+ox = ox === undefined ? 3 : ox; oy = oy === undefined ? 3 : oy;
+return ox !== oy ? ox - oy : x._k - y._k;
+});
+return { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: Util.num(it.custoUnitario),
+custoMO: soma.MO, custoMAT: soma.MAT, custoEQ: soma.EQ, insumos: ins };
+},
+renderAnaliticoItem: function (it) {
+var a = UI._analiticoDoItem(it);
+if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+var ufAtivo = (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
 },
 _celCoeficiente: function (ins) {
 var ctx = UI._ajusteCtx;
@@ -69882,6 +69936,40 @@ i.custoUnitario = Math.round(num(i.custoUnitario) * k * 1e4) / 1e4;
 if (i.custoTotal != null) i.custoTotal = Math.round(num(i.coeficiente) * num(i.custoUnitario) * 1e4) / 1e4;
 });
 }
+function _r8(v) { return Math.round(v * 1e8) / 1e8; }
+function _escalarInsumosMO(it, k) {
+var out = { mo: 0, ajuste: 0 };
+if (!(it && Array.isArray(it.insumos) && it.insumos.length) || !(k > 0) || k === 1) return out;
+var lista = it.insumos, temMO = false, somaO = 0;
+lista.forEach(function (i) {
+if (!i || typeof i !== "object") return;
+somaO += num(i.coeficiente) * num(i.custoUnitario);
+if (_catDe(i) === "MO" && num(i.coeficiente) > 0 && num(i.custoUnitario) > 0) temMO = true;
+});
+if (!temMO) return out;
+var maior = null, maiorV = -1, soma = 0;
+lista.forEach(function (i) {
+if (!i || typeof i !== "object") return;
+if (_catDe(i) === "MO" && num(i.coeficiente) > 0 && num(i.custoUnitario) > 0) {
+i.coeficiente = _r8(num(i.coeficiente) * k);
+out.mo++;
+var v = num(i.coeficiente) * num(i.custoUnitario);
+if (v > maiorV) { maiorV = v; maior = i; }
+} else {
+i.custoUnitario = Math.round(num(i.custoUnitario) * k * 1e4) / 1e4;
+}
+soma += num(i.coeficiente) * num(i.custoUnitario);
+});
+var resid = somaO * k - soma;
+if (maior && Math.abs(resid) > 1e-9) {
+var c0 = num(maior.coeficiente), c1 = _r8(c0 + resid / num(maior.custoUnitario));
+if (c1 > 0 && Math.abs(c1 - c0) <= c0 * 0.01) { maior.coeficiente = c1; out.ajuste = resid; }
+}
+lista.forEach(function (i) {
+if (i && typeof i === "object" && i.custoTotal != null) i.custoTotal = Math.round(num(i.coeficiente) * num(i.custoUnitario) * 1e4) / 1e4;
+});
+return out;
+}
 var CAMPOS_LICITANTE = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
 "socioNome", "socioCargo", "rtNome", "rtCrea"];
 var TIMBRADO_MAX_CHARS = 560000, TIMBRADO_MAX_CNPJS = 6;
@@ -70358,6 +70446,29 @@ if (pu(prox) <= alvoPU + 0.0049) cu = prox; else break;
 while (cu > 0.01 && pu(cu) > alvoPU + 0.0049) cu = Math.round((cu - 0.01) * 100) / 100;
 return cu;
 },
+_moCoefOpt: function (orc, opts) {
+if (opts && opts.moCoeficiente !== undefined && opts.moCoeficiente !== null) return !!opts.moCoeficiente;
+var lic = this.cfg(orc);
+return !(lic && lic.descontoMoCoef === false);
+},
+moCoefEscolhido: function (orc) { return this._moCoefOpt(orc, null); },
+_escalarPlano: function (orc, plano, moCoef) {
+var reg = { itensMO: 0, semMO: [], semComposicao: [] };
+plano.forEach(function (x) {
+var it = x.item, k = num(it.custoUnitario) > 0 ? x.custo / num(it.custoUnitario) : 1;
+var temLista = Array.isArray(it.insumos) && it.insumos.length;
+var rotulo = x.numero || x.itemId;
+O().atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
+if (!temLista) { reg.semComposicao.push(rotulo); return; }
+if (moCoef) {
+var r = _escalarInsumosMO(it, k);
+if (r.mo) { reg.itensMO++; return; }
+reg.semMO.push(rotulo);
+}
+_escalarInsumos(it, k);
+});
+return reg;
+},
 descontoPlano: function (orc, pct) {
 var self = this, plano = [], d = num(pct);
 if (!(d > 0 && d < 100)) return { ok: false, erro: "Informe um desconto entre 0 e 100%." };
@@ -70388,10 +70499,10 @@ totalAntes: rI.totalAntes, totalDepois: rI.totalDepois, avisos: this.avisos(cpI)
 var p = this.descontoPlano(orc, pct);
 if (!p.ok) return p;
 var cp = JSON.parse(JSON.stringify(orc));
-var r = this.aplicarDesconto(cp, pct, { semRegistro: true });
+var r = this.aplicarDesconto(cp, pct, { semRegistro: true, moCoeficiente: opts.moCoeficiente });
 if (!r.ok) return r;
 var av = this.avisos(cp);
-return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia,
+return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, moCoeficiente: r.moCoeficiente, moCoef: r.moCoef,
 totalAntes: this.totalProposta(orc), totalDepois: this.totalProposta(cp), avisos: av };
 },
 aplicarDesconto: function (orc, pct, opts) {
@@ -70411,13 +70522,10 @@ antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUn
 custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
 });
 var antesTotal = this.totalProposta(orc);
-p.plano.forEach(function (x) {
-var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
-Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
-_escalarInsumos(x.item, k);
-});
-lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal };
-return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+var moCoef = this._moCoefOpt(orc, opts), regMO = this._escalarPlano(orc, p.plano, moCoef);
+if (lic && opts.moCoeficiente !== undefined) lic.descontoMoCoef = moCoef;
+lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal, moCoeficiente: moCoef };
+return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc), moCoeficiente: moCoef, moCoef: regMO };
 },
 desfazerDesconto: function (orc) {
 var lic = this.cfg(orc);
@@ -70590,9 +70698,9 @@ opts = opts || {};
 var p = this.descontoItensPlano(orc, mapa, pctPadrao, opts);
 if (!p.ok) return p;
 var cp = JSON.parse(JSON.stringify(orc));
-var r = this.aplicarDescontoItens(cp, mapa, pctPadrao, { permitirVazio: true, incluirZero: !!opts.incluirZero });
+var r = this.aplicarDescontoItens(cp, mapa, pctPadrao, { permitirVazio: true, incluirZero: !!opts.incluirZero, moCoeficiente: opts.moCoeficiente });
 if (!r.ok) return r;
-return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: this.totalProposta(orc),
+return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, moCoeficiente: r.moCoeficiente, moCoef: r.moCoef, totalAntes: this.totalProposta(orc),
 totalDepois: this.totalProposta(cp), avisos: this.avisos(cp), plano: p.plano.map(function (x) {
 return { itemId: x.itemId, numero: x.numero, pct: x.pct, base: x.base, baseOrigem: x.baseOrigem, alvoPU: x.alvoPU };
 }) };
@@ -70614,14 +70722,11 @@ antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUn
 custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
 });
 var antesTotal = this.totalProposta(orc);
-p.plano.forEach(function (x) {
-var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
-Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
-_escalarInsumos(x.item, k);
-});
+var moCoef = this._moCoefOpt(orc, opts), regMO = this._escalarPlano(orc, p.plano, moCoef);
+if (lic && opts.moCoeficiente !== undefined) lic.descontoMoCoef = moCoef;
 lic.descontoItens = { em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), padrao: p.padrao,
-mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal };
-return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal, moCoeficiente: moCoef };
+return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc), moCoeficiente: moCoef, moCoef: regMO };
 },
 desfazerDescontoItens: function (orc) {
 var lic = this.cfg(orc);

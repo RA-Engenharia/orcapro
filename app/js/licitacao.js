@@ -178,6 +178,48 @@
     });
   }
 
+  /* Desconto linear / por item com a mão de obra pelo COEFICIENTE (pedido do Rogério, 24/11/2026, licitação Arcturo):
+     o custo/hora do insumo de MO fica IGUAL ao da tabela (piso da convenção + encargos) e o desconto (ou acréscimo) k reduz
+     (ou aumenta) o COEFICIENTE; material, equipamento e composição auxiliar andam no custo unitário, como em _escalarInsumos.
+     A soma do analítico fica em Σ original × k (a mesma de _escalarInsumos); o resíduo de arredondamento (custo a 4 casas,
+     coeficiente a 8) vai no coeficiente do MAIOR insumo de MO, nunca no custo/hora.
+     Devolve { mo: nº de insumos de MO com coeficiente ajustado, ajuste: resíduo absorvido }; mo = 0 quando o item não tem MO
+     na composição (aí nada foi feito por aqui e o chamador usa _escalarInsumos). */
+  function _r8(v) { return Math.round(v * 1e8) / 1e8; }
+  function _escalarInsumosMO(it, k) {
+    var out = { mo: 0, ajuste: 0 };
+    if (!(it && Array.isArray(it.insumos) && it.insumos.length) || !(k > 0) || k === 1) return out;
+    var lista = it.insumos, temMO = false, somaO = 0;
+    lista.forEach(function (i) {
+      if (!i || typeof i !== "object") return;
+      somaO += num(i.coeficiente) * num(i.custoUnitario);
+      if (_catDe(i) === "MO" && num(i.coeficiente) > 0 && num(i.custoUnitario) > 0) temMO = true;
+    });
+    if (!temMO) return out;
+    var maior = null, maiorV = -1, soma = 0;
+    lista.forEach(function (i) {
+      if (!i || typeof i !== "object") return;
+      if (_catDe(i) === "MO" && num(i.coeficiente) > 0 && num(i.custoUnitario) > 0) {
+        i.coeficiente = _r8(num(i.coeficiente) * k);
+        out.mo++;
+        var v = num(i.coeficiente) * num(i.custoUnitario);
+        if (v > maiorV) { maiorV = v; maior = i; }
+      } else {
+        i.custoUnitario = Math.round(num(i.custoUnitario) * k * 1e4) / 1e4;
+      }
+      soma += num(i.coeficiente) * num(i.custoUnitario);
+    });
+    var resid = somaO * k - soma;
+    if (maior && Math.abs(resid) > 1e-9) {
+      var c0 = num(maior.coeficiente), c1 = _r8(c0 + resid / num(maior.custoUnitario));
+      if (c1 > 0 && Math.abs(c1 - c0) <= c0 * 0.01) { maior.coeficiente = c1; out.ajuste = resid; }
+    }
+    lista.forEach(function (i) {
+      if (i && typeof i === "object" && i.custoTotal != null) i.custoTotal = Math.round(num(i.coeficiente) * num(i.custoUnitario) * 1e4) / 1e4;
+    });
+    return out;
+  }
+
   /* ---------------- empresa do certame: campos e timbrado ---------------- */
   var CAMPOS_LICITANTE = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
     "socioNome", "socioCargo", "rtNome", "rtCrea"];
@@ -913,6 +955,34 @@
       return cu;
     },
 
+    /* MÃO DE OBRA PELO COEFICIENTE no desconto linear e no por item. Marcada por padrão (pedido de 24/11/2026): vale
+       opts.moCoeficiente; sem ele, a escolha gravada em config.licitacao.descontoMoCoef; sem nenhuma, true. */
+    _moCoefOpt: function (orc, opts) {
+      if (opts && opts.moCoeficiente !== undefined && opts.moCoeficiente !== null) return !!opts.moCoeficiente;
+      var lic = this.cfg(orc);
+      return !(lic && lic.descontoMoCoef === false);
+    },
+    moCoefEscolhido: function (orc) { return this._moCoefOpt(orc, null); },
+    /* Aplica o k de cada item do plano nos insumos. Com moCoef: MO pelo coeficiente; item que não tem MO na composição
+       (ou nem composição) cai no preço, como antes. Devolve o registro: itens ajustados e os sem composição. */
+    _escalarPlano: function (orc, plano, moCoef) {
+      var reg = { itensMO: 0, semMO: [], semComposicao: [] };
+      plano.forEach(function (x) {
+        var it = x.item, k = num(it.custoUnitario) > 0 ? x.custo / num(it.custoUnitario) : 1;
+        var temLista = Array.isArray(it.insumos) && it.insumos.length;
+        var rotulo = x.numero || x.itemId;
+        O().atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });   /* o k acima já usou o custo de antes */
+        if (!temLista) { reg.semComposicao.push(rotulo); return; }
+        if (moCoef) {
+          var r = _escalarInsumosMO(it, k);
+          if (r.mo) { reg.itensMO++; return; }
+          reg.semMO.push(rotulo);
+        }
+        _escalarInsumos(it, k);
+      });
+      return reg;
+    },
+
     descontoPlano: function (orc, pct) {
       var self = this, plano = [], d = num(pct);
       if (!(d > 0 && d < 100)) return { ok: false, erro: "Informe um desconto entre 0 e 100%." };
@@ -945,10 +1015,10 @@
       var p = this.descontoPlano(orc, pct);
       if (!p.ok) return p;
       var cp = JSON.parse(JSON.stringify(orc));
-      var r = this.aplicarDesconto(cp, pct, { semRegistro: true });
+      var r = this.aplicarDesconto(cp, pct, { semRegistro: true, moCoeficiente: opts.moCoeficiente });
       if (!r.ok) return r;
       var av = this.avisos(cp);
-      return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia,
+      return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, moCoeficiente: r.moCoeficiente, moCoef: r.moCoef,
         totalAntes: this.totalProposta(orc), totalDepois: this.totalProposta(cp), avisos: av };
     },
 
@@ -969,13 +1039,10 @@
           custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
       });
       var antesTotal = this.totalProposta(orc);
-      p.plano.forEach(function (x) {
-        var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
-        Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
-        _escalarInsumos(x.item, k);
-      });
-      lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal };
-      return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+      var moCoef = this._moCoefOpt(orc, opts), regMO = this._escalarPlano(orc, p.plano, moCoef);
+      if (lic && opts.moCoeficiente !== undefined) lic.descontoMoCoef = moCoef;
+      lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal, moCoeficiente: moCoef };
+      return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc), moCoeficiente: moCoef, moCoef: regMO };
     },
 
     desfazerDesconto: function (orc) {
@@ -1201,9 +1268,9 @@
       var p = this.descontoItensPlano(orc, mapa, pctPadrao, opts);
       if (!p.ok) return p;
       var cp = JSON.parse(JSON.stringify(orc));
-      var r = this.aplicarDescontoItens(cp, mapa, pctPadrao, { permitirVazio: true, incluirZero: !!opts.incluirZero });
+      var r = this.aplicarDescontoItens(cp, mapa, pctPadrao, { permitirVazio: true, incluirZero: !!opts.incluirZero, moCoeficiente: opts.moCoeficiente });
       if (!r.ok) return r;
-      return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: this.totalProposta(orc),
+      return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, moCoeficiente: r.moCoeficiente, moCoef: r.moCoef, totalAntes: this.totalProposta(orc),
         totalDepois: this.totalProposta(cp), avisos: this.avisos(cp), plano: p.plano.map(function (x) {
           return { itemId: x.itemId, numero: x.numero, pct: x.pct, base: x.base, baseOrigem: x.baseOrigem, alvoPU: x.alvoPU };
         }) };
@@ -1226,14 +1293,11 @@
           custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
       });
       var antesTotal = this.totalProposta(orc);
-      p.plano.forEach(function (x) {
-        var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
-        Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
-        _escalarInsumos(x.item, k);
-      });
+      var moCoef = this._moCoefOpt(orc, opts), regMO = this._escalarPlano(orc, p.plano, moCoef);
+      if (lic && opts.moCoeficiente !== undefined) lic.descontoMoCoef = moCoef;
       lic.descontoItens = { em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), padrao: p.padrao,
-        mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal };
-      return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+        mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal, moCoeficiente: moCoef };
+      return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc), moCoeficiente: moCoef, moCoef: regMO };
     },
 
     desfazerDescontoItens: function (orc) {
