@@ -693,6 +693,8 @@
     if (conv && !semLeg) p.push(svgLegendaReforma(conv, vb, k, pena));
     /* 2a') PORTA (js/simboloporta.js): a folha aberta a 90° (pena média) e o arco do giro (pena fina) */
     if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
+    /* 2a'') WOOD FRAME: camadas e montantes das paredes de quadro de madeira, por cima do corte (o nível de detalhe da vista decide) */
+    if (d.tipo === "planta" && d.wf && d.wf.length) p.push(svgWoodFrame(d.wf, e, pena, extra && extra.p6 && extra.p6.nivelDetalhe ? extra.p6.nivelDetalhe : "alto"));
     /* 2b) INSTALAÇÕES (B5, js/biminst.js planta): o eixo de cada trecho na cor do
        sistema (acima do corte, tracejado), prumadas, conexões e peças, e o
        rótulo (sistema, DN, inclinação). Pena da vista; a cor é o que separa. */
@@ -735,6 +737,72 @@
     }
     p.push("</svg>");
     return { svg: p.join(""), caixa: cx, vb: vb, cotas: cotas, estilo: e };
+  }
+
+  /* ---------------------------------------------------- WOOD FRAME (20/11/2026)
+   * d.wf = [{ id, itens:[{k:"camada"|"linha"|"montante", hach, pts|a,b}], cotas:[{a,b,texto}], n:[nx,nz], metade }], tudo em coordenadas de
+   * TELA (m), vindo do js/woodframequadro.js (planta). O NÍVEL DE DETALHE da vista decide o que sai (extra.p6.nivelDetalhe):
+   *   alto ("Fino")  camadas com a hachura e a espessura reais + os montantes cortados (38×89 na posição exata) + a cota do espaçamento;
+   *   medio          só as camadas (o quadro vira o miolo de lã);
+   *   baixo          nada além do contorno da parede (o corte de sempre).
+   * Na folha e no PDF sai o mesmo SVG (as hachuras são <pattern> do próprio desenho; as linhas levam data-traco em mm de papel). */
+  function defsWoodFrame(k) {
+    function q(v) { return n4(v * k); }
+    var st = '#1a1a1a';
+    return '<defs>' +
+      /* OSB: fiapos curtos em várias direções */
+      '<pattern id="d2-wf-osb" patternUnits="userSpaceOnUse" width="' + q(2.6) + '" height="' + q(2.6) + '"><rect width="' + q(2.6) + '" height="' + q(2.6) + '" fill="#fff"/><path d="M' + q(0.2) + ' ' + q(0.6) + 'L' + q(1.4) + ' ' + q(0.2) + 'M' + q(1.5) + ' ' + q(1.9) + 'L' + q(2.5) + ' ' + q(1.1) + 'M' + q(0.3) + ' ' + q(2.4) + 'L' + q(1.0) + ' ' + q(1.6) + '" stroke="' + st + '" stroke-width="' + q(0.16) + '" fill="none"/></pattern>' +
+      /* lã: onda */
+      '<pattern id="d2-wf-la" patternUnits="userSpaceOnUse" width="' + q(3) + '" height="' + q(2.4) + '"><rect width="' + q(3) + '" height="' + q(2.4) + '" fill="#fff"/><path d="M0 ' + q(1.2) + 'Q' + q(0.75) + ' ' + q(0.1) + ' ' + q(1.5) + ' ' + q(1.2) + 'T' + q(3) + ' ' + q(1.2) + '" stroke="' + st + '" stroke-width="' + q(0.14) + '" fill="none"/></pattern>' +
+      /* gesso: pontos */
+      '<pattern id="d2-wf-gesso" patternUnits="userSpaceOnUse" width="' + q(1.4) + '" height="' + q(1.4) + '"><rect width="' + q(1.4) + '" height="' + q(1.4) + '" fill="#fff"/><circle cx="' + q(0.35) + '" cy="' + q(0.35) + '" r="' + q(0.13) + '" fill="' + st + '"/><circle cx="' + q(1.05) + '" cy="' + q(1.05) + '" r="' + q(0.13) + '" fill="' + st + '"/></pattern>' +
+      /* placa cimentícia / siding: diagonal cerrada */
+      '<pattern id="d2-wf-cimenticia" patternUnits="userSpaceOnUse" width="' + q(1.1) + '" height="' + q(1.1) + '" patternTransform="rotate(45)"><rect width="' + q(1.1) + '" height="' + q(1.1) + '" fill="#fff"/><line x1="0" y1="0" x2="0" y2="' + q(1.1) + '" stroke="' + st + '" stroke-width="' + q(0.16) + '"/></pattern>' +
+      /* ripa da câmara: vertical */
+      '<pattern id="d2-wf-ripa" patternUnits="userSpaceOnUse" width="' + q(1.6) + '" height="' + q(1.6) + '"><rect width="' + q(1.6) + '" height="' + q(1.6) + '" fill="#fff"/><line x1="' + q(0.4) + '" y1="0" x2="' + q(0.4) + '" y2="' + q(1.6) + '" stroke="' + st + '" stroke-width="' + q(0.14) + '"/></pattern>' +
+      /* madeira cortada (montante, guia, verga): as duas diagonais */
+      '<pattern id="d2-wf-madeira" patternUnits="userSpaceOnUse" width="' + q(2.2) + '" height="' + q(2.2) + '" patternTransform="rotate(45)"><rect width="' + q(2.2) + '" height="' + q(2.2) + '" fill="#fff"/><line x1="0" y1="0" x2="0" y2="' + q(2.2) + '" stroke="' + st + '" stroke-width="' + q(0.16) + '"/><line x1="0" y1="' + q(1.1) + '" x2="' + q(2.2) + '" y2="' + q(1.1) + '" stroke="' + st + '" stroke-width="' + q(0.16) + '"/></pattern>' +
+      '</defs>';
+  }
+  function svgWoodFrame(lista, e, pena, nivel) {
+    if (!lista || !lista.length || nivel === "baixo") return "";
+    var k = e.escala / 1000, alto = nivel !== "medio", s = '<g class="d2-wf" data-wf-nivel="' + (alto ? "alto" : "medio") + '">' + defsWoodFrame(k);
+    var PADROES = { osb: 1, la: 1, gesso: 1, cimenticia: 1, ripa: 1 };
+    lista.forEach(function (w) {
+      var g = '<g class="d2-wf-parede" data-wf="' + esc(w.id) + '">';
+      (w.itens || []).forEach(function (it) {
+        if (it.k === "camada") {
+          var fill = PADROES[it.hach] ? "url(#d2-wf-" + it.hach + ")" : (it.hach === "imper" ? "#222" : "#e6e6e6");
+          g += '<path d="' + caminho(it.pts, true) + '" fill="' + fill + '" class="d2-wf-camada" data-camada="' + esc(it.camada) + '" data-hach="' + esc(it.hach) + '" stroke="#1a1a1a" stroke-width="' + pena.vista + '" ' + NS + "/>";
+        } else if (it.k === "linha") {
+          var dash = it.hach === "vapor" ? tracoK([0.35, 0.7], k) : tracoK([1.4, 0.8], k);   /* membrana: traço; barreira de vapor: ponto */
+          g += '<path d="M' + n4(it.a[0]) + " " + n4(it.a[1]) + "L" + n4(it.b[0]) + " " + n4(it.b[1]) + '" fill="none" class="d2-wf-linha" data-camada="' + esc(it.camada) + '" stroke="#1a1a1a" stroke-width="' + pena.corte * 0.7 + '" ' + NS + dash + "/>";
+        }
+      });
+      if (alto) {
+        (w.itens || []).forEach(function (it) {
+          if (it.k !== "montante") return;
+          g += '<path d="' + caminho(it.pts, true) + '" fill="url(#d2-wf-madeira)" class="d2-wf-montante" data-tipo="' + esc(it.tipo) + '" stroke="#000" stroke-width="' + pena.corte + '" ' + NS + "/>";
+        });
+        /* a cota do espaçamento entre eixos dos montantes, do lado de dentro da parede (o texto em mm: "400") */
+        var tk = 1.4 * k, hT = (e.textoCota || 2.5) * k * 0.9, off = (w.metade || 0.06) + 6 * k, nx = (w.n || [0, 1])[0], ny = (w.n || [0, 1])[1];
+        (w.cotas || []).forEach(function (c) {
+          var dx = c.b[0] - c.a[0], dy = c.b[1] - c.a[1], Lc = Math.sqrt(dx * dx + dy * dy); if (!(Lc > 1e-6)) return;
+          if (Lc < 5.5 * k) return;   /* a cota de papel não cabe nesta escala: não vira rabisco */
+          var ux = dx / Lc, uy = dy / Lc, p1 = [c.a[0] + nx * off, c.a[1] + ny * off], p2 = [c.b[0] + nx * off, c.b[1] + ny * off];
+          function ln(x1, y1, x2, y2) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke="' + (e.corCotas || "#1a1a1a") + '" stroke-width="' + pena.cota + '" ' + NS + "/>"; }
+          var ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90 || ang <= -90) ang += 180;
+          var mx = (p1[0] + p2[0]) / 2 + nx * 0.9 * k, my = (p1[1] + p2[1]) / 2 + ny * 0.9 * k;
+          g += '<g class="d2-wf-cota">' + ln(c.a[0] + nx * (w.metade || 0.06) * 1.0, c.a[1] + ny * (w.metade || 0.06) * 1.0, p1[0] + nx * 1.2 * k, p1[1] + ny * 1.2 * k) +
+            ln(c.b[0] + nx * (w.metade || 0.06) * 1.0, c.b[1] + ny * (w.metade || 0.06) * 1.0, p2[0] + nx * 1.2 * k, p2[1] + ny * 1.2 * k) +
+            ln(p1[0], p1[1], p2[0], p2[1]) + ln(p1[0] - (ux + nx) * tk * 0.5, p1[1] - (uy + ny) * tk * 0.5, p1[0] + (ux + nx) * tk * 0.5, p1[1] + (uy + ny) * tk * 0.5) +
+            ln(p2[0] - (ux + nx) * tk * 0.5, p2[1] - (uy + ny) * tk * 0.5, p2[0] + (ux + nx) * tk * 0.5, p2[1] + (uy + ny) * tk * 0.5) +
+            txt(mx, my, hT, esc(c.texto), "d2-cota-tx d2-wf-cota-tx", "middle", n4(ang), e.corCotas ? ' style="fill:' + e.corCotas + '"' : "") + '</g>';
+        });
+      }
+      s += g + "</g>";
+    });
+    return s + "</g>";
   }
 
   /* ---------------------------------------------------- FASES (P10)
@@ -1340,7 +1408,7 @@
     PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, CONV_CD: CONV_CD, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
-    caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
+    caixa: caixa, PALETA_COTA: PALETA_COTA, opcoesCor: opcoesCor, escolherCor: escolherCor, cotas: cotasDe, niveisDaVista: niveisDaVista, layoutNiveis: layoutNiveis, chaveNivel: chaveNivel, svg: svg, svgWoodFrame: svgWoodFrame, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
     /* P6 */
     P6: { colunaEscala: p6ColunaEscala, penaMm: p6PenaMm, penaEf: p6PenaEf, px: p6Px, traco: p6Traco, corpo: p6Corpo, marcas: p6Marcas, caixa: p6Caixa, padrao: p6Padrao }
   };

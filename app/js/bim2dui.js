@@ -379,6 +379,16 @@
             if (mq8.length) { out.esquadrias = mq8; this._aplicarRotulos(d, out); }
           }
         } catch (eEq) { /* sem marca: a planta de sempre */ }
+        /* WOOD FRAME (js/woodframequadro.js): as camadas e os montantes das paredes de quadro de madeira, cortados pelo plano desta planta.
+           O desenho escolhe o que mostra pelo nível de detalhe da vista (Alto: camadas + montantes + cota; Médio: só as camadas; Baixo: nada). */
+        try {
+          var WQ = global.WoodFrameQuadro, ewf = B() && B().editarEstado ? B().editarEstado() : null;
+          if (WQ && ewf && ewf.estado && (ewf.estado.caixas || []).some(function (c) { return WQ.ehWf(c); })) {
+            var vzW = WQ.vaosDasParedes(ewf.estado, {}), hW = dados.yCorte != null ? dados.yCorte : d.nivel.y + d.altura, lsW = [];
+            ewf.estado.caixas.forEach(function (c) { if (!WQ.ehWf(c)) return; var pl = WQ.planta(c, vzW[c.id] ? vzW[c.id].aceitos : [], hW); if (pl) lsW.push(pl); });
+            if (lsW.length) out.wf = lsW;
+          }
+        } catch (eWf) { /* sem quadro: a planta de sempre */ }
         out.marcas = this.estado().cortes.map(function (c) {
           var dx = c.bx - c.ax, dz = c.bz - c.az, L = Math.sqrt(dx * dx + dz * dz) || 1, nx = dz / L, nz = -dx / L;
           if (c.inv) { nx = -nx; nz = -nz; }

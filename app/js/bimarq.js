@@ -713,11 +713,14 @@
     tipoParede: function (t) {
       if (!t || !t.ok) return null;
       var cam = [];
+      /* WOOD FRAME (js/woodframequadro.js): o `wf` do tipo (espaçamento, seção do montante, OSB, canto) viaja na foto — o quadro se refaz a partir dela */
       arr(t.fora).slice().reverse().forEach(function (c) { cam.push({ id: c.id, rotulo: c.rotulo, face: "fora", e: r6(num(c.espessura, 0) / 1000), material: c.material || "", servico: c.servico || "" }); });
-      cam.push({ id: (t.nucleo && t.nucleo.id) || "nucleo", rotulo: (t.nucleo && t.nucleo.rotulo) || "Núcleo", face: "nucleo", e: r6(num(t.espessuraNucleo, 0) / 1000), material: (t.nucleo && t.nucleo.tipo) || "", servico: "Alvenaria" });
+      cam.push({ id: (t.nucleo && t.nucleo.id) || "nucleo", rotulo: (t.nucleo && t.nucleo.rotulo) || "Núcleo", face: "nucleo", e: r6(num(t.espessuraNucleo, 0) / 1000), material: (t.nucleo && t.nucleo.tipo) || "", servico: (t.nucleo && t.nucleo.tipo === "woodframe") ? "Quadro de madeira" : "Alvenaria" });
       arr(t.dentro).forEach(function (c) { cam.push({ id: c.id, rotulo: c.rotulo, face: "dentro", e: r6(num(c.espessura, 0) / 1000), material: c.material || "", servico: c.servico || "" }); });
       var soma = cam.reduce(function (s, c) { return s + c.e; }, 0);
-      return { id: String(t.id || "custom"), rotulo: String(t.rotulo || "Parede"), espessura: r6(soma), camadas: cam };
+      var foto = { id: String(t.id || "custom"), rotulo: String(t.rotulo || "Parede"), espessura: r6(soma), camadas: cam };
+      if (t.wf && typeof t.wf === "object") foto.wf = clone(t.wf);
+      return foto;
     },
     /* marca a parede que acabou de nascer dos cliques (BimEdit.parede) como
        parede do modelador: une nos cantos, recorta no topo, leva o tipo */
@@ -1291,7 +1294,7 @@
       return o;
     },
     /* a op `ajustar` — só campos conhecidos, cada um com a sua regra */
-    CAMPOS_AJUSTE: ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa", "tipoPiso"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
+    CAMPOS_AJUSTE: ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "wf", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa", "tipoPiso"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
     ajustar: function (c, campos) {
       if (!c || !campos || typeof campos !== "object") return false;
       var mudou = false;
@@ -1317,6 +1320,21 @@
       if (campos.juntaCanto != null && c.tipo === "parede") {
         if (campos.juntaCanto === "esquadria") c.juntaCanto = "esquadria"; else delete c.juntaCanto;
         mudou = true;
+      }
+      /* WOOD FRAME: parâmetros do TIPO (Editar tipo) — espaçamento, seção do montante, canto e espessura do OSB. A foto do tipo é refeita
+         (a espessura do OSB muda a soma das camadas) e segue pelo mesmo caminho da troca de tipo. O quadro se regenera no próximo desenho. */
+      if (campos.wf && typeof campos.wf === "object" && c.tipo === "parede" && c.tipoParede && c.tipoParede.wf) {
+        var tpW = clone(c.tipoParede), wfN = tpW.wf || {}, wq = campos.wf;
+        if (num(wq.espac, 0) >= 150 && num(wq.espac, 0) <= 1000) wfN.espac = Math.round(num(wq.espac, 0));
+        if (wq.canto === "3montantes" || wq.canto === "bloco") wfN.canto = wq.canto;
+        if (num(wq.osbE, 0) >= 6 && num(wq.osbE, 0) <= 25) {
+          wfN.osbE = num(wq.osbE, 0);
+          tpW.camadas.forEach(function (k) { if (k.id === "osb") k.e = r6(wfN.osbE / 1000); });
+          tpW.espessura = r6(tpW.camadas.reduce(function (s, k) { return s + num(k.e, 0); }, 0));
+        }
+        tpW.wf = wfN;
+        var camposW = {}; Object.keys(campos).forEach(function (kW) { if (kW !== "wf") camposW[kW] = campos[kW]; });
+        camposW.tipoParede = tpW; campos = camposW; mudou = true;
       }
       if (campos.tipoParede && c.tipo === "parede" && num(campos.tipoParede.espessura, 0) > 0) {
         /* P4: com a linha de localização fora do eixo, ela fica no lugar e a parede cresce para o outro lado */

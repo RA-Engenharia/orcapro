@@ -914,11 +914,14 @@
                       c.dnEf != null ? "ver a composição pluvial do cálculo hidrossanitário (tubo|pvc_serie_r|pluvial:prumada|" + c.dnEf + ")" : "DN pendente do cálculo pluvial", { condutor: c.id }));
     });
     var Es = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); if (Es && Es.quantitativo) { var qe = Es.quantitativo(estado, opc); qe.itens.forEach(function (x) { itens.push(x); }); qe.avisos.forEach(function (x) { avisos.push(x); }); }
+    var wfParcial = false, wfSemPreco = 0;
+    var Wq = dep("WoodFrameQuadro", "./woodframequadro.js"); if (Wq && Wq.quantitativo) { var qw = Wq.quantitativo(estado, opc); qw.itens.forEach(function (x) { itens.push(x); }); qw.avisos.forEach(function (x) { avisos.push(x); }); wfParcial = !!qw.parcial; wfSemPreco = qw.semPreco || 0; }   /* WOOD FRAME: peças, OSB, fixações e membrana */
     var Fd = dep("BimForroDrywall", "./bimforrodrywall.js"); if (Fd && Fd.quantitativo) { var qf = Fd.quantitativo(estado, opc); qf.itens.forEach(function (x) { itens.push(x); }); qf.avisos.forEach(function (x) { avisos.push(x); }); }
     var totais = {};
     itens.forEach(function (x) { var k = x.item + "|" + x.un; totais[x.grupo] = (totais[x.grupo] || 0) + 1; void k; });
     return { itens: itens, avisos: avisos, base: SINAPI.base, contagemPorGrupo: totais,
-             comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length };
+             comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length,
+             parcial: wfParcial, semPrecoWoodFrame: wfSemPreco };   /* WOOD FRAME: sem composição SINAPI, o total que alguém somar fica PARCIAL */
   }
 
   /* ============================================================ T2 (20/10/2026): RUFO E CONTRARRUFO NO ENCONTRO COM PAREDE MAIS ALTA

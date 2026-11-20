@@ -110,7 +110,19 @@
       pintura_acril: { rotulo: "Pintura acrílica",      e: 0,  material: "tinta",                       traco: "2 demãos",                              servico: "Pintura acrílica",      fonte: "espessura desprezível" },
       textura:       { rotulo: "Textura acrílica",      e: 2,  material: "tinta",                       traco: "textura pronta",                        servico: "Textura acrílica",      fonte: "prática" },
       ceramica:      { rotulo: "Revestimento cerâmico", e: 15, material: "ceramica",                    traco: "placa 8 mm + argamassa colante AC-II",  servico: "Revestimento cerâmico", fonte: "prática — placa + colante" },
-      porcelanato:   { rotulo: "Porcelanato",           e: 18, material: "porcelanato",                 traco: "placa 10 mm + argamassa colante AC-III", servico: "Porcelanato",          fonte: "prática — placa + colante" }
+      porcelanato:   { rotulo: "Porcelanato",           e: 18, material: "porcelanato",                 traco: "placa 10 mm + argamassa colante AC-III", servico: "Porcelanato",          fonte: "prática — placa + colante" },
+      /* WOOD FRAME (20/11/2026, js/woodframequadro.js): as camadas de fora para dentro do sistema leve de madeira. Espessuras = as do pedido do
+         Rogério (siding/cimentícia 10, ripa 20, OSB 11,1 ou 9,5, gesso 12,5); membrana e barreira de vapor entram com 0,2 mm (filme, só para
+         ter posição e linha na planta). `hach` = o desenho da camada na planta (js/desenho2d.js). Peso: sem valor de norma → fica de fora (0). */
+      cimenticia_10: { rotulo: "Placa cimentícia 10 mm",           e: 10,   material: "cimenticia",       traco: "placa cimentícia 10 mm", servico: "Placa cimentícia 10 mm",                  fonte: "pedido RA (Wood Frame); espessura comercial usual — conferir o fabricante", hach: "cimenticia" },
+      siding:        { rotulo: "Siding 10 mm",                     e: 10,   material: "siding",           traco: "réguas de siding",      servico: "Siding (fachada Wood Frame)",             fonte: "pedido RA (Wood Frame) — conferir o fabricante", hach: "cimenticia" },
+      camara_ripa_20:{ rotulo: "Câmara ventilada (ripa 20 mm)",     e: 20,   material: "madeira_ripa",     traco: "ripa 20 mm",            servico: "Ripa da câmara ventilada",                fonte: "pedido RA (Wood Frame)", hach: "ripa" },
+      membrana_hidrofuga: { rotulo: "Membrana hidrófuga (água e vento)", e: 0.2, material: "membrana",      traco: "membrana respirável",   servico: "Membrana hidrófuga",                      fonte: "pedido RA (Wood Frame) — espessura de filme, só para a posição na planta", hach: "membrana" },
+      osb:           { rotulo: "OSB 11,1 mm",                      e: 11.1, material: "osb",              traco: "chapa OSB",             servico: "Chapa de OSB (contraventamento)",         fonte: "pedido RA (Wood Frame): 11,1 mm, ou 9,5 mm pelo parâmetro do tipo (wf.osbE)", hach: "osb" },
+      barreira_vapor:{ rotulo: "Barreira de vapor",                e: 0.2,  material: "membrana",         traco: "filme de barreira de vapor", servico: "Barreira de vapor",                  fonte: "pedido RA (Wood Frame) — opcional; espessura de filme", hach: "vapor" },
+      gesso_acart:   { rotulo: "Gesso acartonado 12,5 mm",         e: 12.5, material: "gesso_acartonado", traco: "chapa ST 12,5 mm",      servico: "Gesso acartonado 12,5 mm",                fonte: "pedido RA (Wood Frame)", hach: "gesso" },
+      gesso_acart_ru:{ rotulo: "Gesso acartonado RU 12,5 mm",      e: 12.5, material: "gesso_acartonado", traco: "chapa RU 12,5 mm (resistente à umidade)", servico: "Gesso acartonado RU 12,5 mm", fonte: "pedido RA (Wood Frame) — área molhada", hach: "gesso" },
+      impermeabilizacao_wf: { rotulo: "Impermeabilização (área molhada)", e: 2, material: "impermeabilizante", traco: "manta ou membrana líquida", servico: "Impermeabilização de parede de área molhada", fonte: "pedido RA (Wood Frame) — 2 mm é espessura nominal; conferir o sistema do fabricante", hach: "imper" }
     },
 
     /* ---------------------------------------------------------------
@@ -156,6 +168,10 @@
          (0,81 m² × espessura): 38/45/50/62 kg (tabela de franqueado — ver o
          cabeçalho do js/blocokexec.js). Pilaretes, vergas e cintas embutidos são
          somados à parte pelo motor do Blocok, não aqui. */
+      /* WOOD FRAME (js/woodframequadro.js): o núcleo é o QUADRO de madeira (montantes + guias) com lã entre eles. `e` = a profundidade do montante
+         (89 = 38×89; 64 = 38×64). Sem `peso`: não há massa específica de norma para o conjunto — o peso fica pendente (nunca inventado). */
+      wf_89: { rotulo: "Quadro de madeira 38×89 + lã", e: 89, familia: null, peso: null, unidade: "kg/m3", tipo: "woodframe", fonte: "pedido RA (Wood Frame): montante 38×89; a seção bruta do catálogo Nibra é 50×100 — confirmar o beneficiamento com o fornecedor" },
+      wf_64: { rotulo: "Quadro de madeira 38×64 + lã", e: 64, familia: null, peso: null, unidade: "kg/m3", tipo: "woodframe", fonte: "pedido RA (Wood Frame): montante 38×64 (divisória interna não portante)" },
       blocok_10: { rotulo: "Blocok 10 cm (painel EPS)", e: 100, familia: null, peso: 469, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "38 kg ÷ (0,81 m² × 0,10 m) — franqueado Blocok" },
       blocok_13: { rotulo: "Blocok 13 cm (painel EPS)", e: 130, familia: null, peso: 427, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "45 kg ÷ (0,81 m² × 0,13 m) — franqueado Blocok" },
       blocok_15: { rotulo: "Blocok 15 cm (painel EPS)", e: 150, familia: null, peso: 412, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "50 kg ÷ (0,81 m² × 0,15 m) — franqueado Blocok (laudo UFMG: ~45 kg)" },
@@ -266,6 +282,55 @@
         dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
         nota: "Não aceita concreto embutido: só divisória SEM vão, entre paredes travadas, até 4,0 m, encunhada sob a laje."
       },
+      /* WOOD FRAME (20/11/2026, js/woodframequadro.js): camadas de fora para dentro (a lista é do núcleo para a face; a foto do tipo inverte a de fora).
+         `wf` = os parâmetros do TIPO (Editar tipo): espac (mm entre eixos dos montantes), montante [espessura, profundidade] em mm, osbE (mm),
+         canto ("3montantes" | "bloco"). A seção do montante e a profundidade do quadro andam juntas (89 ↔ wf_89, 64 ↔ wf_64). */
+      "wf-ext": {
+        rotulo: "Wood Frame · externa (cimentícia + OSB + gesso)",
+        funcao: "estrutural", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart"],
+        fora:   ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+        nota: "Fachada: placa cimentícia 10 mm, câmara ventilada de 20 mm, membrana hidrófuga, OSB 11,1 mm, quadro 38×89 com lã e gesso acartonado 12,5 mm. Montantes a 400 mm (parâmetro do tipo)."
+      },
+      "wf-ext-vapor": {
+        rotulo: "Wood Frame · externa com barreira de vapor",
+        funcao: "estrutural", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["barreira_vapor", "gesso_acart"],
+        fora:   ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+        nota: "Igual à externa, com barreira de vapor entre a lã e o gesso (opcional — clima e projeto decidem)."
+      },
+      "wf-ext-siding": {
+        rotulo: "Wood Frame · externa com siding",
+        funcao: "estrutural", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart"],
+        fora:   ["osb", "membrana_hidrofuga", "camara_ripa_20", "siding"],
+        nota: "Fachada com siding de 10 mm no lugar da placa cimentícia."
+      },
+      "wf-ext-ru": {
+        rotulo: "Wood Frame · externa, gesso RU (área molhada por dentro)",
+        funcao: "estrutural", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart_ru"],
+        fora:   ["osb", "membrana_hidrofuga", "camara_ripa_20", "cimenticia_10"],
+        nota: "Fachada cujo lado de dentro é banheiro/cozinha: gesso acartonado resistente à umidade (RU)."
+      },
+      "wf-int-89": {
+        rotulo: "Wood Frame · interna 38×89 (gesso + lã + gesso)",
+        funcao: "vedacao", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart"], fora: ["gesso_acart"],
+        nota: "Divisória interna em quadro 38×89 com lã e gesso 12,5 mm nas duas faces."
+      },
+      "wf-int-64": {
+        rotulo: "Wood Frame · interna 38×64 (gesso + lã + gesso)",
+        funcao: "vedacao", nucleo: "wf_64", wf: { espac: 400, montante: [38, 64], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart"], fora: ["gesso_acart"],
+        nota: "Divisória interna leve em quadro 38×64: verga simples (parede não portante)."
+      },
+      "wf-molhada": {
+        rotulo: "Wood Frame · área molhada (cimentícia + impermeabilização)",
+        funcao: "vedacao", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
+        dentro: ["cimenticia_10", "impermeabilizacao_wf"], fora: ["gesso_acart"],
+        nota: "Divisória do banheiro/cozinha: placa cimentícia 10 mm com impermeabilização no lado molhado (dentro) e gesso 12,5 mm do outro lado."
+      },
       /* PAREDE CRUA COMO É EXECUTADA (20/10/2026): sem revestimento, a parede mostra os blocos ASSENTADOS
          (js/alvassentamento3d.js) — fiadas, juntas, amarração, verga e contraverga. */
       "crua-cer-8f-9": {
@@ -319,6 +384,12 @@
 
       var esp = opts.espessuras || {};
       var self = this;
+      /* WOOD FRAME: os parâmetros do tipo (espaçamento, seção do montante, OSB, canto) — o do pedido vale sobre o do tipo base */
+      var wfp = null;
+      if ((base && base.wf) || opts.wf || nucleo.tipo === "woodframe") {
+        wfp = { espac: 400, montante: [38, nucleo.e], osbE: 11.1, canto: "3montantes" };
+        [base && base.wf, opts.wf].forEach(function (o) { if (o) for (var kw in o) if (Object.prototype.hasOwnProperty.call(o, kw) && o[kw] != null) wfp[kw] = (kw === "montante" && o[kw] && o[kw].slice) ? o[kw].slice() : o[kw]; });
+      }
       function pilha(lista, face) {
         return (lista || []).map(function (id, i) {
           var c = self.CAMADAS[id];
@@ -327,6 +398,8 @@
           /* fachada pede 20 a 30 mm; se o usuário não mexeu, sobe o emboço
              para 25 mm em vez de deixar 20 no limite exato da norma */
           if (face === "fora" && id === "emboco" && esp[id] == null && esp["fora:" + id] == null) e = 25;
+          /* WOOD FRAME: o OSB tem a espessura do parâmetro do tipo (11,1 ou 9,5 mm) quando ninguém digitou outra */
+          if (id === "osb" && wfp && esp[id] == null && esp[face + ":" + id] == null) e = num(wfp.osbE) || c.e;
           return {
             id: id, ordem: i + 1, face: face, rotulo: c.rotulo,
             espessura: r2(e), material: c.material, traco: c.traco,
@@ -341,7 +414,7 @@
       var erros = dentro.concat(fora).filter(function (c) { return c.erro; }).map(function (c) { return c.erro; });
       if (erros.length) return { ok: false, motivo: erros[0], erros: erros };
 
-      var eNucleo = opts.espessuraNucleo != null ? num(opts.espessuraNucleo) : nucleo.e;
+      var eNucleo = opts.espessuraNucleo != null ? num(opts.espessuraNucleo) : (wfp && wfp.montante && num(wfp.montante[1]) > 0 && nucleo.tipo === "woodframe" ? num(wfp.montante[1]) : nucleo.e);
       var somaD = dentro.reduce(function (s, c) { return s + c.espessura; }, 0);
       var somaF = fora.reduce(function (s, c) { return s + c.espessura; }, 0);
 
@@ -357,6 +430,7 @@
         espessuraFora: r2(somaF),
         espessura: r2(eNucleo + somaD + somaF),            /* mm */
         espessuraM: r3((eNucleo + somaD + somaF) / 1000),  /* m — é o que o 3D usa */
+        wf: wfp,                                           /* WOOD FRAME: parâmetros do quadro (null nos outros tipos) */
         nota: (base && base.nota) || ""
       };
     },
@@ -476,7 +550,7 @@
       } else {
         /* sem massa específica E sem família: sem este ramo a observação saía
            vazia e o peso do núcleo sumia sem nenhuma explicação na tela */
-        obsNucleo = "Não há família de bloco desta espessura no catálogo — informe o peso do seu fornecedor.";
+        obsNucleo = nu.tipo === "woodframe" ? "Quadro de madeira: peças, chapas e fixações pelo quantitativo do quadro (js/woodframequadro.js); sem massa específica de norma para o conjunto." : "Não há família de bloco desta espessura no catálogo — informe o peso do seu fornecedor.";
       }
       linhas.push({
         camada: nu.rotulo || "Núcleo", face: "núcleo", tipoLinha: "nucleo",

@@ -254,7 +254,7 @@
     var linhas = q.itens.map(function (i) {
       return "<tr><td>" + esc(i.grupo) + "</td><td>" + esc(i.item) + "</td><td>" + esc(i.un) + "</td><td align=\"right\">" + virg(i.qtd, 2) + "</td><td>" + (i.sinapi ? esc(i.sinapi.codigo) + (i.sinapi.aproximado ? " (aprox.)" : "") : "<i>orçar à parte</i>") + "</td><td>" + (i.somar === false ? "<i>conferência, não somar</i> — " : "") + esc(i.obs || "") + "</td></tr>";
     }).join("");
-    janela("Quantitativo da cobertura e do forro", '<p>' + q.comCodigo + ' item(ns) com composição SINAPI (' + esc(q.base) + '); ' + q.aParte + ' a orçar à parte. Código só quando existe na base do sistema.</p>' +
+    janela("Quantitativo da cobertura e do forro", '<p>' + q.comCodigo + ' item(ns) com composição SINAPI (' + esc(q.base) + '); ' + q.aParte + ' a orçar à parte. Código só quando existe na base do sistema.' + (q.parcial ? ' <b>Total PARCIAL: ' + q.semPrecoWoodFrame + ' itens Wood Frame sem preço.</b>' : '') + '</p>' +
       '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr><th align="left">Grupo</th><th align="left">Item</th><th align="left">Un</th><th align="right">Qtd</th><th align="left">SINAPI</th><th align="left">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>" + lista("Avisos", q.avisos));
   }
 

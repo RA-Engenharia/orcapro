@@ -240,6 +240,10 @@
     paredeAreaDentro: function (x) { return m(x).areaDentro != null ? q4(x, m(x).areaDentro + (x.virada ? x.virada.dentro : 0)) : null; },
     /* ---- P4: linha de localização, virar camadas, união de geometria, pintura */
     paredeLinhaLoc: function (x) { var v = el(x).linhaLoc, L = x.linhasLoc || []; for (var i = 0; i < L.length; i++) if (L[i].v === (v || 0)) return L[i].nome; return "Linha central da parede"; },
+    /* WOOD FRAME: os parâmetros do quadro vêm do tipo (Editar tipo) e, sem ele, da foto do tipo na parede (js/woodframequadro.js) */
+    paredeWfEspac: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf; if (t && t.wfEspac != null && t.wfEspac !== "") return txt(t.wfEspac); return w ? String(w.espac) : null; },
+    paredeWfOsb: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf; if (t && t.wfOsbE != null && t.wfOsbE !== "") return txt(t.wfOsbE); return w ? String(w.osbE).replace(".", ",") : null; },
+    paredeWfCanto: function (x) { var t = x.tipo && x.tipo.valores, w = el(x).tipoParede && el(x).tipoParede.wf, v = t && t.wfCanto ? t.wfCanto : (w ? w.canto : null); return v ? (v === "bloco" ? "Bloco" : "3 montantes") : null; },
     paredeVirarExt: function (x) { var t = x.tipo && x.tipo.valores, v = el(x).virar; if (t && t.virarExtremidades) return txt(t.virarExtremidades); return v && v.ext ? (v.ext === "fora" ? "Exterior" : "Interior") : "Nenhum"; },
     paredeVirarIns: function (x) { var t = x.tipo && x.tipo.valores, v = el(x).virar; if (t && t.virarInsercoes) return txt(t.virarInsercoes); return v && v.ins ? ({ fora: "Exterior", dentro: "Interior", ambos: "Ambos" })[v.ins] || "Não virar" : "Não virar"; },
     paredeAreaVirada: function (x) { var v = x.virada; return v && (v.fora + v.dentro) > 0 ? q4(x, v.fora + v.dentro) : null; },
@@ -841,6 +845,10 @@
         P(T, "Construção", "Estrutura", "WALL_STRUCTURE_ID_PARAM", "texto", { calc: "paredeEstrutura", escrita: "ajustar.tipoParede", leitura: false }),
         P(T, "Construção", "Largura", "WALL_ATTR_WIDTH_PARAM", "comprimento", { calc: "paredeLargura", ifc: Q("Qto_WallBaseQuantities", "Width") }),
         /* P4: virar camadas — do TIPO ("Editar tipo" muda todas as instâncias) */
+        /* WOOD FRAME (Editar tipo): espaçamento dos montantes, OSB e canto — o quadro se refaz em todas as paredes do tipo */
+        P(T, "Construção", "Wood Frame: espaçamento dos montantes (mm)", "RA_WF_ESPAC", "lista", { calc: "paredeWfEspac", campo: "wfEspac", escrita: "ajustarTipo.valores.wfEspac", leitura: false, opcoes: ["300", "400", "600"] }),
+        P(T, "Construção", "Wood Frame: espessura do OSB (mm)", "RA_WF_OSB", "lista", { calc: "paredeWfOsb", campo: "wfOsbE", escrita: "ajustarTipo.valores.wfOsbE", leitura: false, opcoes: ["9,5", "11,1"] }),
+        P(T, "Construção", "Wood Frame: canto em L", "RA_WF_CANTO", "lista", { calc: "paredeWfCanto", campo: "wfCanto", escrita: "ajustarTipo.valores.wfCanto", leitura: false, opcoes: ["3 montantes", "Bloco"] }),
         P(T, "Construção", "Virar nas extremidades", "WRAPPING_AT_ENDS_PARAM", "lista", { calc: "paredeVirarExt", campo: "virarExtremidades", escrita: "ajustarTipo.valores.virarExtremidades", leitura: false, opcoes: ["Nenhum", "Exterior", "Interior"] }),
         P(T, "Construção", "Virar nas inserções", "WRAPPING_AT_INSERTS_PARAM", "lista", { calc: "paredeVirarIns", campo: "virarInsercoes", escrita: "ajustarTipo.valores.virarInsercoes", leitura: false, opcoes: ["Não virar", "Exterior", "Interior", "Ambos"] }),
         P(T, "Construção", "Função", "FUNCTION_PARAM", "lista", { campo: "funcao", padrao: "Exterior", opcoes: ["Interior", "Exterior"], escrita: "ajustarTipo.valores.funcao", ifc: Q("Pset_WallCommon", "IsExternal") }),
@@ -1812,6 +1820,15 @@
     }
     if (cat === "laje" && fin(Number(v.espessura)) && Number(v.espessura) >= 0.03) return A.ajustar(c, { tipoLaje: { id: t.id, rotulo: t.nome || "", espessura: Number(v.espessura) } });
     /* P4: virar camadas é do TIPO de parede: vale para todas as instâncias */
+    /* WOOD FRAME: espaçamento, OSB e canto são do TIPO — valem para todas as paredes dele; o quadro se regenera na hora (chave nova no cache) */
+    if (cat === "parede" && (v.wfEspac != null || v.wfOsbE != null || v.wfCanto != null)) {
+      var wq = {};
+      if (v.wfEspac != null && v.wfEspac !== "") wq.espac = Number(String(v.wfEspac).replace(",", "."));
+      if (v.wfOsbE != null && v.wfOsbE !== "") wq.osbE = Number(String(v.wfOsbE).replace(",", "."));
+      if (v.wfCanto != null && v.wfCanto !== "") wq.canto = /bloco/i.test(String(v.wfCanto)) ? "bloco" : "3montantes";
+      var rW = Object.keys(wq).length ? A.ajustar(c, { wf: wq }) : false;
+      if (rW) return rW;
+    }
     if (cat === "parede" && (v.virarExtremidades != null || v.virarInsercoes != null)) {
       var vr = {}; if (v.virarExtremidades != null) vr.ext = v.virarExtremidades; if (v.virarInsercoes != null) vr.ins = v.virarInsercoes;
       return A.ajustar(c, { virar: vr });

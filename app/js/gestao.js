@@ -10898,6 +10898,7 @@
       /* P2-D: Arquitetura › Ambiente e área (Ambiente, Separador, Identificador, Esquema de cores)
          e Vista › Ambientes no 3D — js/bimambienteui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimAmbienteUI) BimAmbienteUI.registrar(reg, self); } catch (eP2d) {}
+      try { if (window.WoodFrameUI) WoodFrameUI.registrar(reg, self); } catch (eWf) {}   /* WOOD FRAME: Vista › Exibir › Quadro de madeira (raio-X do quadro, js/woodframeui.js) */
       /* P7: Anotar › Cota, Texto, Detalhe e Revisão nas vistas 2D — js/bimanot2dui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimAnot2DUI) BimAnot2DUI.registrar(reg); } catch (eP7) {}
       try { if (window.BimAtalhos) BimAtalhos.registrar(reg); } catch (eAt) {}   /* BACKLOG #63: Vista › Navegar › Atalhos (js/bimatalhos.js) */

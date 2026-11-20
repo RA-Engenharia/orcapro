@@ -5940,6 +5940,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     for (var i = 0; i < mo.grupo.children.length; i++) {
       var m = mo.grupo.children[i];
       if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
+      /* WOOD FRAME, raio-X do quadro: a casca da parede tem material INVISÍVEL (wfOculto); sem esta guarda o mesclado a pintava de branco (cor do material
+         invisível) e a parede continuava inteira na tela — conferido no navegador em 20/11/2026 */
+      if ((m.userData.matOrig || m.material) && (m.userData.matOrig || m.material).visible === false) continue;
       /* a GRAVAÇÃO do fabricante (js/biminstgeoreal-agua.js, a marcação do esgoto) e a peça METÁLICA das instalações têm
          material próprio (textura do texto, reflexo): fora do mesclado por cor de vértice, mas mescladas POR MATERIAL
          (porMatMesclar, abaixo). ⚠ PEÇA COMPLETA (07/11/2026): antes cada uma era desenhada por si — uma chamada de desenho
@@ -11828,6 +11831,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       instImagens: instVet && instVet.imagens && instVet.imagens.length ? instVet.imagens : undefined,
       portas: portas.length ? portas : undefined,
       acima: acimaTopo != null ? acima : undefined, acimaTopo: acimaTopo != null ? acimaTopo : undefined,
+      yCorte: (planta && !p6Forro && isFinite(+def.yCorte)) ? +def.yCorte : undefined,   /* WOOD FRAME: a cota do plano (o vetor do quadro corta nela) */
       info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10, uniao: uniaoInfo || undefined, nivelInst: instVet || undefined } };
   }
   /* PORTA DO IFC ABERTO (js/simboloporta.js): o OperationType da ocorrência (IFC4) ou do tipo
@@ -16019,6 +16023,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         escada: new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
         parafuso: new THREE.MeshStandardMaterial({ color: 0x4a4f57, metalness: .7, roughness: .35, side: THREE.DoubleSide }),   /* METÁLICA: parafuso, porca, arruela (js/metalpeca.js) */
         neoprene: new THREE.MeshStandardMaterial({ color: 0x1f2123, metalness: .0, roughness: .92, side: THREE.DoubleSide }),   /* METÁLICA: apoio de neoprene (js/metalcatpecas.js, metal.mat) */
+        /* WOOD FRAME (js/woodframequadro.js): OSB e espaçador do quadro; `wfOculto` = a casca da parede no raio-X do quadro (some no 3D, o corte da planta continua lendo a malha) */
+        wfOsb: new THREE.MeshStandardMaterial({ color: 0xc9a063, metalness: .0, roughness: .9, side: THREE.DoubleSide }),
+        wfEsp: new THREE.MeshStandardMaterial({ color: 0xd8c9a8, metalness: .0, roughness: .9, side: THREE.DoubleSide }),
+        wfOculto: new THREE.MeshBasicMaterial({ visible: false }),
         eixo: new THREE.LineDashedMaterial({ color: 0x2e6f9e, dashSize: 0.6, gapSize: 0.18, depthTest: false, transparent: true, opacity: 0.9 }),
         poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
       };
@@ -16237,7 +16245,42 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (c.tipo === 'parede') {
       var r = A.pecasParede(c, vz ? vz.aceitos : []);
       if (!r.pecas.length) return null;
-      r.pecas.forEach(function (pc) { var m = new THREE.Mesh(b2Geo(pc.pts, null, pc.y0, pc.ytopo, b2Plano), mat); addMesh(m, c.id, c.ifc, mat); });
+      /* WOOD FRAME (js/woodframequadro.js): o quadro da parede vira sólidos DENTRO dela (guias, montantes, ombreiras, vergas, cripples,
+         peitoril, bloqueadores e o OSB), regenerados a cada rebuild pelo cache da chave da parede. No raio-X do quadro (js/woodframeui.js)
+         a casca some do 3D e ficam as peças de madeira (sem as placas). Na planta as peças saem do corte (mobSem2d): quem desenha as
+         camadas e os montantes é o vetor do js/desenho2d.js. */
+      var wfQ = null, wfRX = false;
+      try { if (window.WoodFrameQuadro && WoodFrameQuadro.ehWf(c)) { wfQ = WoodFrameQuadro.paraParede(c, vz ? vz.aceitos : []); wfRX = !!(wfQ && wfQ.ok && window.WoodFrameModo === 'quadro'); } } catch (eWf) { wfQ = null; }
+      var matCasca = wfRX ? b2Mat('wfOculto') : mat;
+      r.pecas.forEach(function (pc) { var m = new THREE.Mesh(b2Geo(pc.pts, null, pc.y0, pc.ytopo, b2Plano), matCasca); addMesh(m, c.id, c.ifc, matCasca); });
+      if (wfQ && wfQ.ok) {
+        /* DESEMPENHO (revisão 20/11/2026): antes era 1 Mesh por peça (uma casa de 30 paredes passava de 2500 malhas e 2500 chamadas de desenho por
+           quadro, ESCONDIDAS dentro da casca). Agora as caixas de cada MATERIAL da parede são juntas numa geometria só (madeira, OSB, espaçador): no
+           máximo 3 malhas por parede. A peça continua no `wfQ.pecas` (quantitativo, planta, raio-X); o clique acha a parede, como sempre. */
+        var wfGrupos = {};
+        wfQ.pecas.forEach(function (pc) {
+          if (wfRX && pc.grupo !== 'madeira') return;
+          var bx = WoodFrameQuadro.emMundo(c, wfQ, pc), kW = pc.grupo === 'osb' ? 'wfOsb' : (pc.grupo === 'espacador' ? 'wfEsp' : 'madeira');
+          var eW = wfRX ? 0 : 0.002;   /* 3D normal: a peça entra 1 mm em cada face — coplanar com a casca (topo, pontas, faces) ela piscava (z-fighting, visto na tela em 20/11/2026) */
+          var gW = new THREE.BoxGeometry(Math.max(0.001, bx.comp - eW), Math.max(0.001, bx.alt - eW), Math.max(0.001, bx.esp - eW)); gW.rotateY(bx.rotY); gW.translate(bx.x, bx.y, bx.z);
+          (wfGrupos[kW] = wfGrupos[kW] || []).push(gW);
+        });
+        Object.keys(wfGrupos).forEach(function (kW) {
+          var ls = wfGrupos[kW], nV = 0, nI = 0, i0, g0 = null;
+          ls.forEach(function (g) { nV += g.attributes.position.count; nI += g.index ? g.index.count : 0; });
+          var pos = new Float32Array(nV * 3), nor = new Float32Array(nV * 3), uv = new Float32Array(nV * 2), idx = new Uint32Array(nI), oV = 0, oI = 0;
+          ls.forEach(function (g) {
+            pos.set(g.attributes.position.array, oV * 3); nor.set(g.attributes.normal.array, oV * 3); if (g.attributes.uv) uv.set(g.attributes.uv.array, oV * 2);
+            for (i0 = 0; i0 < g.index.count; i0++) idx[oI + i0] = g.index.array[i0] + oV;
+            oV += g.attributes.position.count; oI += g.index.count; g.dispose();
+          });
+          g0 = new THREE.BufferGeometry();
+          g0.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g0.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g0.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g0.setIndex(new THREE.BufferAttribute(idx, 1));
+          var mWf = b2Mat(kW), mw = new THREE.Mesh(g0, mWf);
+          mw.userData.wfPeca = 'quadro'; mw.userData.wfMaterial = kW; mw.userData.mobSem2d = true;
+          addMesh(mw, c.id, c.ifc, mWf);
+        });
+      }
       me = BimEdit.medidasDe(c, vz ? vz.areaVaos : 0);
       return { qto: { comprimento: me.comprimento, area: me.area, volume: me.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0, areaFora: me.areaFora, areaDentro: me.areaDentro } };
     }
