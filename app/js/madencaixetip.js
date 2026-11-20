@@ -20,7 +20,7 @@
    *    que transmite só a força AXIAL (tirante do arco do espigão); espigão com a face de baixo no nível de apoio da tesoura (evE), cumeeira entre os banzos (evCM);
    *  · frechal FR e pilares P/PO ficam EMBAIXO da tesoura (a tesoura assenta no frechal, o frechal no pilar): descem dFR; o eixo da reação não muda;
    *  · linhas LB apoiadas no frechal; diagonais em X de contraventamento em camadas (contato no cruzamento). */
-  var RANK_T3 = { P: 100, PO: 100, FR: 95, CM: 92, BS: 90, MS: 90, E: 80, BI: 71, MI: 70, T: 60, PD: 50, MP: 50, DG: 40, MG: 40, LB: 30, DV: 22, DX: 20, DP: 20 };
+  var RANK_T3 = { P: 100, PO: 100, FR: 95, CM: 92, BS: 90, MS: 90, CB: 90, E: 80, RC: 80, BI: 71, MI: 70, T: 60, PD: 50, MP: 50, DG: 40, MG: 40, LB: 30, DV: 22, DX: 20, DP: 20 };
   var SELA_ALT_MIN = 0.02;
 
   function normalAgua(ag, i) {
@@ -45,7 +45,7 @@
     function eixo(m) { return [copiaP(m.eixo0 || m.p0), copiaP(m.eixo1 || m.p1)]; }
     function nova(m, p0, p1, up, extra) {
       var s = secDe(sec, m.g); if (!s) return null;
-      var def = { id: m.id, g: m.g, p0: p0, p1: p1, up: up, rank: RANK_T3[m.g] || 10, agua: m.agua, tes: m.tes, noCalc0: eixo(m)[0], noCalc1: eixo(m)[1], nosCalc: (m.nos || []).map(copiaP), excent: 0 };
+      var def = { id: m.id, g: m.g, p0: p0, p1: p1, up: up, rank: RANK_T3[m.g] || 10, agua: m.agua, tes: m.tes, asa: m.asa, noCalc0: eixo(m)[0], noCalc1: eixo(m)[1], nosCalc: (m.nos || []).map(copiaP), excent: 0 };
       if (s.forma === "circular") def.d = s.d; else { def.b = s.b; def.h = s.h; }
       Object.keys(extra || {}).forEach(function (k) { def[k] = extra[k]; });
       var P = ME.criarPeca(def); pecas.push(P); return P;
@@ -63,8 +63,8 @@
       } else if (m.g === "T") {
         var n = normalAgua(m.agua, i);
         nova(m, a0, a1, n, { excent: 0, nosCalc: (m.nos || []).map(copiaP), segmentar: true, noCalcOrig: [a0, a1] });
-      } else if (m.g === "E") {
-        nova(m, [a0[0], a0[1], a0[2] + evE], [a1[0], a1[1], a1[2] + evE], up, { excent: evE * cphi, canto: m.canto, sx: m.sx, sz: m.sz });
+      } else if (m.g === "E" || m.g === "RC") {
+        var evM = m.g === "RC" ? (((sec.RC && sec.RC.h) || hE) - hBS) / 2 : evE; nova(m, [a0[0], a0[1], a0[2] + evM], [a1[0], a1[1], a1[2] + evM], up, { excent: evM * cphi, canto: m.canto, sx: m.sx, sz: m.sz });
       } else if (m.g === "CM") {
         nova(m, [a0[0], a0[1], a0[2] + evCM], [a1[0], a1[1], a1[2] + evCM], [0, 0, 1], { excent: evCM });
       } else if (m.g === "LB") {
@@ -81,12 +81,12 @@
     });
     /* terças sem banzo no nó (o apoio por contato nas faces do banzo exige a tesoura): lista para a conferência */
     info.semBanzo = [];
-    pecas.forEach(function (P) { if (P.g !== "T") return; (P.nosCalc || []).forEach(function (Q) { var ok = pecas.some(function (O) { if ((O.g !== "BS" && O.g !== "MS") || !O.noCalc1) return false; var dd = sub(O.noCalc1, O.noCalc0), L2 = dot(dd, dd) || 1, t = Math.max(0, Math.min(1, dot(sub(Q, O.noCalc0), dd) / L2)); return V.dist(Q, add(O.noCalc0, mul(dd, t))) < 0.002; }); if (!ok) info.semBanzo.push({ peca: P.id, no: Q }); }); });
+    pecas.forEach(function (P) { if (P.g !== "T") return; (P.nosCalc || []).forEach(function (Q) { var ok = pecas.some(function (O) { if ((O.g !== "BS" && O.g !== "MS" && O.g !== "CB") || !O.noCalc1) return false; var dd = sub(O.noCalc1, O.noCalc0), L2 = dot(dd, dd) || 1, t = Math.max(0, Math.min(1, dot(sub(Q, O.noCalc0), dd) / L2)); return V.dist(Q, add(O.noCalc0, mul(dd, t))) < 0.002; }); if (!ok) info.semBanzo.push({ peca: P.id, no: Q }); }); });
     /* contraventamento em X: camadas */
     cruzamentosX(pecas, sec, info);
     segmentarLB(pecas, info);                                            /* LB e terças viram trechos entre as faces dos banzos/tirantes */
     /* excentricidade DECLARADA = distância dos nós de cálculo ao eixo físico, só nos grupos que a decisão desloca (os demais têm de concorrer no nó) */
-    var AJ = { FR: 1, T: 1, E: 1, CM: 1, LB: 1, DP: 1, DX: 1, DV: 1 };
+    var AJ = { FR: 1, T: 1, E: 1, RC: 1, CM: 1, LB: 1, DP: 1, DX: 1, DV: 1 };
     pecas.forEach(function (P) {
       if (!AJ[P.g]) return; var pts = [P.noCalc0, P.noCalc1].concat(P.nosCalc || []), mx = 0;
       pts.forEach(function (Q) { if (!Q) return; var t = dot(sub(Q, P.p0), P.ex), foot = add(P.p0, mul(P.ex, t)); mx = Math.max(mx, V.dist(Q, foot)); });
@@ -157,8 +157,11 @@
         if (howe && ((dg[a] && bancos[b]) || (dg[b] && bancos[a]))) return FOLGA;          /* diagonal comprimida: carga só por chapa + pinos */
         var alma = { PD: 1, DG: 1 }, corpo = { BS: 1, BI: 1, PD: 1, DG: 1 };
         if (fink && ((alma[a] && corpo[b]) || (alma[b] && corpo[a]))) return FOLGA;         /* Fink: cada ponta de alma a 10 mm dos banzos e das outras almas (FINK-REFERENCIA) */
-        if (a === "E" && (b === "CM" || b === "BS" || b === "MS" || b === "E" || b === "PD")) return FOLGA;
-        if (b === "E" && (a === "CM" || a === "BS" || a === "MS" || a === "E" || a === "PD")) return FOLGA;
+        var ER = { E: 1, RC: 1 }, cumeEnd = function (Eh, C) { var tip = Eh.noCalc1; return !tip || [C.noCalc0, C.noCalc1].some(function (q) { return q && V.dist(q, tip) < 0.02; }); };      /* espigão × cumeeira: folga de 10 mm só quando a PONTA do espigão chega ao topo da cumeeira (no L, o espigão E1 atravessa o nó da cumeeira B: contato) */
+        if (ER[a] && b === "CM") return (a === "RC" || cumeEnd(A, B)) ? FOLGA : 0;
+        if (ER[b] && a === "CM") return (b === "RC" || cumeEnd(B, A)) ? FOLGA : 0;
+        if (ER[a] && (b === "BS" || b === "MS" || b === "CB" || ER[b] || b === "PD")) return FOLGA;
+        if (ER[b] && (a === "BS" || a === "MS" || a === "CB" || ER[a] || a === "PD")) return FOLGA;
         return 0;
       },
       ignora: function (A, B) { return false; },
@@ -166,8 +169,10 @@
       apoios: function (pecas) { return apoiosT3(pecas, info); },
       livre: function (P, e) {
         if ((P.g === "P" || P.g === "PO") && e === 0) return "base engastada na fundação (placa + chumbadores)";
-        if (P.g === "E" && e === 0) return "ponta do beiral (balanço livre, corte de prumo)";
-        if (P.g === "BS" && ((P.agua === "F" && e === 0) || (P.agua === "B" && e === 0))) return "ponta do beiral (balanço livre)";
+        if ((P.g === "E" || P.g === "RC") && e === 0 && P.noCalc0 && P.noCalc0[2] < I.Hp - 1e-6) return "ponta do beiral (balanço livre, corte de prumo)";
+        if (P.g === "BS" && e === 0 && P.noCalc0 && P.noCalc0[2] < I.Hp - 1e-6) return "ponta do beiral (balanço livre)";
+        if (P.g === "CB" && e === 0) return "ponta do beiral (balanço livre)";
+        if (I.tipologia === "T3L" && P.g === "CM") { var qE = e === 0 ? P.noCalc0 : P.noCalc1; if (qE && Math.abs(qE[1] - I.b / 2) < 1e-3 && Math.abs(qE[0] - I.b / 2) < 1e-3) return "ponta no nó do cume (topo da cumeeira A): sem contato madeira–madeira, apoiada na chapa de nó do vértice (espigões E1 e E6, caibro de meio e cumeeira B) — carga só por chapa e pinos"; }
         if (P.g === "MS" && e === 0) return "ponta do beiral (balanço livre)";
         if (G_T2 && (P.g === "T" || P.g === "CM" || P.g === "FR")) { var X = e === 0 ? P.p0[0] : P.p1[0]; if (X <= G_T2.x0 + 1e-3 || X >= G_T2.x1 - 1e-3) return "beiral de empena (balanço livre, testeira)"; }
         return null;
@@ -181,7 +186,7 @@
     pecas.forEach(function (P) {                                                  /* toda ponta de terça termina na face do banzo, da meia-tesoura, da cumeeira ou do espigão */
       if (P.g !== "T") return;
       [0, 1].forEach(function (e) {
-        var ok = P.fins[e].planos.some(function (pl) { return pl.contra && pecas.some(function (O) { return O.id === pl.contra && /^(BS|MS|CM|E)$/.test(O.g); }); });
+        var ok = P.fins[e].planos.some(function (pl) { return pl.contra && pecas.some(function (O) { return O.id === pl.contra && /^(BS|MS|CM|E|RC|CB)$/.test(O.g); }); });
         var tocaOutra = pecas.some(function (O) { return O !== P && O.g === "T" && V.dist(e ? P.p1 : P.p0, O.p0) < 0.005 || O !== P && O.g === "T" && V.dist(e ? P.p1 : P.p0, O.p1) < 0.005; });
         if (!ok && tocaOutra) out.push({ a: P, b: null, motivo: "terça " + P.id + ": a ponta " + (e ? "B" : "A") + " não encosta em banzo, cumeeira nem espigão" });
       });
@@ -195,9 +200,10 @@
     return out;
   }
   /** corta as pontas livres do beiral no prumo (plano vertical): cada peça de beiral termina num plano vertical perpendicular ao seu plano de simetria */
-  function pontasBeiral(pecas) {
+  function pontasBeiral(pecas, hp) {
     pecas.forEach(function (P) {
-      var liv = (P.g === "E" || P.g === "BS" || P.g === "MS") && true; if (!liv) return;
+      var liv = (P.g === "E" || P.g === "RC" || P.g === "BS" || P.g === "MS" || P.g === "CB") && true; if (!liv) return;
+      if ((P.g === "BS" || P.g === "E" || P.g === "RC") && P.noCalc0 && P.noCalc0[2] > (hp != null ? hp : 1e9) - 1e-6) return;      /* só a ponta que está abaixo do frechal é o beiral */
       var e = 0, ex = P.ex, hz = un([ex[0], ex[1], 0]); if (V.len([ex[0], ex[1], 0]) < 1e-6) return;
       var n = mul(hz, -1), d = dot(n, P.p0);                                  /* plano vertical em p0, normal horizontal para fora */
       if (P.g === "BS" && P.agua === "B" && V.dot(P.ex, [0, 1, 0]) > 0) return;
@@ -208,7 +214,7 @@
   /** fluxo completo: monta, corta, resolve e confere */
   function resolverT3(G, sec, opts) {
     var M = montarT3(G, sec, opts), pecas = M.pecas;
-    pontasBeiral(pecas.filter(function (P) { return (P.g === "BS" && P.agua === "F") || (P.g === "BS" && P.agua === "B") || P.g === "E" || P.g === "MS"; }));
+    pontasBeiral(pecas.filter(function (P) { return P.g === "BS" || P.g === "E" || P.g === "RC" || P.g === "MS" || P.g === "CB"; }), G.info.Hp);
     pecas.forEach(function (P) { ME.solidoDe(P); });
     var rel = ME.resolver(pecas, M.cfg), conf = ME.conferir(pecas, M.cfg, rel);
     return { pecas: pecas, info: M.info, cfg: M.cfg, resolvedor: rel, conferencia: conf };
@@ -256,8 +262,8 @@
   }
 
   /* ================================================================ FIXADORES: chapa interna + pinos (nós de tesoura), parafusos WT (terça) — como PEÇAS do modelo */
-  var LIG_POR_PAR = { PD: "noPendural", MP: "noMP", DG: "noDiagonal", MG: "noMG", E: "espigaoCumeeira", MI: "pontaMI" };
-  var COM_CHAPA = { T: 1, PD: 1, MP: 1, DG: 1, MG: 1, BS: 1, MS: 1, BI: 1, MI: 1, E: 1, DX: 1, DV: 1, DP: 1 };
+  var LIG_POR_PAR = { PD: "noPendural", MP: "noMP", DG: "noDiagonal", MG: "noMG", E: "espigaoCumeeira", RC: "rincaoApice", CB: "caibroMeio", MI: "pontaMI" };
+  var COM_CHAPA = { T: 1, PD: 1, MP: 1, DG: 1, MG: 1, BS: 1, MS: 1, CB: 1, BI: 1, MI: 1, E: 1, RC: 1, DX: 1, DV: 1, DP: 1 };
   function numPinos(P, ligs) {
     var k = LIG_POR_PAR[P.g], l = k && ligs && ligs[k], pn = l && l.pinos;
     if (P.g === "DX" || P.g === "DV" || P.g === "DP") return { n: 2, d: 0.012, nc: 1 };
@@ -324,7 +330,7 @@
 
   /* ================================================================ SAÍDAS (IFC, SketchUp, BIM, pranchas): uma peça por membro, com o SÓLIDO cortado */
   var MAT_MLC = "Madeira MLC GL24h (EN 14080)", MAT_ACO = "Aço ASTM A36 galvanizado a fogo (selas)";
-  var NOMES_T3 = { P: "Pilar do perímetro", PO: "Pilar de cabeceira", FR: "Frechal", BS: "Banzo superior da tesoura", BI: "Banzo inferior da tesoura", PD: "Montante da tesoura", DG: "Diagonal da tesoura", MS: "Banzo superior da meia-tesoura", MI: "Banzo inferior da meia-tesoura", MP: "Montante da meia-tesoura", MG: "Diagonal da meia-tesoura", E: "Espigão", T: "Terça", CM: "Cumeeira", LB: "Linha longitudinal do banzo inferior", DX: "Diagonal de contraventamento das águas", DV: "Diagonal de contraventamento vertical", DP: "Diagonal de contraventamento da parede", SELA: "Sela de aço do espigão" };
+  var NOMES_T3 = { P: "Pilar do perímetro", PO: "Pilar de cabeceira", FR: "Frechal", BS: "Banzo superior da tesoura", BI: "Banzo inferior da tesoura", PD: "Montante da tesoura", DG: "Diagonal da tesoura", MS: "Banzo superior da meia-tesoura", MI: "Banzo inferior da meia-tesoura", MP: "Montante da meia-tesoura", MG: "Diagonal da meia-tesoura", E: "Espigão", RC: "Rincão", CB: "Caibro de meio", T: "Terça", CM: "Cumeeira", LB: "Linha longitudinal do banzo inferior", DX: "Diagonal de contraventamento das águas", DV: "Diagonal de contraventamento vertical", DP: "Diagonal de contraventamento da parede", SELA: "Sela de aço do espigão" };
   /** resolve (e guarda em res._enc) a T3 de um resultado do motor */
   function resolvidoT3(res) {
     if (res._enc) return res._enc;
@@ -335,7 +341,7 @@
     var aco = !!P.aco, fe = ME.fichaPeca(P), med = fe.medidas || {};
     var o = { id: P.id, g: P.g, marca: P.g, grupo: grupoPre + " — " + (NOMES_T3[P.g] || P.g), descricao: NOMES_T3[P.g] || P.g, material: aco ? MAT_ACO : MAT_MLC,
       especificacao: (aco ? "bloco de aço sob o espigão, " : "MLC GL24h ") + rd(P.b * 100, 1) + "×" + rd(P.h * 100, 1) + " cm; corte " + fe.pontas[0].corte + " / " + fe.pontas[1].corte,
-      secao: { tipo: "ret", b: P.b, h: P.h }, p0: P.p0, p1: P.p1, up: P.ey, qtd: 1, comprimento_m: med.bruto, volume_m3: ME.volumePeca(P), unidade: "peça", tes: P.tes, agua: P.agua,
+      secao: { tipo: "ret", b: P.b, h: P.h }, p0: P.p0, p1: P.p1, up: P.ey, qtd: 1, comprimento_m: med.bruto, volume_m3: ME.volumePeca(P), unidade: "peça", tes: P.tes, agua: P.agua, asa: P.asa,
       materialBim: aco ? "aço" : "madeira", malha: ME.malhaPeca(P), receita: ME.receitaPeca(P, P.g === "E" || P.g === "DV" || P.g === "DX"), ficha: fe, excent_m: P.excent || 0 };
     return o;
   }

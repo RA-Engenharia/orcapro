@@ -792,8 +792,8 @@
   function previa() { var P = global.BimPrevia; if (!P || !P.modelador || !P.modelador()) return false; if (P.disciplina) { try { return P.disciplina("marcenaria") !== false; } catch (e) { return true; } } return true; }
   var COMANDOS = [
     { id: "mad-calc-abrir", rotulo: "Estrutura de\nmadeira", icone: "estrutura", grande: true, dica: "Cálculo da estrutura de madeira pela NBR 7190-1:2022: carregue o pacote da obra (ou o exemplo), confira as premissas e calcule — piso seco, pilares, coberturas, paredes, ligações, reações e compra." },
-    { id: "mad-calc-exemplo", rotulo: "Carregar\nexemplo", icone: "camadas", grande: true, dica: "Abre o exemplo pronto: um quiosque de madeira real anonimizado (907 peças, piso seco, wood frame e duas coberturas)." },
-    { id: "mad-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula a estrutura carregada em paralelo (a tela continua livre) — cerca de meio minuto." },
+    { id: "mad-calc-exemplo", rotulo: "Abrir\nexemplo", icone: "camadas", grande: true, dica: "Abre o exemplo pronto: um quiosque de madeira real anonimizado (907 peças, piso seco, wood frame e duas coberturas). Só este botão carrega o exemplo." },
+    { id: "mad-calc-calcular", rotulo: "Calcular", icone: "raio", grande: true, dica: "Calcula a madeira do modelo aberto: o telhado selecionado ou, sem seleção, todos os telhados do modelo. Sem telhado, avisa — não carrega o exemplo." },
     { id: "mad-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Resumo por função (η, o que governa, a combinação), reprovações e impedimentos, α_cr, reações para a fundação e compra." },
     { id: "mad-calc-memorial", rotulo: "Memorial", icone: "relatorio", dica: "Memorial de cálculo da madeira (abre para imprimir ou salvar em PDF)." },
     { id: "mad-calc-pranchas", rotulo: "Pranchas", icone: "prancha", dica: "Pranchas A1 do projeto executivo no padrão da casa." },
@@ -801,6 +801,7 @@
     { id: "mad-calc-cype", rotulo: "Para o CYPE 3D", icone: "exportar", dica: "Pacote para o CYPE 3D: geometria, séries, liberações, cargas e o roteiro (.zip)." },
     { id: "mad-calc-compra", rotulo: "Lista de\ncompra", icone: "planilha", dica: "Madeira por espécie e seção com as barras comerciais (.xlsx)." }
   ];
+  function calcularModelo() { var U = global.MadCoberturaUI; if (U && U.calcularModelo) return U.calcularModelo({ origem: "marcenaria" }); toast("Nenhum telhado ou estrutura de madeira no modelo aberto. Desenhe o telhado (Arquitetura › Telhado) ou use 'Abrir exemplo'.", "aviso", 8000); return { ok: false, motivo: "sem-modelo" }; }
   function registrar(reg) {
     var R = global.BimRibbon;
     if (!previa() || !R || !reg || !W()) return false;
@@ -809,7 +810,7 @@
     if (global.BimDisciplinas && typeof global.BimDisciplinas.declarar === "function") { try { global.BimDisciplinas.declarar(ids, "marcenaria"); } catch (e) {} }
     ids.forEach(function (k) { if (R._EXCLUSIVOS && R._EXCLUSIVOS.indexOf(k) < 0) R._EXCLUSIVOS.push(k); });
     var h = {
-      "mad-calc-abrir": function () { API.abrir(); }, "mad-calc-exemplo": function () { API.exemplo(); }, "mad-calc-calcular": function () { API.calcular(); },
+      "mad-calc-abrir": function () { API.abrir(); }, "mad-calc-exemplo": function () { API.exemplo(); }, "mad-calc-calcular": function () { calcularModelo(); },
       "mad-calc-resultados": function () { API.resultados(); }, "mad-calc-memorial": function () { API.memorial(); }, "mad-calc-pranchas": function () { API.pranchas(); },
       "mad-calc-manual": function () { API.manual(); }, "mad-calc-cype": function () { API.cype(); }, "mad-calc-compra": function () { API.compra(); }
     };
@@ -826,6 +827,7 @@
     abrir: function () { return abrirEm(null); },
     exemplo: function () { garantir(); return exemplo(); },
     calcular: function () { if (!lic("calcular a estrutura")) return false; garantir(); return calcular(); },
+    calcularModelo: calcularModelo,
     /* a trava na função, para quem integra e para o teste: true = pode (e em teste de 1 hora o relógio do módulo anda) */
     licenca: function (acao) { return lic(acao || "usar a função"); },
     resultados: function () { return abrirEm(UIC.resumo ? "resultado" : (UIC.pacote ? "dados" : "dados")); },

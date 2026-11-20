@@ -18,13 +18,13 @@
 
   var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
   var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
-    "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
+    "madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt3l.js", "madt3lcalc.js", "madt3llig.js", "madt3lsaidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
     "madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js",
     "madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js",      /* o encaixe de carpinteiro + a geometria do telhado desenhado: mensagem "geometria" (abaixo) */
     "madligcalc.js", "madwoodframe.js", "woodframequadro.js", "woodframecalc.js"];      /* Wood Frame fase 2B: o cálculo estrutural das paredes de quadro — mensagem "woodframe" (abaixo) */
   var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
     "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
-    "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
+    "madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt3l.js": "MadT3L", "madt3lcalc.js": "MadT3LCalc", "madt3llig.js": "MadT3LLig", "madt3lsaidas.js": "MadT3LSaidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
     "madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas",
     "madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes",
     "madligcalc.js": "MadLigCalc", "madwoodframe.js": "MadWoodFrame", "woodframequadro.js": "WoodFrameQuadro", "woodframecalc.js": "WoodFrameCalc" };
@@ -53,6 +53,7 @@
     if (sol.soDeck) return rodarDeck(sol, t7, terr, avisa, t0, MO);
     if (sol.t2) return rodarT2(sol, proj, avisa, t0, D2, MO);
     if (sol.t4) return (G("MadT4Saidas") || require("./madt4saidas.js")).rodar(sol, proj, avisa, t0, MO);      /* T4 (telhado sextavado/oitavado): js/madt4*.js */
+    if (sol.t3 && proj.params && proj.params.planta === "L") return (G("MadT3LSaidas") || require("./madt3lsaidas.js")).rodar(sol, proj, avisa, t0, MO);      /* T3L (telhado de 4 águas em L, com rincão): js/madt3l*.js */
     if (sol.t3) return (G("MadT3Saidas") || require("./madt3saidas.js")).rodar(sol, proj, avisa, t0, MO);      /* T3 (telhado de 4 águas): js/madt3*.js */
     if (sol.t5) return (G("MadT5Saidas") || require("./madt5saidas.js")).rodar(sol, proj, avisa, t0, MO);      /* T5 (pergolado): js/madt5*.js */
     var itAtual = 0, dk = null;

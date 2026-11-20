@@ -9,7 +9,8 @@
  *   4) ver: janela de resultado + 3D. Mudou delimitação, beiral, inclinação, telha, apoio ou nível → recalcula sozinho (um de cada vez, em segundo plano).
  * O usuário não digita espaçamento: o menu "Ajustar" só SOBRESCREVE (apoio, tesoura Pratt/Howe/Fink, telhado aparente, ligações ocultas).
  * Motor de tesouras (T2/T3): Web Worker (minutos); laço de terças/caibros/vigas: na hora.
- * Sem a prévia do modelador nada aparece (como o telhado).
+ * O CÁLCULO (menu Madeira calculada, Propriedades do telhado, botões Calcular da Marcenaria) vale para todos; só o que roda SOZINHO (calcular ao lançar, vigia que
+ *   recalcula/migra projeto antigo) continua na prévia do modelador — projeto antigo nunca é mexido sem clique (N2 do TELHADO-DESENHADO-REFERENCIA).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -113,14 +114,16 @@
 
   function calcular(tid, opc) {
     opc = opc || {};
-    var M = MC(), st = estado(); if (!M || !st) { status("O motor da madeira calculada não carregou."); return false; }
-    var t = telhados(st).filter(function (x) { return String(x.id) === String(tid); })[0]; if (!t) { status("Telhado " + tid + " não encontrado."); return false; }
+    function terminou(ok, calcOut) { var f = opc.aoFim; opc.aoFim = null; if (f) { try { f(ok, calcOut); } catch (eF) { /* callback não derruba o cálculo */ } } }
+    var M = MC(), st = estado(); if (!M || !st) { status("O motor da madeira calculada não carregou."); terminou(false); return false; }
+    var t = telhados(st).filter(function (x) { return String(x.id) === String(tid); })[0]; if (!t) { status("Telhado " + tid + " não encontrado."); terminou(false); return false; }
     if (UI_ESTADO.rodando) { if (UI_ESTADO.fila.indexOf(String(tid)) < 0) UI_ESTADO.fila.push(String(tid)); status("Já tem um cálculo de madeira rodando; o do telhado " + tid + " entra na fila."); return true; }
     var cfg = cfgDe(t); if (opc.cfg) Object.keys(opc.cfg).forEach(function (k) { cfg[k] = opc.cfg[k]; });
     var prep = M.preparar(st, tid, cfg, { obra: lerObra() });
     if (!prep.ok) {
       if (prep.pendente === "local") { pedirLocal(function () { calcular(tid, opc); }); return false; }
       status("Madeira calculada: " + prep.motivo); if (!opc.silencioso) janela("Madeira calculada — telhado " + tid, "<p><b>Não deu para calcular.</b></p><p>" + esc(prep.motivo) + "</p>");
+      terminou(false, { motivo: prep.motivo });
       return false;
     }
     UI_ESTADO.rodando = true; UI_ESTADO.progresso = "preparando";
@@ -130,18 +133,61 @@
       var ok = aplicarOps(ops, "mc-" + tid + "-" + new Date().getTime());
       if (ok) { UI_ESTADO.ultimo[tid] = calc.chave; UI_ESTADO.resultado[tid] = out; status("Madeira calculada (telhado " + tid + "): " + out.resumo); if (!opc.silencioso) mostrar(tid, out); }
       else status("Não consegui gravar o cálculo no telhado " + tid + ".");
-      fim();
+      fim(); terminou(!!ok, out);
     }
-    if (prep.via === "laco") { garantir([["MadLig", "madligacoes.js"]]).then(function () { gravar(M.rodarLaco(prep)); }, function (e) { status("Madeira calculada: " + (e && e.message ? e.message : e)); fim(); }); return true; }
+    if (prep.via === "laco") { garantir([["MadLig", "madligacoes.js"]]).then(function () { gravar(M.rodarLaco(prep)); }, function (e) { status("Madeira calculada: " + (e && e.message ? e.message : e)); fim(); terminou(false); }); return true; }
     status("Calculando as tesouras do telhado " + tid + " no módulo Madeira (leva alguns minutos; pode continuar trabalhando)…");
     (function rodar(p) {
       rodarMotor(p.sol, function (m) { UI_ESTADO.progresso = progressoTexto(m); }).then(function (res) {
         var o = M.concluirMotor(p, res);
         if (o.repetir) { status("Madeira (telhado " + tid + "): não fechou com tesouras a " + virg(p.sTes) + " m — tentando espaçamento menor…"); rodar(M.proximaTentativa(p)); return; }
         gravar(o);
-      }, function (e) { status("Cálculo da madeira falhou: " + (e && e.message ? e.message : e)); fim(); });
+      }, function (e) { status("Cálculo da madeira falhou: " + (e && e.message ? e.message : e)); fim(); terminou(false); });
     })(prep);
     return true;
+  }
+
+  /* ------------------------------------------------------------ "CALCULAR" = O MODELO ABERTO
+     Os botões Calcular (Madeira calculada, Marcenaria > Estruturas de madeira e > Cálculo estrutural) chamam isto: calcula o telhado SELECIONADO ou, sem seleção, TODOS os do modelo,
+     pelo mesmo caminho do "Calcular a madeira" da cobertura (calcular(tid): tipologia automática T1/T2/T3/T3L/T4/T5/laje/pilares). Nunca carrega o exemplo: sem telhado, só avisa. */
+  var AVISO_SEM_MODELO = "Nenhum telhado ou estrutura de madeira no modelo aberto. Desenhe o telhado (Arquitetura › Telhado) ou use 'Abrir exemplo'.";
+  function toast(t, tipo) { try { if (global.UI && global.UI.toast) global.UI.toast(t, tipo || "ok", 7000); } catch (e) {} }
+  function selecionados() { try { var b = B(), s = b && b.selecao ? b.selecao() : null; return arr(s && s.uids); } catch (e) { return []; } }
+  function alvos(st) {
+    var todos = telhados(st), sel = selecionados().map(function (u) { var m = /^edit:(.+)$/.exec(String(u || "")); return m ? m[1] : null; }).filter(Boolean);
+    var marcados = todos.filter(function (t) { return sel.indexOf(String(t.id)) >= 0; });
+    return { todos: todos, lista: marcados.length ? marcados : todos, selecionado: marcados.length > 0 };
+  }
+  function resumoModelo(itens) {
+    var h = '<div data-mcob="resumo-modelo"><p style="margin:0 0 6px"><b>Madeira calculada — ' + itens.length + ' telhados do modelo</b></p><ul style="margin:0 0 0 18px;padding:0">';
+    itens.forEach(function (i) {
+      var c = i.out && i.out.calc;
+      h += "<li>Telhado " + esc(i.tid) + ": " + (i.ok && c ? "<b>" + esc(c.tipologia && c.tipologia.tipo ? c.tipologia.tipo : c.sistema) + "</b> — " + esc(c.sistema) + (c.preliminar ? " (PRELIMINAR)" : "") + ' <button type="button" class="btn" data-mcob-ver="' + esc(i.tid) + '">Ver o resultado</button>' : "não calculado — " + esc(i.motivo || "veja o status")) + "</li>";
+    });
+    return h + "</ul></div>";
+  }
+  function semModelo() { status(AVISO_SEM_MODELO); toast(AVISO_SEM_MODELO, "aviso"); return { ok: false, motivo: "sem-modelo", aviso: AVISO_SEM_MODELO }; }
+  function calcularModelo(opc) {
+    opc = opc || {};
+    var st = estado();
+    if (!MC() || !st) return semModelo();
+    var a = alvos(st);
+    if (!a.lista.length) return semModelo();
+    var ids = a.lista.map(function (t) { return String(t.id); }), feitos = [], unico = ids.length === 1;
+    var msg = "Calculando a madeira " + (unico ? "do telhado " + ids[0] : "de " + ids.length + " telhados (" + (a.selecionado ? "selecionados" : "todos do modelo") + ")") + " — o resultado abre no fim.";
+    status(msg); toast(msg, "ok");
+    function fechar() {
+      if (unico) return;   /* o único já abriu a própria janela de resultado */
+      var ov = janela("Madeira calculada — modelo", resumoModelo(feitos)); if (!ov) return;
+      ov.addEventListener("click", function (ev) { var v = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-mcob-ver") : null; if (!v) return; var f = feitos.filter(function (x) { return x.tid === v; })[0]; if (f && f.out) mostrar(v, f.out); });
+    }
+    function passo(i) {
+      if (i >= ids.length) { fechar(); return; }
+      var tid = ids[i];
+      calcular(tid, { silencioso: !unico, aoFim: function (bom, out) { feitos.push({ tid: tid, ok: !!bom, out: out, motivo: out && out.motivo }); passo(i + 1); } });
+    }
+    passo(0);
+    return { ok: true, telhados: ids, selecionado: a.selecionado };
   }
 
   /* ------------------------------------------------------------ SAÍDAS COMPLETAS DO MÓDULO: roda o motor de novo com a MESMA entrada (determinístico) e usa as funções do módulo */
@@ -248,6 +294,7 @@
   }
   function vigiar() {
     if (typeof document === "undefined" || document.hidden || UI_ESTADO.rodando) return;
+    if (!previa()) return;   /* N2: recalcular/avisar sozinho (projeto antigo) só na prévia; fora dela o cálculo só roda no clique */
     var M = MC(), st = estado(); if (!M || !st) return;
     migrarAntigos(st);
     telhados(st).forEach(function (t) {
@@ -262,7 +309,7 @@
       calcular(t.id, { silencioso: true });
     });
   }
-  function ligarVigia() { if (UI_ESTADO.timer || typeof global.setInterval !== "function") return; UI_ESTADO.timer = global.setInterval(function () { try { vigiar(); } catch (e) {} }, 1500); }
+  function ligarVigia() { if (!previa() || UI_ESTADO.timer || typeof global.setInterval !== "function") return; UI_ESTADO.timer = global.setInterval(function () { try { vigiar(); } catch (e) {} }, 1500); }
 
   /* ------------------------------------------------------------ a fita, a ferramenta e as Propriedades */
   function passoTodos(fn) { var st = estado(), l = telhados(st); if (!l.length) { status("Lance um telhado (Arquitetura › Telhado) antes."); return; } l.forEach(function (t) { fn(t); }); }
@@ -273,7 +320,7 @@
   }
 
   var MadCoberturaUI = {
-    ativo: previa, chaveObra: chaveObra, gravarLocal: gravarLocal, lerObra: lerObra, calcular: calcular, migrarAgora: migrarAgora, manterAntigo: manterAntigo, antigosPendentes: antigosPendentes, gerarSaidas: gerarSaidas, abrirNoModulo: abrirNoModulo, mostrar: mostrar, vigiar: vigiar, estado: UI_ESTADO, rodarMotor: rodarMotor, htmlResultado: htmlResultado,
+    ativo: previa, chaveObra: chaveObra, gravarLocal: gravarLocal, lerObra: lerObra, calcular: calcular, calcularModelo: calcularModelo, AVISO_SEM_MODELO: AVISO_SEM_MODELO, migrarAgora: migrarAgora, manterAntigo: manterAntigo, antigosPendentes: antigosPendentes, gerarSaidas: gerarSaidas, abrirNoModulo: abrirNoModulo, mostrar: mostrar, vigiar: vigiar, estado: UI_ESTADO, rodarMotor: rodarMotor, htmlResultado: htmlResultado,
     /* chamado pela ferramenta de Telhado logo depois de lançar */
     aposLancar: function (tid) { if (!previa() || !MC()) return false; setTimeout(function () { calcular(tid, { silencioso: true }); }, 80); ligarVigia(); return true; },   /* A4: em segundo plano, sem janela; forma que o motor não aceita = só um aviso discreto */
     /* as linhas da ferramenta de Telhado (Propriedades) */
@@ -303,8 +350,8 @@
       void t; return { nome: "Madeira calculada (módulo Madeira)", params: ps };
     },
     registrar: function (reg, arqui, opts) {
-      var pv = opts && opts.previa != null ? !!opts.previa : previa(), R = global.BimRibbon;
-      if (!pv || !R || !reg || !MC()) return false;
+      var R = global.BimRibbon;   /* sem trava de prévia: o cálculo é por clique (o que roda sozinho — vigia, calcular ao lançar — segue na prévia) */
+      if (!R || !reg || !MC()) return false;
       R.acrescentar("arquitetura", "Arquitetura", "Madeira calculada", [
         { id: "mad-cob", rotulo: "Madeira\ncalculada", icone: "calculadora", grande: true, tipo: "menu",
           dica: "Calcula a madeira do telhado no módulo Madeira: o sistema detecta o apoio (laje, paredes ou pilares), escolhe tesouras, terças sobre pontaletes ou vigas sobre pilares, fecha as seções em laço e devolve o resultado para as peças do modelo (ripas e telhas pela telha escolhida). Você só sobrescreve em Ajustar.",
@@ -318,7 +365,7 @@
                   { id: "mad-cob-limpar", rotulo: "Voltar à madeira de partida", icone: "mais" }] }
       ]);
       reg["mad-cob"] = function () { return true; };
-      reg["mad-cob-calc"] = function () { ligarVigia(); passoTodos(function (t) { calcular(t.id, {}); }); return true; };
+      reg["mad-cob-calc"] = function () { ligarVigia(); calcularModelo({ origem: "madeira-calculada" }); return true; };
       reg["mad-cob-ver"] = function () { passoTodos(function (t) { var s = MC().situacao(estado(), t.id); if (s.calculado) mostrar(t.id, { calc: s.calc }); else status("O telhado " + t.id + " ainda não foi calculado."); }); return true; };
       [["auto", null], ["laje", "laje"], ["paredes", "paredes"], ["pilares", "pilares"]].forEach(function (p) { reg["mad-cob-ap-" + p[0]] = function () { mudarCfg("apoio", p[1]); return true; }; });
       ["pratt", "howe", "fink"].forEach(function (k) { reg["mad-cob-tes-" + k] = function () { mudarCfg("tesoura", k); return true; }; });

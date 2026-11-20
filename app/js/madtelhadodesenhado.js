@@ -28,6 +28,7 @@
   function TP() { return dep("MadEncaixeTip", "./madencaixetip.js"); }
   function MT() { return dep("MadTipologias", "./madtipologias.js"); }
   function T3() { return dep("MadT3", "./madt3.js"); }
+  function T3L() { return dep("MadT3L", "./madt3l.js"); }
   function MC() { return dep("MadCobertura", "./madcobertura.js"); }
   function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
@@ -40,7 +41,7 @@
 
   var VERSAO = 1;
   /* grupo do motor → papel da peça do BIM (as mesmas palavras que o resto do modelo já usa) */
-  var PAPEL = { BS: "perna", MS: "perna", BI: "linha", MI: "linha", PD: "pendural", MP: "pendural", DG: "escora", MG: "escora", T: "terca", E: "espigao", FR: "frechal", CM: "cumeeira", CB: "caibro-agua", CUBO: "cubo", CHAPA: "chapa-radial",
+  var PAPEL = { BS: "perna", MS: "perna", BI: "linha", MI: "linha", PD: "pendural", MP: "pendural", DG: "escora", MG: "escora", T: "terca", E: "espigao", RC: "espigao", FR: "frechal", CM: "cumeeira", CB: "caibro-agua", CUBO: "cubo", CHAPA: "chapa-radial",
     P: "pilar", PO: "pilar", PC: "pilar", LB: "contravento", DX: "contravento", DV: "contravento", DP: "contravento" };
   var TOPO_PLANO = { BS: 1, MS: 1, T: 1 };      /* os grupos cujo TOPO define o plano onde assenta o caibro (a terça é embutida no plano do banzo) */
   var TOL_PAREDE = 0.005;                       /* 5 mm: contato face a face não é interpenetração */
@@ -72,6 +73,13 @@
     }
     R.via = "motor";
     var man = cfg.tesoura === "pratt" || cfg.tesoura === "howe" || cfg.tesoura === "fink";
+    if (lido.tipo === "T3L") {
+      var vL = man && cfg.tesoura !== "fink" ? cfg.tesoura : "pratt";
+      R.variante = vL; R.auto = !(man && cfg.tesoura !== "fink");
+      R.criterio = "4 águas em planta em L (asa A " + virg(lido.a) + " × " + virg(lido.b) + " m, asa B " + virg(lido.bb) + " × " + virg(lido.c) + " m): T3L, com RINCÃO no canto côncavo e calha — " + (R.auto ? "tesoura Pratt (a Fink só existe para 2 águas)" : "tesoura " + vL + " escolhida pelo usuário") + (Math.abs(lido.b - lido.bb) < 1e-6 ? "; asas de larguras iguais" : "; cumeeira B mais baixa que a A (asas de larguras diferentes)");
+      if (man && cfg.tesoura === "fink") R.aviso = "Tesoura Fink só existe para 2 águas; na planta em L usei Pratt.";
+      R.fonte = "T3L-REFERENCIA.md"; return R;
+    }
     if (lido.tipo === "T3") {
       var vt = man && cfg.tesoura !== "fink" ? cfg.tesoura : "pratt";
       R.variante = vt; R.auto = !(man && cfg.tesoura !== "fink");
@@ -115,13 +123,13 @@
   }
   function payload(prep, res) {
     if (!prep || !prep.lido || !res || !res.secoes || !prep.sol || !prep.sol.proj || !prep.sol.proj.params) return null;
-    var tip = prep.lido.tipo; if (tip !== "T2" && tip !== "T3" && tip !== "T4") return null;
+    var tip = prep.lido.tipo; if (tip !== "T2" && tip !== "T3" && tip !== "T3L" && tip !== "T4") return null;
     /* `entrada` = os campos do módulo Madeira (est.t2 / est.t3) desta mesma entrada: o módulo, aberto com eles, devolve as pranchas, o memorial e o orçamento IGUAIS aos das tipologias publicadas */
-    var campos = prep.estadoMad && prep.estadoMad[tip === "T2" ? "t2" : (tip === "T4" ? "t4" : "t3")];
+    var campos = prep.estadoMad && prep.estadoMad[tip === "T2" ? "t2" : (tip === "T4" ? "t4" : "t3")];      /* T3L usa os campos est.t3 com planta "L" */
     return { v: VERSAO, tip: tip, variante: prep.tesoura || null, origem: "calculado", apoio: prep.apoio ? prep.apoio.tipo : null, sTes: prep.sTes, params: arred(clone(prep.sol.proj.params)), sec: arred(clone(res.secoes)), entrada: campos ? arred(clone(campos)) : null };
   }
   function payloadValido(m) {
-    return !!m && typeof m === "object" && m.v === VERSAO && (m.tip === "T2" || m.tip === "T3" || m.tip === "T4") && !!m.params && typeof m.params === "object" && !!m.sec && typeof m.sec === "object" && (m.tip === "T4" ? fin(Number(m.params.R)) : (fin(Number(m.params.a)) && fin(Number(m.params.b))));
+    return !!m && typeof m === "object" && m.v === VERSAO && (m.tip === "T2" || m.tip === "T3" || m.tip === "T3L" || m.tip === "T4") && !!m.params && typeof m.params === "object" && !!m.sec && typeof m.sec === "object" && (m.tip === "T4" ? fin(Number(m.params.R)) : (fin(Number(m.params.a)) && fin(Number(m.params.b)) && (m.tip !== "T3L" || (fin(Number(m.params.c)) && fin(Number(m.params.bb))))));
   }
 
   /* ======================================================================
@@ -136,7 +144,8 @@
     if (m.tip === "T4") r = resolverT4(m);
     else {
       var TPp = TP(), Mt = MT(), T3p = T3(); if (!TPp || !Mt || !T3p) throw new Error("os motores de madeira (madencaixetip/madtipologias/madt3) não carregaram");
-      var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : T3p.geometria(clone(m.params));
+      var TLp = T3L(); if (m.tip === "T3L" && !TLp) throw new Error("o motor da planta em L (madt3l) não carregou");
+      var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : (m.tip === "T3L" ? TLp.geometria(clone(m.params)) : T3p.geometria(clone(m.params)));
       r = TPp.resolverT3(G, clone(m.sec)); delete r.cfg;
     }
     return r;
@@ -289,6 +298,7 @@
       if ((lido.centro[0] - P4[0][0]) * v4[0] + (lido.centro[1] - P4[0][1]) * v4[1] < 0) v4 = [-v4[0], -v4[1]];
       return { O: [lido.centro[0] - lido.R * u4[0] - lido.R * v4[0], lido.centro[1] - lido.R * u4[1] - lido.R * v4[1]], u: u4, v: v4, det: -(u4[0] * v4[1] - u4[1] * v4[0]) };
     }
+    if (lido.tipo === "T3L") { var qL = lido.quadroL; return { O: qL.O, u: qL.u, v: qL.v, det: -(qL.u[0] * qL.v[1] - qL.u[1] * qL.v[0]) }; }      /* L: o canto externo é a origem; a asa A ao longo de u e a asa B ao longo de v */
     var P = lido.contorno, kA = lido.kA, k1 = (kA + 1) % 4, k2 = (kA + 2) % 4, d = lido.eixoD || [0, 0, 0, 0];
     function un(a, b) { var dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz) || 1; return [dx / L, dz / L]; }
     var u = un(P[k1], P[kA]), v = un(P[k1], P[k2]);
@@ -320,9 +330,9 @@
     var p = motor.params, be = lido.beiral, dif = [];
     function cmp(nome, a, b, tol) { if (!(Math.abs(num(a, 0) - num(b, 0)) <= tol)) dif.push(nome + " " + virg(a) + " → " + virg(b)); }
     if (motor.tip === "T4") { cmp("raio", p.R, lido.R, 0.011); cmp("lados", p.n, lido.n, 0.1); cmp("beiral", p.beiral, be, 0.006); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); }
-    else { cmp("comprimento", p.a, lido.a, 0.011); cmp("vão", p.b, lido.b, 0.011); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); }
+    else { cmp("comprimento", p.a, lido.a, 0.011); cmp("vão", p.b, lido.b, 0.011); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); if (motor.tip === "T3L") { cmp("largura da asa B", p.bb, lido.bb, 0.011); cmp("comprimento da asa B", p.c, lido.c, 0.011); } }
     if (motor.tip === "T4") { /* já comparado */ }
-    else if (motor.tip === "T3") cmp("beiral", p.beiral, be, 0.006);
+    else if (motor.tip === "T3" || motor.tip === "T3L") cmp("beiral", p.beiral, be, 0.006);
     else { cmp("beiral frente", p.beiral && p.beiral.frente, be.eave[0], 0.006); cmp("beiral fundo", p.beiral && p.beiral.fundo, be.eave[1], 0.006); cmp("beiral esquerdo", p.beiral && p.beiral.esq, be.gable[0], 0.006); cmp("beiral direito", p.beiral && p.beiral.dir, be.gable[1], 0.006); }
     cmp("pé-direito", p.peDireito, Math.max(lido.peDireito, 1.2), 0.011);
     if (dif.length) return { ok: false, motivo: "o telhado mudou depois do cálculo (" + dif.join("; ") + "): recalcule a madeira", desatualizado: true };
@@ -374,7 +384,7 @@
       o.L = r4(Math.sqrt(Math.pow(bP[0] - aP[0], 2) + Math.pow(bP[1] - aP[1], 2) + Math.pow(bP[2] - aP[2], 2)));
       pecas.push(o);
       /* 3b) a pilha caibro/ripa/telha começa no topo dos banzos e terças (o espigão passa um pouco do plano: é medido e avisado) */
-      if (TOPO_PLANO[P.g] || P.g === "E") {
+      if (TOPO_PLANO[P.g] || P.g === "E" || P.g === "RC") {
         for (i = 0; i < wv.length; i++) {
           var yR = Bt.alturaEm(t, wv[i][0], wv[i][2]); if (yR == null) continue;
           var dz = wv[i][1] - yR;
@@ -518,7 +528,7 @@
   /** o estado do módulo Madeira (MadEngEntrada) desta cobertura: tipologia, campos est.t2/est.t3 (motor.entrada) e a obra */
   function estadoDoModulo(calc, obra) {
     var EN = dep("MadEngEntrada", "./madengentrada.js"), m = calc && calc.motor; if (!EN || !payloadValido(m) || !m.entrada) return null;
-    var e = EN.estadoPadrao(); e.tip = m.tip; e.obra = ext3(e.obra, clone(obra || {})); e[m.tip === "T2" ? "t2" : (m.tip === "T4" ? "t4" : "t3")] = clone(m.entrada);
+    var e = EN.estadoPadrao(); e.tip = m.tip === "T3L" ? "T3" : m.tip; e.obra = ext3(e.obra, clone(obra || {})); e[m.tip === "T2" ? "t2" : (m.tip === "T4" ? "t4" : "t3")] = clone(m.entrada);
     return e;
   }
   function ext3(a, b) { var o = {}; Object.keys(a || {}).forEach(function (k) { o[k] = a[k]; }); Object.keys(b || {}).forEach(function (k) { o[k] = b[k]; }); return o; }
@@ -532,8 +542,8 @@
   /** as saídas do módulo para o resultado do motor (res): as MESMAS funções que o módulo chama */
   function saidas(res, opc) {
     opc = opc || {}; var o = opc.obra || {}, tip = res && res.tipologia, out = { tipologia: tip };
-    var MEM = tip === "T4" ? dep("MadT4Saidas", "./madt4saidas.js") : (tip === "T3" ? dep("MadT3Saidas", "./madt3saidas.js") : dep("MadEngT2Doc", "./madengt2doc.js"));
-    var PR = tip === "T4" ? dep("MadEngT4", "./madt4pranchas.js") : (tip === "T3" ? dep("MadEngT3", "./madt3pranchas.js") : dep("MadEngT2", "./madengt2pranchas.js"));
+    var MEM = tip === "T4" ? dep("MadT4Saidas", "./madt4saidas.js") : (tip === "T3L" ? dep("MadT3LSaidas", "./madt3lsaidas.js") : (tip === "T3" ? dep("MadT3Saidas", "./madt3saidas.js") : dep("MadEngT2Doc", "./madengt2doc.js")));
+    var PR = tip === "T4" ? dep("MadEngT4", "./madt4pranchas.js") : (tip === "T3L" ? dep("MadEngT3L", "./madt3lpranchas.js") : (tip === "T3" ? dep("MadEngT3", "./madt3pranchas.js") : dep("MadEngT2", "./madengt2pranchas.js")));
     if (!MEM) return { ok: false, motivo: "o gerador de saídas da " + tip + " não carregou" };
     out.memorial = MEM.memorial(res, { obra: { nome: o.nome, cidade: o.cidade }, documento: { numero: (opc.codigo || "COB") + "-MEM", revisao: "R00", data: opc.data || "2026-01-01" }, responsavel: {}, nomeOpcao: res.nomeOpcao });
     out.manual = MEM.manual(res, { obra: { nome: o.nome }, documento: { revisao: "R00" }, preliminar: !!opc.preliminar });
