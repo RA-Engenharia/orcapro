@@ -1732,8 +1732,9 @@
       bt("vista3d", "Ver em 3D", "olho", ok && !!global.MetalCalcVista, global.MetalCalcVista ? "Deformada, esforços e flambagem no 3D" : "A vista 3D dos resultados está em preparação (js/metalcalcvista.js)") +
       bt("memorial", "Memorial", "relatorio", ok && !!(global.AcoMemorial && AcoMemorial.gerar), global.AcoMemorial ? "Memorial de cálculo para imprimir ou salvar em PDF" : "O memorial está em preparação (js/acomemorial.js)") +
       bt("pranchas", "Pranchas", "prancha", ok && !!(global.AcoPranchas && AcoPranchas.gerar), global.AcoPranchas ? "Pranchas no padrão da casa, na tela e em Navegador › Folhas" : "As pranchas estão em preparação (js/acopranchas.js)") +
-      bt("cype", "Exportar para o CYPE", "exportar", ok && !!global.AcoCype, global.AcoCype ? "Arquivo para o CYPE 3D com perfis, cargas e apoios" : "A exportação para o CYPE está em preparação (js/acocype.js)") +
-      bt("cype-guia", "Como usar no CYPE 3D", "checklist", !!(global.AcoCype && AcoCype.comoUsarHTML), "Passo a passo no CYPE 3D com os números deste cálculo: abrir o IFC, perfis, vínculos, flambagem, cargas e conferir o resultado") +
+      /* 20/11/2026: CYPE fora da interface do cálculo de aço (o exportador fica no código, desligado) */
+      "" +   /* botão do CYPE removido da interface (20/11/2026) */
+      "" +   /* botão do CYPE removido da interface (20/11/2026) */
       (function () {
         /* PÓRTICOS M4 (14/10/2026): o js/metalgalpao.js desenha também o galpão de UMA água (alma cheia, subindo para a direita
            como o cálculo) — o botão vale para os dois */

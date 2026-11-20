@@ -266,6 +266,10 @@
        (metas e prêmio máximo = dinheiro, por isso entidade e não prefs), o
        lançamento diário, a ocorrência e o fechamento homologado do mês. */
     "pp_config", "pp_lanc", "pp_oc", "pp_fech",
+    /* METÁLICA — FÁBRICA (20/11/2026): a tabela de preços/horas/produtividade da metalúrgica (js/metalorcfabui.js; é da EMPRESA, sem
+       obraId — preço é dinheiro, por isso entidade e não prefs) e o CONTROLE DE PRODUÇÃO por QR (js/metalproducaoui.js; 1 registro PLANO
+       por marca e por etapa, com obraId — o celular do pátio e o escritório gravam registros diferentes, sem brigar pelo mesmo). */
+    "metal_fab_param", "metal_prod",
     /* CPLPRO (js/cplproui.js): o processo de licitação (peça de processo administrativo) e o papel de cada pessoa no órgão.
        Lista plana de registros com `atualizadoEm`, como as demais: o merge é por id. */
     "cplpro_processos", "cplpro_papeis", "cplpro_modelos", "cplpro_orgao",

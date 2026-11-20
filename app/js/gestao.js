@@ -550,6 +550,8 @@
     /* MATERIAIS (09/10/2026, js/bimmateriaisui.js): os materiais do projeto são DAQUELA obra
        (nome, código, massa): o sub-usuário restrito não vê os das obras que não acompanha */
     bim_materiais: 1,
+    /* PRODUÇÃO DA FÁBRICA POR QR (20/11/2026, js/metalproducaoui.js): as marcas e as etapas carregam obraId — o sub-usuário restrito não vê as das obras que não acompanha */
+    metal_prod: 1,
     /* ⚠ o planejamento da obra (linhas de base e plano de execução,
        js/cronobase.js) carrega obraId e mostra prazo e valor de venda por
        etapa: sem esta linha, o sub-usuário restrito à obra A abriria o
@@ -5466,6 +5468,8 @@
       ["bim_icamento", "plano(s) de içamento"],
       /* MATERIAIS: o material do projeto só existe para as peças DAQUELA obra */
       ["bim_materiais", "material(is) do projeto"],
+      /* a produção por QR (marcas e etapas) é DAQUELA obra: sem a obra, o QR impresso não aponta para nada */
+      ["metal_prod", "registro(s) de produção da fábrica (Metálica)"],
       /* a tabela de preços unitários é combinada POR OBRA (o m² de reboco da
          obra A não é o da B). Sai junto; para reaproveitar em outra obra existe
          o "copiar de outra obra", que gera cópias próprias — nunca referência. */

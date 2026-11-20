@@ -766,6 +766,10 @@
         var bid = p.mid + "_" + (k + 1), Lb = lst[k + 1].s - lst[k].s;
         var lib = {};
         if (k === 0 && condI.tipo === "rotulada") lib.i = { ry: true, rz: true };
+        /* 20/11/2026: ESCORA declarada (barra de travamento rotulada nas duas pontas, js/metalporticos.js) — a torção também solta numa
+           ponta: com as duas pontas presas à torção ela fica dependendo só da rotação dos nós em torno do eixo dela, quase livre — um
+           modo mal condicionado (o torsor de ~0,04 kN·m mudava 94 % entre o skyline e o esparso, com tudo o mais igual a 1e-11) */
+        if (k === 0 && condI.tipo === "rotulada" && p.calc && p.calc.escora) lib.i.rx = true;
         if (k + 2 === lst.length && condF.tipo === "rotulada") lib.j = { ry: true, rz: true };
         var bar = { id: bid, i: lst[k].no, j: lst[k + 1].no, secao: { A: p.sec.A, Iy: p.sec.Iy, Iz: p.sec.Iz, J: p.sec.J }, E: E, G: G, vy: p.ey.slice(), nElem: p.tracao ? 1 : (Lb > 3 ? 4 : 2), peca: p.id, membro: p.mid };
         if (lib.i || lib.j) bar.libera = lib;

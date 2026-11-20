@@ -602,7 +602,7 @@
     if (!v || !m || m.kind !== "chapa" || !(num(v.modulo, 0) > 0.05) || !M || !M.quadro) return [];
     var C = arr(m.contorno).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }), F = arr(m.recortes).map(function (r) { return arr(r.pts || r).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }); });
     if (C.length < 3) return [];
-    var us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), lu = num(v.modulo, 1), Q = M.quadro(c), z = num(m.t, 0) + 0.002, out = [];
+    var us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), lu = num(v.modulo, 1), Q = M.quadro(c), z = num(m.t, 0) + 0.008, out = [];   /* 8 mm acima da face: a 2 mm a precisão do depth picotava a junta de longe (galpão de 30 m, 20/11) */
     var aneis = [C].concat(F);
     for (var k = 1; u0 + k * lu < u1 - 0.02 && k < 2000; k++) {
       var uc = u0 + k * lu, vs = [];
@@ -617,7 +617,54 @@
     return out;
   }
 
-  var AcoVedacao = { PARTIDA: PARTIDA, FACES: FACES, KN_POR_KG: KN_POR_KG, galpao: galpao, estrutura: estrutura, quantidades: quantidades, caixa: caixa, juntas: juntas,
+  /* ================================================================ NERVURAS (20/11/2026)
+   * A telha trapezoidal DESENHADA com a seção de verdade, no lugar da chapa lisa + linhas de junta (que de longe viravam
+   * tracejado/moiré): o perfil trapezoidal repetido ao longo da largura (u), extrudado ao longo das nervuras (v), recortado
+   * pelo contorno da peça (cada faixa no v do meio dela — o oitão sai em degraus do tamanho da faixa). Uma malha só por peça.
+   * Do catálogo: a largura útil (o passo da chapa) e a altura da onda. NÃO vem do catálogo (PARTIDA, declarado em
+   * nervuras().partida): 4 nervuras por largura útil, crista = 28 % e vale = 36 % do passo da nervura. A sobreposição das
+   * chapas aparece pela nervura de borda (a cada largura útil, a nervura de emenda sai 6 mm mais alta).
+   * Devolve { pos: [x,y,z × 3 por triângulo], cor: [fator por vértice — variação leve por chapa], tris, partida } ou null. */
+  var NERV = { porChapa: 4, crista: 0.28, vale: 0.36, emenda: 0.006 };
+  function nervuras(c) {
+    var v = c && c.vedacao, m = c && c.metal, M = BM(), T = v && v.telha;
+    if (!v || v.material !== "telha" || !T || !m || m.kind !== "chapa" || !M || !M.quadro) return null;
+    if (!/trapez/i.test(String(T.nome || "") + " " + String(T.id || ""))) return null;
+    var lu = num(T.larguraUtil, 0), h = num(T.alturaOnda, 0) / 1000; if (!(lu > 0.2) || !(h > 0.005)) return null;
+    var C = arr(m.contorno).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }); if (C.length < 3) return null;
+    var Q = M.quadro(c), p = lu / NERV.porChapa, us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us);
+    /* o perfil de UMA nervura (u relativo, z): vale | subida | crista | descida */
+    var a = p * NERV.vale / 2, b = p / 2 - p * NERV.crista / 2, prf = [[0, 0], [a, 0], [b, h], [p - b, h], [p - a, 0], [p, 0]];
+    function vRange(uc) {
+      var vs = []; for (var i = 0; i < C.length; i++) { var A = C[i], B = C[(i + 1) % C.length]; if ((A[0] - uc) * (B[0] - uc) < 0 || A[0] === uc && B[0] !== uc) vs.push(A[1] + (B[1] - A[1]) * (uc - A[0]) / ((B[0] - A[0]) || 1e-12)); }
+      vs.sort(function (x, y) { return x - y; }); return vs.length >= 2 ? [vs[0], vs[vs.length - 1]] : null;
+    }
+    function W(u, vv, z) { return [Q.O[0] + Q.X[0] * u + Q.Y[0] * vv + Q.Z[0] * z, Q.O[1] + Q.X[1] * u + Q.Y[1] * vv + Q.Z[1] * z, Q.O[2] + Q.X[2] * u + Q.Y[2] * vv + Q.Z[2] * z]; }
+    var blocos = [], B = null, tris = 0, k = 0, semente = 0, POR_BLOCO = NERV.porChapa * 5; String(c.id || v.chave || "").split("").forEach(function (ch) { semente = (semente * 31 + ch.charCodeAt(0)) % 9973; });
+    for (var uN = u0; uN < u1 - 1e-6; uN += p, k++) {
+      if (k % POR_BLOCO === 0) { B = { pos: [], cor: [], longe: { pos: [], cor: [] } }; blocos.push(B); }
+      var chapa = Math.floor(k / NERV.porChapa), f = 0.93 + 0.07 * (((chapa * 7919 + semente) % 97) / 96), emenda = k % NERV.porChapa === NERV.porChapa - 1 ? NERV.emenda : 0;
+      for (var s = 0; s + 1 < prf.length; s++) {
+        var ua = uN + prf[s][0], ub = uN + prf[s + 1][0]; if (ua >= u1) break; if (ub > u1) ub = u1;
+        /* o contorno EXATO nas duas bordas da faixa (a vizinha usa o mesmo u → os mesmos vértices): sem T-junção (furinhos de
+           luz entre as faixas, os "pontinhos" do oitão) e o topo inclinado do oitão sem degrau */
+        var ra = vRange(ua + 1e-7), rb = vRange(ub - 1e-7); if (!ra || !rb || ra[1] - ra[0] < 0.005 || rb[1] - rb[0] < 0.005) continue;
+        var za = prf[s][1] + (prf[s][1] > 0 ? emenda : 0), zb = prf[s + 1][1] + (prf[s + 1][1] > 0 ? emenda : 0);
+        var P1 = W(ua, ra[0], za), P2 = W(ub, rb[0], zb), P3 = W(ub, rb[1], zb), P4 = W(ua, ra[1], za);
+        [P1, P2, P3, P1, P3, P4].forEach(function (P) { B.pos.push(P[0], P[1], P[2]); B.cor.push(f, f, f); }); tris += 2;
+      }
+      /* o nível de LONGE (LOD): a faixa PLANA na meia altura, num tom só por bloco — de longe a nervura tem poucos pixels e a
+         seção de verdade (e até a variação de tom por chapa) vira moiré; o 3D troca por bloco, pelo passo da nervura em pixels */
+      var ue = Math.min(uN + p, u1), rA = vRange(uN + 1e-7), rB = vRange(ue - 1e-7);
+      if (rA && rB && rA[1] - rA[0] >= 0.005 && rB[1] - rB[0] >= 0.005) { var Q1 = W(uN, rA[0], h / 2), Q2 = W(ue, rB[0], h / 2), Q3 = W(ue, rB[1], h / 2), Q4 = W(uN, rA[1], h / 2);
+        [Q1, Q2, Q3, Q1, Q3, Q4].forEach(function (P) { B.longe.pos.push(P[0], P[1], P[2]); B.longe.cor.push(0.95, 0.95, 0.95); }); }
+    }
+    blocos = blocos.filter(function (q) { return q.pos.length; });
+    var pos = [].concat.apply([], blocos.map(function (q) { return q.pos; }));
+    return { blocos: blocos, pos: pos, tris: tris, passo: p, partida: { nervurasPorChapa: NERV.porChapa, crista: NERV.crista, vale: NERV.vale, texto: "nervuras: 4 por largura útil e proporção crista/vale de PARTIDA (o catálogo traz só a largura útil e a altura da onda)" } };
+  }
+
+  var AcoVedacao = { PARTIDA: PARTIDA, FACES: FACES, KN_POR_KG: KN_POR_KG, galpao: galpao, estrutura: estrutura, quantidades: quantidades, caixa: caixa, juntas: juntas, nervuras: nervuras, NERV: NERV,
     dadosTelha: dadosTelha, dadosParede: dadosParede, telhaPadrao: telhaPadrao, tipoFace: tipoFace,
     _int: { painelComVaos: painelComVaos, areaLiq: areaLiq, livresNaLinha: livresNaLinha, planoMQ: planoMQ, recortarMeioPlano: recortarMeioPlano, afastarPoligono: afastarPoligono, area2: area2 } };
   global.AcoVedacao = AcoVedacao;

@@ -179,6 +179,7 @@
   <!-- JANELAS (16/11/2026): gerenciador único de janela flutuante — arrastar, minimizar, maximizar, destacar (js/janflut.js) -->
   <script src="js/janflut.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/progresso.js"></script>   <!-- BARRA DE PROGRESSO GLOBAL (UI.progresso): toda espera mostra progresso -->
   <script src="js/excel.js"></script>
   <script src="js/roundtrip.js"></script>
   <script src="js/planilhacompleta.js"></script>
@@ -476,6 +477,8 @@
   <script src="js/metalacab.js"></script>
   <!-- METÁLICA — ORÇAMENTO 100 % DA ESTRUTURA POR PESO (frente F2, 21/10/2026): aço por kg, ligações, pintura por demão SINAPI, içamento e frete; composições próprias PROP-MET-90xx -->
   <script src="js/metalorc.js"></script>
+  <!-- METÁLICA — ORÇAMENTO DE FÁBRICA POR KG E HORA (20/11/2026): aço por família, horas por posto, consumíveis e BDI; tabela de parâmetros da metalúrgica salva por empresa (vazia = pendente) -->
+  <script src="js/metalorcfab.js"></script>
   <!-- METÁLICA — PLANO DE MONTAGEM AUTOMÁTICO (23/10/2026): a estrutura desenhada vira os içamentos do plano, na ordem de montagem (vão contraventado primeiro) — motor puro -->
   <script src="js/metalmontagem.js"></script>
   <script src="js/svgpdf.js"></script>
@@ -488,6 +491,8 @@
   <script src="js/metalprontas.js"></script>
   <!-- METÁLICA › PÓRTICOS (14/10/2026, frente M4, js/metalporticos.js): biblioteca de pórticos industriais paramétricos — alma cheia, mísula, atirantado, treliçados, shed, multivão, ponte rolante, mezanino e coluna treliçada; gera o BIM e a entrada do cálculo (motor do galpão ou estrutura desenhada) -->
   <script src="js/metalporticos.js"></script>
+  <!-- 20/11/2026: telhas, fechamento, ligações padrão e cor do aço dos pórticos da estrutura desenhada (js/metalporticosacab.js) -->
+  <script src="js/metalporticosacab.js"></script>
   <!-- METÁLICA › S10 (14/10/2026, js/metaldetalhe.js): ACABAMENTO DE FABRICAÇÃO do guarda-corpo — meia-esquadria nos cantos, terminais boleados, encontros sem atravessar, rodapé a topo, interferências e a folha de detalhe típico — motor puro (o guardaCorpo do js/metalprontas.js chama) -->
   <script src="js/metaldetalhe.js"></script>
   <!-- METÁLICA › T — TANQUES (14/10/2026): motor (API 650, vento NBR 6123, Zick, torre), geometria no BIM e memorial — motores puros -->
@@ -983,6 +988,7 @@
   <script src="js/metaldicas.js"></script>
   <script src="js/dicarica.js"></script>
   <script src="js/acocalcworker.js"></script>
+  <script src="js/acolivreworker.js"></script>
   <!-- UNIDADES DE MEDIDA (14/10/2026): o motor de conversão (kN ↔ kgf/tf, g = 9,80665), o campo com seletor de unidade (data-grandeza) e a aba SI | Técnica dos memoriais — o cálculo continua em kN -->
   <script src="js/unidades.js"></script>
   <script src="js/unidadesui.js"></script>
@@ -996,6 +1002,7 @@
   <!-- METÁLICA & MECÂNICA: a aba da disciplina (Peças, Ligações, Galpão, Cálculo, Fabricação) — só com a prévia do modelador -->
   <!-- METÁLICA — a tela das ferramentas de fabricação (grupo Fabricação: lista de corte, chapa dobrada, planificação, nesting, pintura, desenho no Padrão RA) -->
   <script src="js/metalfabui.js"></script>
+  <script src="js/metalorcfabui.js"></script>
   <script src="js/metalui.js"></script>
   <!-- METÁLICA — CRIAR CLICANDO: a tela (ferramentas no 3D e na planta, plano de trabalho visível, níveis no 3D, cotas dos eixos, Propriedades da ferramenta e da peça) — só com a prévia do modelador -->
   <!-- METÁLICA — DESENHO COTADO DA SEÇÃO do perfil (BACKLOG #61): na lista do Perfil do Criar, nas Propriedades e no Catálogo BR -->
@@ -1003,6 +1010,7 @@
   <script src="js/metalcriarui.js"></script>
   <!-- METÁLICA — PEÇAS PRONTAS: a tela (diálogos com prévia, posicionar por clique no 3D e na planta, editar no lugar) — só com a prévia do modelador -->
   <script src="js/metalprontasui.js"></script>
+  <script src="js/metalcomparativo.js"></script>
   <script src="js/metalporticosui.js"></script>
   <!-- METÁLICA › T — TANQUES: a tela (assistente com prévia, modelos prontos, posicionar por clique, editar no lugar, calcular e memorial) -->
   <script src="js/metaltanqueui.js"></script>
@@ -1319,6 +1327,9 @@
   <script src="js/folhasemanal.js"></script>
   <script src="js/vendor/qrcode.min.js"></script>
   <script src="js/qr.js"></script>
+  <!-- METÁLICA — CONTROLE DE PRODUÇÃO POR QR (20/11/2026): etiqueta com QR por marca, etapas corte→campo, acompanhamento por % do peso. No NÚCLEO: o celular do pátio abre o QR (#metalprod=) sem carregar o modelador -->
+  <script src="js/metalproducao.js"></script>
+  <script src="js/metalproducaoui.js"></script>
   <script src="js/busca.js"></script>
   <script src="js/busca-ui.js"></script>
   <script src="js/avisos.js"></script>

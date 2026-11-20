@@ -244,7 +244,7 @@
         (U.passo > 1 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo - 1) + '">Voltar</button>' : "") +
         (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button>" + '<button class="ml-bt" data-ml-acao="corrigir" title="Calcula, troca toda peça que não passa pelo perfil mais leve da mesma família que atende (e alivia a que tem folga), refaz até fechar e aplica no modelo (Ctrl+Z desfaz)"' + (U.calculando ? " disabled" : "") + ">Calcular e corrigir</button></footer>";
     } else if (U.modo === "calculando") {
-      h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
+      h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p><div data-ml=\"progresso\" style=\"text-align:left\"></div></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
     } else if (U.modo === "resultado") {
       h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="resultado">' + resultadoHtml(U.r) + "</main></div>" + rodapeResultado();
     } else if (U.modo === "pranchas" || U.modo === "folha") {
@@ -480,7 +480,9 @@
       solucoes: [{ id: "engastar-bases", texto: "Engastar as bases dos pilares", muda: "bases engastadas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "ligacoes-rigidas", texto: "Ligações viga × pilar rígidas", muda: "ligações rígidas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "contraventar", texto: "Gerar o contraventamento (X nos planos que se movem)", muda: "diagonais novas no modelo (Ctrl+Z desfaz)" }] }, 'data-ml="estabilidade"');
     if (nvs.length) h += PC() ? PC().lista(nvs.map(function (x, k) {
         var vento = /Vento/.test(x.tema), sols = vento ? [{ id: "interna", texto: "A estrutura fica dentro de outra edificação (sem vento)" }, { id: "vento-local", texto: "Informar o local da obra (vento)" }] : [];
-        sols.push({ id: "rever-envoltorio", texto: "Rever o envoltório (faces e fechamentos)" });
+        /* 20/11: "Rever o envoltório" só faz sentido no que vem do vento/envoltório; nas LIGAÇÕES da tipologia (e nos outros não
+           verificados das peças) o botão era a ação errada — some até o dimensionamento das ligações existir */
+        if (vento) sols.push({ id: "rever-envoltorio", texto: "Rever o envoltório (faces e fechamentos)" });
         var p = { tipo: "nao-verificado", titulo: x.tema + " não foi verificado", texto: x.motivo, gravidade: "aviso", solucoes: sols }; U.probExtra["nv" + k] = p; return p;
       }), { pre: "ml", titulo: "Não verificado", gravidade: "aviso", attrs: 'data-ml="nao-verificado"', acoes: BOTAO_SOL, prefixoIndice: "x:nv" })
       : '<div class="ml-prob" data-ml="nao-verificado"><h4>Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") + "</div>";
@@ -505,8 +507,8 @@
   }
   function rodapeResultado() {
     var r = U.r, ok = r && r.ok;
-    return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, pranchas (DXF/DWG), vista 3D e CYPE saem deste resultado." : "Resolva o problema e calcule de novo.") + '</span><button class="ml-bt" data-ml-acao="passo" data-ml-v="1">Dados</button>' +
-      (ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button><button class="ml-bt" data-ml-acao="memorial-docx">Memorial em Word (.docx)</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '<button class="ml-bt" data-ml-acao="cype">Para o CYPE 3D</button>' : "") +
+    return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, pranchas (DXF/DWG) e vista 3D saem deste resultado." : "Resolva o problema e calcule de novo.") + '</span><button class="ml-bt" data-ml-acao="passo" data-ml-v="1">Dados</button>' +
+      (ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button><button class="ml-bt" data-ml-acao="memorial-docx">Memorial em Word (.docx)</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '' : "") +
       '<button class="ml-bt pri" data-ml-acao="calcular">Calcular de novo</button></footer>';
   }
 
@@ -965,27 +967,77 @@
   }
   function selecionarNoModelo(ids) { try { if (global.BIM && BIM.selecionar) BIM.selecionar(ids.map(function (id) { return "edit:" + id; }), "trocar"); toast(ids.length + " peça(s) selecionada(s) no modelo.", "ok", 3000); } catch (e) { toast("Não deu para selecionar: " + e.message, "aviso"); } }
 
+  /* PROGRESSO E CANCELAR (20/11/2026): o cálculo roda no Web Worker (js/acolivreworker.js) e a barra (js/progresso.js,
+     UI.progresso) mostra a etapa, a combinação/barra, o % e o tempo; Cancelar mata o processo (nada volta, nada é gravado).
+     Sem Worker (arquivo local, política do navegador), roda na página como antes (a tela para enquanto calcula). */
+  var ROT_FASE = { modelo: "Montando o modelo", analise: "Análise", analise80: "Análise com rigidez 0,8 (2ª ordem)", flambagem: "Flambagem global", verificacao: "Verificando as barras" };
+  function textoProg(p) {
+    var t = ROT_FASE[p.fase] || "Calculando";
+    if (p.n && (p.fase === "analise" || p.fase === "analise80")) t += " — combinação " + p.k + " de " + p.n;
+    if (p.n && p.fase === "verificacao") t += " — barra " + p.k + " de " + p.n;
+    if (p.rodada > 1) t = "Otimizador, rodada " + p.rodada + ": " + t;
+    return t;
+  }
+  function etapasProg(otim) {
+    var P = global.Progresso, base = P ? P.ETAPAS_CALCULO.slice() : [];
+    return otim ? base.map(function (e) { return { id: e.id, peso: e.peso * 0.3, rotulo: e.rotulo }; }).concat([{ id: "otimizador", peso: 70, rotulo: "Otimizador" }]) : base;
+  }
+  function progressoDe(pg, p) {
+    if (!pg) return;
+    if (p.rodada > 1) { pg.etapa("otimizador", 1 - Math.pow(0.85, p.rodada - 1), textoProg(p)); return; }   /* nº de rodadas desconhecido: aproxima de 100 % sem passar */
+    var f = p.n ? p.k / p.n : 0.5; pg.etapa(p.fase === "flambagem" ? "flambagem" : p.fase, f, textoProg(p));
+  }
   function calcular() {
     if (!lic("calcular a estrutura desenhada")) return false;
     var D = DL(); if (!D) { toast("O cálculo da estrutura desenhada não carregou (js/acodimlivre.js).", "erro", 8000); return false; }
-    var ent = entrada();
-    U.calculando = true; U.modo = "calculando"; render();
-    setTimeout(function () {
-      var r;
-      try { r = D.calcular(ent); } catch (e) { r = { ok: false, motivo: "Erro no cálculo: " + (e && e.message), problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + (e && e.message), solucoes: [] }] }; }
+    var ent = entrada(), idc = "c" + Date.now(), otim = !!ent.otimizar, pg = null, w = null;
+    U.calculando = true; U.modo = "calculando"; U.calcId = idc; render();
+    function concluir(r) {
+      if (U.calcId !== idc) return;   /* cancelado ou substituído: nada é aplicado */
+      if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+      if (pg) pg.fim();
       if (r) r._assin = assinaturaAgora();   /* VÍNCULOS: a geometria que este resultado verificou */
       /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligautoui.js): as ligações "a confirmar" verificadas com os esforços da análise —
          confirmadas, trocadas (um lote, Ctrl+Z) ou sugeridas; balanço com rótula = CRÍTICO; sugestão de travamento (FLT). A troca
          não mexe na linha das barras (a assinatura não muda) e mantém a família do nó como o cálculo o tratou */
       U.ligAuto = null;
-      if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "erro", 8000); } }
+      if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "aviso", 8000); } }
       U.calculando = false; U.r = r; U.modo = "resultado";
       /* CALCULAR E CORRIGIR (20/11/2026): o otimizador já trocou os grupos que não passavam (e aliviou os com folga) — aplica no modelo */
       var corr = U.corrigir; U.corrigir = false; if (corr) estado().otimizar = corr.otimizarAntes;
       render();
       if (corr && r && r.ok) { if (r.trocas) aplicar(); else toast("Calcular e corrigir: nenhuma peça precisou trocar.", "ok", 6000); }
-      status(r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA (" + r.falhas + " falha(s))") + " — " + fmt(r.peso, 0) + " kg de aço." : "Estrutura desenhada: " + (r.motivo || "não calculou"));
-    }, 40);
+      status(r && r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA") : "Estrutura desenhada: não calculou");
+    }
+    function erroCalc(msg) { return { ok: false, motivo: "Erro no cálculo: " + msg, problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + msg, solucoes: [] }] }; }
+    function cancelar() {
+      if (U.calcId !== idc) return;
+      U.calcId = null; if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+      U.calculando = false; U.corrigir = false; U.modo = U.r ? "resultado" : "passos"; render();
+      toast("Cálculo cancelado — nada foi gravado.", "aviso", 6000);
+    }
+    function naPagina() {
+      setTimeout(function () {
+        if (U.calcId !== idc) return;
+        var r; try { r = D.calcular(ent); } catch (e) { r = erroCalc(e && e.message); }
+        concluir(r);
+      }, 40);
+    }
+    setTimeout(function () {
+      var el = document.querySelector('[data-ml="progresso"]');
+      if (el && global.UI && UI.progresso) pg = UI.progresso(el, { titulo: otim ? "Calcular e otimizar" : "Calcular", etapas: etapasProg(otim), cancelar: cancelar, texto: "Montando o modelo" });
+      var podeW = typeof Worker === "function" && !(global.location && global.location.protocol === "file:");
+      if (podeW) { try { w = new Worker("js/acolivreworker.js" + (global.ORCAPRO_VER ? "?v=" + global.ORCAPRO_VER : "")); } catch (eW) { w = null; } }
+      if (!w) { if (pg) pg.texto("Calculando nesta tela (sem processo paralelo) — a tela fica parada até terminar"); naPagina(); return; }
+      w.onmessage = function (ev) {
+        var m = ev.data || {}; if (m.id !== idc || U.calcId !== idc) return;
+        if (m.tipo === "progresso") progressoDe(pg, m);
+        else if (m.tipo === "fim") { var r; try { r = JSON.parse(m.texto); } catch (eJ) { r = erroCalc("resultado ilegível do processo paralelo"); } concluir(r); }
+        else if (m.tipo === "erro") { try { w.terminate(); } catch (eT) {} w = null; if (pg) pg.texto("O processo paralelo falhou (" + m.mensagem + ") — calculando nesta tela"); naPagina(); }
+      };
+      w.onerror = function (ev) { if (U.calcId !== idc) return; if (ev && ev.preventDefault) ev.preventDefault(); try { w.terminate(); } catch (eT) {} w = null; naPagina(); };
+      w.postMessage({ tipo: "calcular", id: idc, entrada: JSON.parse(JSON.stringify(ent)), op: {} });
+    }, 30);
     return true;
   }
   function calcularCorrigir() { var e = estado(); U.corrigir = { otimizarAntes: !!e.otimizar }; e.otimizar = true; return calcular(); }

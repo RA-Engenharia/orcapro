@@ -159,6 +159,7 @@
           var c = ev.target && ev.target.closest, b1 = c ? ev.target.closest("[data-mpo-preset]") : null, b4 = c ? ev.target.closest("[data-mpo-preset4]") : null;
           if (b1) { var q = b1.getAttribute("data-mpo-preset").split(":"); self.usarPreset(q[0], q[1]); }
           if (b4) self.gerarPreset4(b4.getAttribute("data-mpo-preset4"));
+          var bc = c ? ev.target.closest("[data-mpo-comparar]") : null; if (bc) self.comparar(bc.getAttribute("data-mpo-comparar"));
         });
         var tm = null;
         raiz.addEventListener("input", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) { clearTimeout(tm); tm = setTimeout(function () { self.previa(); }, 200); } });
@@ -196,7 +197,7 @@
       /* pré-configuração "Pedido Gabriel" (tesoura leve): uma variante no formulário, ou as 4 lado a lado no modelo */
       var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
       if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
-        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button></div>' + h;
+        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button></div>' + h;
       if (el) el.innerHTML = h;
     },
     /* a variante no formulário */
@@ -208,6 +209,42 @@
       vs.forEach(function (v) { var r = self.criar(v.tipo, v.par, { calcular: false }); out.push({ id: v.id, ok: !!(r && r.ok !== false) }); });
       toast("Pedido Gabriel: " + out.filter(function (x) { return x.ok; }).length + " de " + vs.length + " variantes criadas lado a lado (PD 8/6 m, com/sem solar).", "ok", 8000);
       return out;
+    },
+    /* QUADRO COMPARATIVO das variantes (js/metalcomparativo.js): calcula uma por vez (o progresso aparece entre uma e outra),
+       guarda o resultado da sessão (reabrir não recalcula) e exporta .xlsx e HTML/PDF para o cliente */
+    _comp: {},
+    comparar: function (id) {
+      var M = MP(), C = global.MetalComparativo, self = this; if (!M || !C) { toast("O comparativo não carregou (js/metalcomparativo.js).", "erro"); return null; }
+      var P = M.PRESETS[id], vs = M.presetVariantes(id), memo = this._comp[id] = this._comp[id] || {};
+      var O = global.MetalOrc, opO = O && O.UI && O.UI.opcoes && O.UI.cfg ? O.UI.opcoes(O.UI.cfg()) : {};
+      function quadro() { return vs.map(function (v) { return memo[v.id] ? memo[v.id].linha : { id: v.id, rotulo: v.rotulo, ok: false, situacao: "nao-calculou", grupos: {}, criticos: [], orcamento: { total: null, provisorios: [], semPreco: [], motivo: "calculando…" } }; }); }
+      var t0c = Date.now(), nFila = 0;
+      function tela(msg, kFeitas) {
+        var h = '<div data-mpo="comp"><div data-mpo="comp-prog"></div><p class="muted" style="font-size:12px">' + esc(msg) + "</p>" + C.html(quadro(), {}) + "</div>";
+        try { UI.fecharModal(); } catch (e) {}
+        UI.modal("Comparativo — " + P.rotulo, h, [{ texto: "Baixar .xlsx", classe: "primary", onClick: function () { self.compXlsx(id); } }, { texto: "Baixar HTML (PDF pelo imprimir)", onClick: function () { self.compHtml(id); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        /* progresso (js/progresso.js): uma etapa por variante calculada — o relógio é o da fila inteira */
+        var elP = document.querySelector('[data-mpo="comp-prog"]');
+        if (elP && UI.progresso && nFila) { var pg = UI.progresso(elP, { titulo: "Comparativo — " + nFila + " variante(s)", etapas: [{ id: "v", peso: 1 }], texto: msg }); pg.etapa("v", kFeitas / nFila, msg); if (kFeitas >= nFila) pg.fim(); }
+      }
+      var fila = vs.filter(function (v) { return !memo[v.id]; }), k = 0; nFila = fila.length;
+      function passo() {
+        if (k >= fila.length) { tela("Pronto: " + vs.length + " variantes. Peso = eixo × massa linear (sem ligações); preço = Orçamento da estrutura, itens provisórios marcados.", nFila); return; }
+        var v = fila[k]; tela("Calculando " + (k + 1) + " de " + fila.length + ": " + v.rotulo + "… (cada variante leva cerca de 1 minuto)", k);
+        setTimeout(function () { try { memo[v.id] = C.calcularVariante(id, v.id, { orcamento: opO }); } catch (e) { memo[v.id] = { linha: { id: v.id, rotulo: v.rotulo, ok: false, situacao: "nao-calculou", motivo: e && e.message, grupos: {}, criticos: [], orcamento: { total: null, provisorios: [], semPreco: [] } } }; } k++; setTimeout(passo, 30); }, 60);
+      }
+      passo();
+      return true;
+    },
+    compLinhas: function (id) { var M = MP(), memo = this._comp[id] || {}; return M.presetVariantes(id).map(function (v) { return memo[v.id] && memo[v.id].linha; }).filter(Boolean); },
+    compHtml: function (id) {
+      var C = global.MetalComparativo, M = MP(), U = MU(), d = C.documento(this.compLinhas(id), { titulo: "Comparativo — " + M.PRESETS[id].rotulo, subtitulo: "Galpão 20 m × 30 m, 6 tesouras a cada 6 m — pé-direito 6 e 8 m, com e sem estrutura solar. Vento de Castanhal-PA (NBR 6123)." });
+      if (U && U.baixar) U.baixar("comparativo-pedido-gabriel.html", d, "text/html"); return d;
+    },
+    compXlsx: function (id) {
+      var C = global.MetalComparativo, M = MP(), U = MU(), ls = this.compLinhas(id), E = global.ExcelOrc;
+      if (!E || !E.ensureExcelJS) { toast("O gerador de Excel não carregou.", "erro"); return; }
+      E.ensureExcelJS(function () { var wb = C.xlsx(ls, global.ExcelJS, { titulo: "Comparativo — " + M.PRESETS[id].rotulo, data: Date.now() }); wb.xlsx.writeBuffer().then(function (buf) { if (U && U.baixar) U.baixar("comparativo-pedido-gabriel.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); }); });
     },
     ler: function () {
       var d = this._dlg; if (!d) return null;
@@ -278,6 +315,9 @@
       try { var PU = global.MetalProntasUI; if (PU && PU.enquadrar) { var fin = {}; g.pecas.forEach(function (c) { fin[c.id] = c; }); PU.enquadrar({ finais: fin }); } } catch (eE) {}
       if (op.calcular && global.MetalCalcLivreUI && MetalCalcLivreUI.preparar) {
         var pre = M.presetLivre(tipo, p, g, this.caixas());
+        /* 20/11/2026 (achado na e2e): o vento da tipologia (Pedido Gabriel: Castanhal-PA) vai para a tela do cálculo — sem ele o
+           "Criar e calcular" parava em "falta o local da obra" */
+        if (p.vento) { pre.vento = {}; Object.keys(p.vento).forEach(function (k) { pre.vento[k] = p.vento[k]; }); pre.vento.ativo = true; }
         MetalCalcLivreUI.preparar(pre);
         MetalCalcLivreUI.abrir(3);
         try { MetalCalcLivreUI.calcular(); } catch (eL) {}

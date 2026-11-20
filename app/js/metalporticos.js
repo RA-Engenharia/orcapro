@@ -575,7 +575,9 @@
     var B = p.vao, H = p.peDireito, i = p.inclinacao / 100, bc = p.larguraColuna, gl = geomLeve(p), he = gl.he, n = gl.n, dx = gl.dx, sub = gl.sub, pad = p.padrao;
     var yT = function (x) { return H + i * Math.min(x, B - x); };
     var yB = p.forma === "trapezoidal" ? function () { return H - he; } : function (x) { return yT(x) - he; };
-    var pb = perfilCat(p.banzo), dch = Math.max(pb.d || 0, pb.h || 0, pb.bw || 0, 0.05), usados = {}, pend = {};
+    /* 20/11 (frente visual): o banzo da tesoura leve vai GIRADO 90° (eixo forte fora do plano) — a altura VERTICAL dele é a
+       LARGURA da seção (b do tubo, bf do U), não a altura: com 100 mm a terça ficava 25 mm acima do TR 50 × 100 */
+    var pb = perfilCat(p.banzo), dch = Math.max(pb.b || 0, pb.bf || 0) || Math.max(pb.d || 0, pb.h || 0, pb.bw || 0, 0.05), usados = {}, pend = {};
     function pt(nm, x, y) { pend[nm] = [x, y]; return nm; }
     function M(a, b, o) { usados[a] = 1; usados[b] = 1; Q.M(a, b, o); }
     var nomT = function (ld, k) { return k === n ? "TC" : "T" + ld + k; }, nomD = function (ld, k) { return k === n ? "DC" : "D" + ld + k; };
@@ -958,8 +960,17 @@
     if (erros.length) return { ok: false, motivo: "Peças que não deu para desenhar: " + erros.slice(0, 4).join("; ") + (erros.length > 4 ? "…" : "") };
     var areas = M.areas.map(function (a) { var q = clone(a); q.vigas = a.vigas.map(function (id) { return mapa[id]; }).filter(Boolean); return q; });
     var pontuais = M.pontuais.map(function (q) { var o = clone(q); o.peca = mapa[q.barra]; delete o.barra; return o; });
-    return { ok: true, motor: "livre", tipo: t, par: p, op: { op: "lote", id: String(novoId()), origem: "metal-porticos", pedido: "Pórtico paramétrico: " + TIPOS[t].rotulo, ops: ops }, pecas: pecas, mapa: mapa, porticoId: gid,
+    var g = { ok: true, motor: "livre", tipo: t, par: p, op: { op: "lote", id: String(novoId()), origem: "metal-porticos", pedido: "Pórtico paramétrico: " + TIPOS[t].rotulo, ops: ops }, pecas: pecas, mapa: mapa, porticoId: gid,
              areas: areas, pontuais: pontuais, contagem: M.contagem, resumo: M.resumo, avisos: M.avisos, decisoes: M.decisoes, naoVerificados: M.naoVerificados, modelo: M };
+    /* 20/11/2026 (js/metalporticosacab.js): telhas, fechamento, ligações padrão e a cor do aço no MESMO lote — sem mudar o cálculo
+       (o teste prova: o leitor monta os mesmos membros e pontas). semAcabamento: só as barras (o calcular em Node) */
+    var PA = opG.semAcabamento ? null : dep("MetalPorticosAcab", "./metalporticosacab.js");
+    if (PA) {
+      var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
+      var ac = PA.completar(t, p, g, novoId, acO);
+      if (ac.ok) { g.acab = ac; ac.ops.forEach(function (o) { ops.push(o); }); if (ac.resumo) g.resumo = g.resumo + " Acabamento: " + ac.resumo + "."; g.avisos = arr(g.avisos).concat(ac.avisos); }
+    }
+    return g;
   }
 
   /* ================================================================ A ENTRADA DA ESTRUTURA DESENHADA
@@ -1006,7 +1017,7 @@
       var r = D.calcular(pg, op.calc || {});
       return { ok: !!(r && r.ok), motor: "galpao", tipo: t, r: r, par: pg, situacao: r && r.ok ? (r.aprovado ? "aprovado" : "reprovado") : "nao-calculou", naoVerificados: [] };
     }
-    var k = 0, g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }); if (!g.ok) return g;
+    var k = 0, g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }, { semAcabamento: true }); if (!g.ok) return g;
     var ent = entradaLivre(t, p, g, op), DL = DLv(); if (!DL) return { ok: false, motivo: "O cálculo da estrutura desenhada (js/acodimlivre.js) não carregou." };
     var r2 = DL.calcular(ent, op.calc || {});
     /* REVISOR (16/10, médio): a BITOLA da corrente pela FORÇA calculada — se a corrente reprova pela reação do eixo fraco do vento
@@ -1057,9 +1068,11 @@
     "pedido-gabriel": {
       rotulo: "Pedido Gabriel — galpão 20 × 30 m (Alumetal)", tipo: "tesoura-leve",
       base: { vao: 20, nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
-              diagonal: "TQ 50,8 x 50,8 x 1,25 Tuper", montante: "TQ 60 x 60 x 1,11 Tuper", travejamento: "TQ 38 x 38 x 0,95 Tuper",
+              diagonal: "TQ 60 x 60 x 1,55 Tuper", montante: "TQ 60 x 60 x 1,11 Tuper", travejamento: "TQ 38 x 38 x 0,95 Tuper",
               terca: "Ue 250 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", banzoColuna: "U 300 x 100 x 3,75", banzo: "TR 50 x 100 x 3,75 Tuper",
-              escora: "TQ 80 x 80 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB", tapamento: "TR 250 x 100 x 6,4 VMB",
+              /* 20/11: UM jogo de perfis para as 4 variantes = o maior de cada grupo que o otimizador deixou nelas (a diagonal TQ 60×60×1,55
+                 é a das variantes com solar; a TQ 50,8×1,25 reprovava no PD 8 m com solar) */
+              escora: "TQ 88,9 x 88,9 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB", tapamento: "TR 250 x 100 x 6,4 VMB",   /* 20/11: a escora do banzo que o otimizador deixou (TQ 80×80×2 reprova no PD 8 m) */
               barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "BR 1/2\" (D 12,70 mm) Gerdau",
               vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },
       solar: 0.15, instalacoes: 0.10,

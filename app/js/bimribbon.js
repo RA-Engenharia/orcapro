@@ -620,7 +620,9 @@
          planta passou para a própria Trena);
        · Metálica › Eixo (`met-eixo`: armava o MESMO eixo do `eixo` de Arquitetura) e Metálica › Cotas (`met-cotas`: só levava
          a Anotar › Cotas). Quem chamar o id antigo (atalho, busca, IA, e2e antiga) cai no substituto. */
-    "fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada"
+    "fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada",
+    /* 20/11/2026: o CYPE saiu da interface do cálculo de aço (pedido do Rogério) — o id antigo cai nos Resultados do cálculo */
+    "met-calc-cype": "met-calc-resultados"
   };
   /* com o MODELADOR ligado o editor sintético da primeira versão sai: o painel
      dele já não abre (pedido de 09/10/2026) e Parede, Piso, Pilar, Viga, o

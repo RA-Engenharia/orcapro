@@ -261,7 +261,18 @@
 
   /* ================================================================ UMA RODADA */
   /* cada rodada leva a foto dos perfis com que foi feita (para voltar a ela) */
-  function rodada(lido, entrada, op) { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
+  /* PROGRESSO (20/11/2026): op.aoProgresso({ fase, k, n, rodada }) — fase = "modelo" | "analise" | "analise80" | "verificacao" |
+     "flambagem"; k/n = a combinação (análises) ou a barra (verificação). Só avisa: o cálculo é o mesmo com e sem ele */
+  var PROG = { f: null, fase: null, rodada: 0 };
+  function avisar(fase, k, n) { PROG.fase = fase; if (PROG.f) { try { PROG.f({ fase: fase, k: k || 0, n: n || 0, rodada: PROG.rodada }); } catch (e) {} } }
+  function rodada(lido, entrada, op) {
+    var A = Ana(), antes = PROG.f, antA = A && A.OPC ? A.OPC.aoProgresso : null;
+    PROG.f = op && typeof op.aoProgresso === "function" ? op.aoProgresso : null; PROG.rodada++;
+    if (PROG.f && A && A.OPC) A.OPC.aoProgresso = function (m) { avisar(PROG.fase, m.k, m.n); };
+    avisar("modelo", 0, 0);
+    try { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
+    finally { if (A && A.OPC) A.OPC.aoProgresso = antA; PROG.f = antes; }
+  }
   function restaurar(lido, r) { if (!r || !r._perfis) return; lido.pecas.forEach(function (p) { var n = r._perfis[p.id]; if (n && n !== p.cat) trocarPerfil(p, n); }); }
   function rodada0(lido, entrada, op) {
     var M = ML(), C = Car(), A = Ana(), Dm = Dim();
@@ -291,6 +302,7 @@
     arr(CG.resumo.areas).forEach(function (a) { if (!a.cobertura || !a.distribuicao) return; arr(a.distribuicao.vigas).forEach(function (mid) { var m = G.membros.filter(function (x) { return x.id === mid; })[0]; if (m && G.cobertura.indexOf(m.peca) < 0) G.cobertura.push(m.peca); }); });
     var combs = C.combinacoes(casos, { segundaOrdem: true, nocional: true });
     var elu = combs.filter(function (c) { return c.tipo === "ELU"; }), els = combs.filter(function (c) { return c.tipo !== "ELU"; });
+    avisar("analise", 0, 0);
     var res = A.analisar(G.modelo, { combinacoes: elu.concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
     if (!res.ok) {
       var tr = G.modelo.barras.some(function (b) { return b.tracao; });
@@ -329,6 +341,7 @@
       motivo: "NBR 8800:2008, 5.3.4.1 (compressão; na 2024, 5.3.7, recomendação) e 5.2.8.1 (tração; recomendação, exceto barra redonda pré-tensionada) — o OrçaPRO adota os dois como exigência. Premissa: barras redondas e cabos montados com pré-tensão (esticador). Comprimida/tracionada: diagonais de perfil sempre; pilares com qualquer força axial; vigas e terças com força axial ≥ 5 % de Ag·fy/γa1" });
     G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais em x e em z; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:2024, 4.10 (limites 1,13 e 1,55)" + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
     if (classe !== "pequena") {
+      avisar("analise80", 0, 0);
       var r80 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, segundaOrdem: true, nocional: c.nocional, reducaoRigidez: 0.8 }; }), estacoes: 7 });
       if (r80.ok) Object.keys(r80.combinacoes).forEach(function (k) { res.combinacoes[k] = r80.combinacoes[k]; });
     }
@@ -344,8 +357,9 @@
     var bordaLista = OPC.cpeMedioLocal && CG.resumo.vento ? arr(CG.resumo.vento.cpeMedioNaoAplicado) : [], bordaPorMid = {};
     bordaLista.forEach(function (q) { if (q.mid && q.s > 0 && isFinite(q.pUso)) bordaPorMid[q.mid] = q; });
     /* verificação das barras */
-    var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1;
-    G.membros.forEach(function (m) {
+    var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1, nMb = G.membros.length;
+    G.membros.forEach(function (m, jM) {
+      if (PROG.f && jM % 25 === 0) avisar("verificacao", jM, nMb);
       var est2 = []; elu.forEach(function (c) { est2 = est2.concat(Dm.estacoesMembro(res, m, c.id)); });
       var v = aplicarEsbeltez(verificarMembro(m, est2, elu), m, est2);
       if (bordaPorMid[m.id]) verificarLocalCpeMedio(m, v, bordaPorMid[m.id], est2, elu);
@@ -448,6 +462,7 @@
       var gravRef = elu.filter(function (c) { return !Object.keys(c.fatores).some(function (k) { return /^W/.test(k); }); })[0] || elu[0], ventoRef = elu.filter(function (c) { return Object.keys(c.fatores).some(function (k) { return /^W/.test(k); }); })[0] || null;
       [gravRef, ventoRef].forEach(function (c) {
         if (!c) return;
+        avisar("flambagem", 0, 0);
         var fb = A.flambagem(G.modelo, { combinacao: { id: c.id, fatores: c.fatores, nocional: c.nocional }, modos: 2 });
         if (fb.ok) flamb.push({ combinacao: c.id, nome: c.nome, lambda: fb.lambdaCritico, modos: fb.modos });
       });
@@ -648,6 +663,7 @@
     /* perfis trocados à mão por grupo (tela): { "papel|perfil": novo } */
     var orig = {}; lido.pecas.forEach(function (p) { orig[p.id] = p.cat; });
     Object.keys(entrada.perfisGrupo || {}).forEach(function (gk) { lido.pecas.forEach(function (p) { if (chaveGrupo(p) === gk) trocarPerfil(p, entrada.perfisGrupo[gk]); }); });
+    PROG.rodada = 0;
     var r = rodada(lido, entrada, op), log = [], r0 = r;
     /* otimização */
     var alvo = entrada.otimizar === true ? null : (arr(entrada.otimizar).length ? entrada.otimizar : (entrada.otimizar ? null : []));

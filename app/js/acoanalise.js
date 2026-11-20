@@ -377,7 +377,7 @@
   };
   Esparsa.prototype.identidade = function (g0) { this.zerar(g0); var p = (g0 / 6) | 0, l = g0 - 6 * p; this.a[this.S.off[p] + l * 7] = 1; };
   Esparsa.prototype.fatorar = function () {
-    var S = this.S, a = this.a, N = S.N, pivMin = 1, c, k, k2, r, t, s, u, D0 = new Float64Array(this.n);
+    var S = this.S, a = this.a, N = S.N, pivMin = 1, glMin = -1, c, k, k2, r, t, s, u, D0 = new Float64Array(this.n);
     for (c = 0; c < N; c++) for (t = 0; t < 6; t++) D0[c * 6 + t] = a[S.off[c] + t * 7];
     for (c = 0; c < N; c++) {
       var d = S.off[c], cols = S.colunas[c], nc = cols.length;
@@ -386,7 +386,7 @@
         var g = c * 6 + t, d0 = D0[g], dd = a[d + t * 7];
         for (s = 0; s < t; s++) { var v0 = a[d + t * 6 + s]; dd -= v0 * v0; }
         if (!(dd > 0)) return { ok: false, gl: g, pivo: dd };
-        if (d0 > 0 && dd / d0 < pivMin) pivMin = dd / d0;
+        if (d0 > 0 && dd / d0 < pivMin) { pivMin = dd / d0; glMin = g; }
         var dt = Math.sqrt(dd); a[d + t * 7] = dt;
         for (u = t + 1; u < 6; u++) { var x = a[d + u * 6 + t]; for (s = 0; s < t; s++) x -= a[d + u * 6 + s] * a[d + t * 6 + s]; a[d + u * 6 + t] = x / dt; }
       }
@@ -406,7 +406,7 @@
         }
       }
     }
-    return { ok: true, pivMin: pivMin };
+    return { ok: true, pivMin: pivMin, glMin: glMin };
   };
   Esparsa.prototype.resolver = function (b) {
     var S = this.S, a = this.a, N = S.N, x = Float64Array.from(b), c, k, r, t;
@@ -434,7 +434,7 @@
     return y;
   };
 
-  var OPC = { solver: (typeof process !== "undefined" && process.env && process.env.ACO_SOLVER) || "esparso" };   /* "perfil" = o skyline com Cuthill-McKee de antes (comparação nos testes e recuo) */
+  var OPC = { aoProgresso: null, solver: (typeof process !== "undefined" && process.env && process.env.ACO_SOLVER) || "esparso" };   /* "perfil" = o skyline com Cuthill-McKee de antes (comparação nos testes e recuo) */
   function novaMatriz(M) { return M.simb ? new Esparsa(M.simb) : new Perfil(M.nGL, M.primeira); }
 
   /* Cuthill-McKee reverso sobre o grafo dos nós */
@@ -959,6 +959,8 @@
       if (!R.convergiu) { res.aviso = "não convergiu em " + R.iteracoes + " iterações"; saida.avisos.push(cb.id + ": " + res.aviso); }
       if (res.travados.length) saida.avisos.push(cb.id + ": " + res.travados.length + " grau(s) de liberdade sem rigidez travado(s) (ex.: rotação de nó com todas as barras rotuladas)");
       saida.combinacoes[cb.id] = res;
+      /* PROGRESSO (20/11/2026): quem calcula pode ouvir cada combinação pronta — só AVISA, não muda nada do cálculo */
+      if (OPC.aoProgresso) { try { OPC.aoProgresso({ k: i + 1, n: combs.length, comb: cb.id }); } catch (eP) {} }
     }
     saida.tempoMs = Date.now() - t0;
     return saida;

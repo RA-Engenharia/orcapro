@@ -34034,7 +34034,7 @@ var v = c && c.vedacao, m = c && c.metal, M = BM();
 if (!v || !m || m.kind !== "chapa" || !(num(v.modulo, 0) > 0.05) || !M || !M.quadro) return [];
 var C = arr(m.contorno).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }), F = arr(m.recortes).map(function (r) { return arr(r.pts || r).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }); });
 if (C.length < 3) return [];
-var us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), lu = num(v.modulo, 1), Q = M.quadro(c), z = num(m.t, 0) + 0.002, out = [];
+var us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), lu = num(v.modulo, 1), Q = M.quadro(c), z = num(m.t, 0) + 0.008, out = [];
 var aneis = [C].concat(F);
 for (var k = 1; u0 + k * lu < u1 - 0.02 && k < 2000; k++) {
 var uc = u0 + k * lu, vs = [];
@@ -34048,7 +34048,40 @@ out.push([A[0], A[1], A[2], B[0], B[1], B[2]]);
 }
 return out;
 }
-var AcoVedacao = { PARTIDA: PARTIDA, FACES: FACES, KN_POR_KG: KN_POR_KG, galpao: galpao, estrutura: estrutura, quantidades: quantidades, caixa: caixa, juntas: juntas,
+var NERV = { porChapa: 4, crista: 0.28, vale: 0.36, emenda: 0.006 };
+function nervuras(c) {
+var v = c && c.vedacao, m = c && c.metal, M = BM(), T = v && v.telha;
+if (!v || v.material !== "telha" || !T || !m || m.kind !== "chapa" || !M || !M.quadro) return null;
+if (!/trapez/i.test(String(T.nome || "") + " " + String(T.id || ""))) return null;
+var lu = num(T.larguraUtil, 0), h = num(T.alturaOnda, 0) / 1000; if (!(lu > 0.2) || !(h > 0.005)) return null;
+var C = arr(m.contorno).map(function (q) { return Array.isArray(q) ? q : [q.u, q.v]; }); if (C.length < 3) return null;
+var Q = M.quadro(c), p = lu / NERV.porChapa, us = C.map(function (q) { return q[0]; }), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us);
+var a = p * NERV.vale / 2, b = p / 2 - p * NERV.crista / 2, prf = [[0, 0], [a, 0], [b, h], [p - b, h], [p - a, 0], [p, 0]];
+function vRange(uc) {
+var vs = []; for (var i = 0; i < C.length; i++) { var A = C[i], B = C[(i + 1) % C.length]; if ((A[0] - uc) * (B[0] - uc) < 0 || A[0] === uc && B[0] !== uc) vs.push(A[1] + (B[1] - A[1]) * (uc - A[0]) / ((B[0] - A[0]) || 1e-12)); }
+vs.sort(function (x, y) { return x - y; }); return vs.length >= 2 ? [vs[0], vs[vs.length - 1]] : null;
+}
+function W(u, vv, z) { return [Q.O[0] + Q.X[0] * u + Q.Y[0] * vv + Q.Z[0] * z, Q.O[1] + Q.X[1] * u + Q.Y[1] * vv + Q.Z[1] * z, Q.O[2] + Q.X[2] * u + Q.Y[2] * vv + Q.Z[2] * z]; }
+var blocos = [], B = null, tris = 0, k = 0, semente = 0, POR_BLOCO = NERV.porChapa * 5; String(c.id || v.chave || "").split("").forEach(function (ch) { semente = (semente * 31 + ch.charCodeAt(0)) % 9973; });
+for (var uN = u0; uN < u1 - 1e-6; uN += p, k++) {
+if (k % POR_BLOCO === 0) { B = { pos: [], cor: [], longe: { pos: [], cor: [] } }; blocos.push(B); }
+var chapa = Math.floor(k / NERV.porChapa), f = 0.93 + 0.07 * (((chapa * 7919 + semente) % 97) / 96), emenda = k % NERV.porChapa === NERV.porChapa - 1 ? NERV.emenda : 0;
+for (var s = 0; s + 1 < prf.length; s++) {
+var ua = uN + prf[s][0], ub = uN + prf[s + 1][0]; if (ua >= u1) break; if (ub > u1) ub = u1;
+var ra = vRange(ua + 1e-7), rb = vRange(ub - 1e-7); if (!ra || !rb || ra[1] - ra[0] < 0.005 || rb[1] - rb[0] < 0.005) continue;
+var za = prf[s][1] + (prf[s][1] > 0 ? emenda : 0), zb = prf[s + 1][1] + (prf[s + 1][1] > 0 ? emenda : 0);
+var P1 = W(ua, ra[0], za), P2 = W(ub, rb[0], zb), P3 = W(ub, rb[1], zb), P4 = W(ua, ra[1], za);
+[P1, P2, P3, P1, P3, P4].forEach(function (P) { B.pos.push(P[0], P[1], P[2]); B.cor.push(f, f, f); }); tris += 2;
+}
+var ue = Math.min(uN + p, u1), rA = vRange(uN + 1e-7), rB = vRange(ue - 1e-7);
+if (rA && rB && rA[1] - rA[0] >= 0.005 && rB[1] - rB[0] >= 0.005) { var Q1 = W(uN, rA[0], h / 2), Q2 = W(ue, rB[0], h / 2), Q3 = W(ue, rB[1], h / 2), Q4 = W(uN, rA[1], h / 2);
+[Q1, Q2, Q3, Q1, Q3, Q4].forEach(function (P) { B.longe.pos.push(P[0], P[1], P[2]); B.longe.cor.push(0.95, 0.95, 0.95); }); }
+}
+blocos = blocos.filter(function (q) { return q.pos.length; });
+var pos = [].concat.apply([], blocos.map(function (q) { return q.pos; }));
+return { blocos: blocos, pos: pos, tris: tris, passo: p, partida: { nervurasPorChapa: NERV.porChapa, crista: NERV.crista, vale: NERV.vale, texto: "nervuras: 4 por largura útil e proporção crista/vale de PARTIDA (o catálogo traz só a largura útil e a altura da onda)" } };
+}
+var AcoVedacao = { PARTIDA: PARTIDA, FACES: FACES, KN_POR_KG: KN_POR_KG, galpao: galpao, estrutura: estrutura, quantidades: quantidades, caixa: caixa, juntas: juntas, nervuras: nervuras, NERV: NERV,
 dadosTelha: dadosTelha, dadosParede: dadosParede, telhaPadrao: telhaPadrao, tipoFace: tipoFace,
 _int: { painelComVaos: painelComVaos, areaLiq: areaLiq, livresNaLinha: livresNaLinha, planoMQ: planoMQ, recortarMeioPlano: recortarMeioPlano, afastarPoligono: afastarPoligono, area2: area2 } };
 global.AcoVedacao = AcoVedacao;
@@ -37488,6 +37521,250 @@ levantar: levantar, orcar: orcar, paraOrcamento: paraOrcamento, xlsx: xlsx, uids
 abrir: function () { return UIx.abrir(); } };
 global.MetalOrc = MetalOrc;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalOrc;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/metalorcfab.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function RF() { return dep("BimMetalRelacaoFab", "./metalrelacaofab.js"); }
+function Aco() { return dep("PerfisAco", "./perfisaco.js"); }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(/\./g, function (m, i, s) { return /,/.test(s) ? "" : m; }).replace(",", ".")); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function r2(v) { return Math.round((num(v, 0) + 1e-9) * 100) / 100; }
+function r3(v) { return Math.round(num(v, 0) * 1000) / 1000; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function ceil(v) { return Math.ceil(r6(v) - 1e-9); }
+function br(v, c) { c = c == null ? 2 : c; var s = (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c), neg = s.charAt(0) === "-"; if (neg) s = s.slice(1); var p = s.split("."); return (neg ? "-" : "") + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + (p[1] ? "," + p[1] : ""); }
+function brl(v) { return "R$ " + br(v, 2); }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+var STATUS_COTAR = "pendente — cotar";
+var STATUS_PROD = "pendente — informar produtividade";
+var ENTIDADE = "metal_fab_param";
+var FAMILIAS = [
+["perfil", "Perfil laminado / soldado (I, H, U, L, T)"], ["dobrado", "Dobrado (Ue, U, Z, cartola, chapa dobrada)"],
+["tubo", "Tubo (retangular, quadrado, circular)"], ["chapa", "Chapa"], ["barra", "Barra (redonda, chata) e peça mecânica"]
+];
+var POSTOS = [
+{ id: "corte", nome: "Corte", drivers: [["ton", "h por tonelada"], ["peca", "h por peça"]] },
+{ id: "furacao", nome: "Furação", drivers: [["furo", "h por furo"], ["ton", "h por tonelada"]] },
+{ id: "montagem", nome: "Montagem e solda", drivers: [["conjunto", "h por conjunto soldado"], ["metroSolda", "h por metro de solda (estimado)"], ["ton", "h por tonelada"]] },
+{ id: "pintura", nome: "Pintura", drivers: [["m2", "h por m² de pintura"], ["ton", "h por tonelada"]] },
+{ id: "expedicao", nome: "Expedição", drivers: [["conjunto", "h por conjunto (unidade de carga)"], ["ton", "h por tonelada"]] },
+{ id: "campo", nome: "Montagem em campo", drivers: [["conjunto", "h por conjunto"], ["ton", "h por tonelada"]] }
+];
+var UNID_DRIVER = { ton: "t", peca: "peça", furo: "furo", conjunto: "conjunto", metroSolda: "m", m2: "m²" };
+function postoDe(id) { for (var i = 0; i < POSTOS.length; i++) if (POSTOS[i].id === id) return POSTOS[i]; return null; }
+function vazio() {
+var p = { aco: {}, hora: {}, prod: {}, consum: {}, perdaPct: null, bdiPct: null };
+FAMILIAS.forEach(function (f) { p.aco[f[0]] = null; });
+POSTOS.forEach(function (po) { p.hora[po.id] = null; p.prod[po.id] = {}; po.drivers.forEach(function (d) { p.prod[po.id][d[0]] = null; }); });
+var R = RF(); if (R && R.INDICE_ROTULOS) Object.keys(R.INDICE_ROTULOS).forEach(function (k) { p.consum[k] = null; });
+return p;
+}
+function pos(v) { var n = num(v, null); return n != null && n >= 0 ? n : null; }
+function normalizar(c) {
+c = c || {}; var p = vazio();
+Object.keys(p.aco).forEach(function (k) { p.aco[k] = pos(c.aco && c.aco[k]); });
+POSTOS.forEach(function (po) {
+p.hora[po.id] = pos(c.hora && c.hora[po.id]);
+po.drivers.forEach(function (d) { p.prod[po.id][d[0]] = pos(c.prod && c.prod[po.id] && c.prod[po.id][d[0]]); });
+});
+Object.keys(p.consum).forEach(function (k) { p.consum[k] = pos(c.consum && c.consum[k]); });
+p.perdaPct = pos(c.perdaPct); p.bdiPct = pos(c.bdiPct);
+return p;
+}
+function algumPreenchido(p) {
+p = normalizar(p); var s = JSON.stringify(p);
+return /:\d/.test(s);
+}
+function ehFrio(rep) {
+var cat = rep.perfil && rep.perfil.cat, A = Aco(), it = cat && A && A.obter ? A.obter(cat) : null;
+if (it && it.forma === "frio") return true;
+return /^(ue|u|z|ze|cr)\s+\d/i.test(txt(cat)) && /x\s*\d+,\d+\s*$/.test(txt(cat));
+}
+function familiaDe(rep) {
+if (rep.kind === "chapa") return rep.dobras ? "dobrado" : "chapa";
+if (rep.kind === "mec") return "barra";
+var forma = rep.perfil && rep.perfil.forma;
+if (forma === "tubo-ret" || forma === "tubo-circ") return "tubo";
+if (forma === "ret" || forma === "circ") return "barra";
+if (ehFrio(rep)) return "dobrado";
+return "perfil";
+}
+function levantar(L, n) {
+L = L || {}; n = n || {};
+var porMarca = {}; arr(L.pecas).forEach(function (p) { porMarca[p.marca] = p; });
+var fam = {}; FAMILIAS.forEach(function (f) { fam[f[0]] = { kg: 0, pecas: 0 }; });
+var q = { kg: 0, pecas: 0, furos: 0, metroSolda: 0, m2: 0, conjuntos: 0, conjuntosSoldados: 0 }, avisos = [], semSolda = 0, semPeso = 0;
+arr(n.grupos).forEach(function (g) {
+var rep = g.rep || {}, qt = arr(g.ids).length, lp = porMarca[g.marca], kg = lp ? num(lp.pesoTotal, 0) : 0;
+if (!(kg > 0)) { semPeso += qt; }
+var f = familiaDe(rep);
+fam[f].kg += kg; fam[f].pecas += qt; q.kg += kg; q.pecas += qt;
+q.furos += arr(rep.furos).length * qt;
+if (lp) q.m2 += num(lp.pinturaTotal, 0);
+if (rep.soldadaEm) {
+var lados = rep.solda ? (rep.solda.lados === "um" ? 1 : 2) : 2;
+if (!rep.solda) semSolda += qt;
+q.metroSolda += num(rep.L, 0) / 1000 * lados * qt;
+}
+});
+arr(n.conjuntos).forEach(function (c) {
+var qc = arr(c.conjuntos).length; q.conjuntos += qc;
+if (arr(c.partes).length) q.conjuntosSoldados += qc;
+});
+if (semPeso) avisos.push(semPeso + " peça(s) sem peso no modelo (perfil sem catálogo?) ficaram com 0 kg — o aço delas não está no orçamento.");
+if (semSolda) avisos.push(semSolda + " peça(s) soldada(s) sem a especificação da solda: contei 2 lados para estimar os metros de solda.");
+if (q.metroSolda > 0) avisos.push("Metros de solda ESTIMADOS (comprimento da peça soldada × lados): o modelo não tem o comprimento real do cordão.");
+Object.keys(fam).forEach(function (k) { fam[k].kg = r2(fam[k].kg); });
+return { fam: fam, q: { kg: r2(q.kg), ton: r3(q.kg / 1000), pecas: q.pecas, furos: q.furos, metroSolda: r2(q.metroSolda), m2: r3(q.m2), conjuntos: q.conjuntos, conjuntosSoldados: q.conjuntosSoldados }, avisos: avisos };
+}
+function calcular(L, n, param, opts) {
+opts = opts || {}; n = n || (L && L.numeracao) || {};
+var P = normalizar(param), lev = levantar(L, n), q = lev.q, avisos = lev.avisos.slice(), pend = [];
+var perda = P.perdaPct == null ? 0 : P.perdaPct;
+if (P.perdaPct == null) avisos.push("Perda de material não informada: considerei 0 % (informe a perda da fábrica).");
+var material = [], custoMat = 0;
+FAMILIAS.forEach(function (f) {
+var k = f[0], kg = lev.fam[k].kg, bruto = r2(kg * (1 + perda / 100)), preco = P.aco[k], item = { familia: k, nome: f[1], pecas: lev.fam[k].pecas, kg: kg, kgBruto: bruto, precoKg: preco, custo: null, status: "" };
+if (!(kg > 0)) item.status = "sem peso no modelo";
+else if (preco == null) { item.status = STATUS_COTAR; pend.push("Aço — " + f[1] + ": informar o preço do kg (" + br(kg, 0) + " kg no modelo)."); }
+else { item.custo = r2(bruto * preco); custoMat += item.custo; item.status = "ok"; }
+material.push(item);
+});
+var qtdDriver = { ton: q.ton, peca: q.pecas, furo: q.furos, conjunto: q.conjuntos, metroSolda: q.metroSolda, m2: q.m2 };
+var postos = [], custoMO = 0, horasTot = 0;
+POSTOS.forEach(function (po) {
+var pr = P.prod[po.id], hora = P.hora[po.id], drivers = [], horas = null;
+po.drivers.forEach(function (d) {
+if (pr[d[0]] == null) return;
+var qtd = d[0] === "conjunto" && po.id === "montagem" ? q.conjuntosSoldados : qtdDriver[d[0]];
+var h = r3(pr[d[0]] * qtd);
+drivers.push({ driver: d[0], rotulo: d[1], qtd: r3(qtd), unidade: UNID_DRIVER[d[0]], hPorUn: pr[d[0]], horas: h });
+horas = (horas || 0) + h;
+});
+var item = { posto: po.id, nome: po.nome, hora: hora, drivers: drivers, horas: horas == null ? null : r3(horas), custo: null, status: "" };
+if (horas == null) { item.status = STATUS_PROD; pend.push(po.nome + ": informar a produtividade (h por " + po.drivers.map(function (d) { return UNID_DRIVER[d[0]]; }).join(" ou ") + ")."); }
+else horasTot += horas;
+if (hora == null) { item.status = item.status ? item.status + "; pendente — cotar a hora" : "pendente — cotar a hora"; pend.push(po.nome + ": informar o custo da hora (R$/h)."); }
+if (horas != null && hora != null) { item.custo = r2(horas * hora); custoMO += item.custo; item.status = "ok"; }
+postos.push(item);
+});
+var consumiveis = [], custoCons = 0, R = RF();
+if (R && R.cfg && R.INDICE_ROTULOS) {
+var C = R.cfg(opts.relacao || {}), cat = {}; (R.catalogoPendente ? R.catalogoPendente() : []).forEach(function (c) { cat[c.chave] = c; });
+Object.keys(R.INDICE_ROTULOS).forEach(function (k) {
+var qtd = ceil(C.indice[k] * q.ton), preco = P.consum[k], c0 = cat[k] || {}, item = { chave: k, descricao: c0.descricao || R.INDICE_ROTULOS[k][0], unidade: c0.unidade || "", indice: C.indice[k], qtd: qtd, preco: preco, custo: null, status: "" };
+if (!(qtd > 0)) item.status = "sem aço no modelo";
+else if (preco == null) { item.status = STATUS_COTAR; pend.push("Consumível — " + item.descricao + ": informar o preço por " + item.unidade + " (" + qtd + " " + item.unidade + ")."); }
+else { item.custo = r2(qtd * preco); custoCons += item.custo; item.status = "ok"; }
+consumiveis.push(item);
+});
+} else avisos.push("Os índices de consumíveis (js/metalrelacaofab.js) não carregaram: consumíveis fora do orçamento.");
+var custo = r2(custoMat + custoMO + custoCons), parcial = pend.length > 0;
+var venda = P.bdiPct == null ? null : r2(custo * (1 + P.bdiPct / 100));
+if (P.bdiPct == null) pend.push("BDI/margem: informar o percentual para obter o preço de venda.");
+var area = num(opts.areaM2, 0);
+var resumo = { custoMaterial: r2(custoMat), custoMaoDeObra: r2(custoMO), custoConsumiveis: r2(custoCons), custo: custo, bdiPct: P.bdiPct, precoVenda: venda, horasTotal: r3(horasTot),
+kg: q.kg, ton: q.ton, areaM2: area > 0 ? area : null, parcial: parcial || P.bdiPct == null,
+custoPorKg: q.kg > 0 && custo > 0 ? r2(custo / q.kg) : null,
+vendaPorKg: venda != null && q.kg > 0 ? r2(venda / q.kg) : null,
+custoPorM2: area > 0 && custo > 0 ? r2(custo / area) : null,
+vendaPorM2: venda != null && area > 0 ? r2(venda / area) : null };
+if (!(area > 0)) avisos.push("Área construída não informada: o R$/m² fica pendente (informe a área em m²).");
+if (!(q.kg > 0)) avisos.push("Não há aço no modelo para orçar.");
+if (resumo.parcial && custo > 0) avisos.push("Total PARCIAL: os itens pendentes ficaram fora da soma.");
+return { material: material, postos: postos, consumiveis: consumiveis, quantidades: q, resumo: resumo, pendencias: pend, avisos: avisos, parametros: P };
+}
+function html(O, info) {
+info = info || {}; var s = O.resumo, h = '<div data-mof="orcamento">';
+if (info.obra) h += '<p style="margin:0 0 6px"><b>' + esc(info.obra) + "</b></p>";
+function v(x) { return x == null ? "—" : brl(x); }
+h += '<table class="tbl tbl-compacta" data-mof="resumo"><tbody>' +
+"<tr><td>Aço do modelo</td><td class=\"num\">" + br(s.kg, 0) + " kg (" + br(s.ton, 3) + " t)</td></tr>" +
+"<tr><td>Material (com perda)</td><td class=\"num\">" + brl(s.custoMaterial) + "</td></tr>" +
+"<tr><td>Mão de obra (" + br(s.horasTotal, 1) + " h)</td><td class=\"num\">" + brl(s.custoMaoDeObra) + "</td></tr>" +
+"<tr><td>Consumíveis</td><td class=\"num\">" + brl(s.custoConsumiveis) + "</td></tr>" +
+"<tr style=\"font-weight:600\"><td>Custo" + (s.parcial ? " (parcial)" : "") + "</td><td class=\"num\">" + brl(s.custo) + "</td></tr>" +
+"<tr><td>BDI / margem</td><td class=\"num\">" + (s.bdiPct == null ? "pendente — informar" : br(s.bdiPct, 2) + " %") + "</td></tr>" +
+"<tr style=\"font-weight:600\"><td>Preço de venda" + (s.parcial && s.precoVenda != null ? " (parcial)" : "") + "</td><td class=\"num\">" + v(s.precoVenda) + "</td></tr>" +
+"<tr><td>R$/kg (custo · venda)</td><td class=\"num\">" + v(s.custoPorKg) + " · " + v(s.vendaPorKg) + "</td></tr>" +
+"<tr><td>R$/m² (custo · venda)</td><td class=\"num\">" + (s.areaM2 ? v(s.custoPorM2) + " · " + v(s.vendaPorM2) : "pendente — informar a área") + "</td></tr></tbody></table>";
+h += '<h4 style="margin:10px 0 4px;font-size:13px">Material por família</h4><table class="tbl tbl-compacta" data-mof="material"><thead><tr><th>Família</th><th class="num">Peso (kg)</th><th class="num">Com perda (kg)</th><th class="num">R$/kg</th><th class="num">Custo</th><th>Situação</th></tr></thead><tbody>' +
+O.material.map(function (m) { return "<tr><td>" + esc(m.nome) + '</td><td class="num">' + br(m.kg, 2) + '</td><td class="num">' + br(m.kgBruto, 2) + '</td><td class="num">' + (m.precoKg == null ? "" : br(m.precoKg, 2)) + '</td><td class="num">' + (m.custo == null ? "" : brl(m.custo)) + "</td><td>" + esc(m.status) + "</td></tr>"; }).join("") + "</tbody></table>";
+h += '<h4 style="margin:10px 0 4px;font-size:13px">Horas por posto</h4><table class="tbl tbl-compacta" data-mof="postos"><thead><tr><th>Posto</th><th>Base de cálculo</th><th class="num">Horas</th><th class="num">R$/h</th><th class="num">Custo</th><th>Situação</th></tr></thead><tbody>' +
+O.postos.map(function (p) { return "<tr><td>" + esc(p.nome) + "</td><td>" + esc(p.drivers.map(function (d) { return br(d.qtd, d.unidade === "t" || d.unidade === "m" || d.unidade === "m²" ? 2 : 0) + " " + d.unidade + " × " + br(d.hPorUn, 3) + " h"; }).join(" + ")) + '</td><td class="num">' + (p.horas == null ? "" : br(p.horas, 2)) + '</td><td class="num">' + (p.hora == null ? "" : br(p.hora, 2)) + '</td><td class="num">' + (p.custo == null ? "" : brl(p.custo)) + "</td><td>" + esc(p.status) + "</td></tr>"; }).join("") + "</tbody></table>";
+h += '<h4 style="margin:10px 0 4px;font-size:13px">Consumíveis (índice por tonelada × aço)</h4><table class="tbl tbl-compacta" data-mof="consumiveis"><thead><tr><th>Consumível</th><th class="num">Qtd</th><th>Unid.</th><th class="num">Preço unit.</th><th class="num">Custo</th><th>Situação</th></tr></thead><tbody>' +
+O.consumiveis.map(function (c) { return "<tr><td>" + esc(c.descricao) + '</td><td class="num">' + br(c.qtd, 0) + "</td><td>" + esc(c.unidade) + '</td><td class="num">' + (c.preco == null ? "" : br(c.preco, 2)) + '</td><td class="num">' + (c.custo == null ? "" : brl(c.custo)) + "</td><td>" + esc(c.status) + "</td></tr>"; }).join("") + "</tbody></table>";
+if (O.pendencias.length) h += '<h4 style="margin:10px 0 4px;font-size:13px">Pendências (' + O.pendencias.length + ")</h4><ul data-mof=\"pendencias\" style=\"font-size:12px;margin:0 0 6px 18px\">" + O.pendencias.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
+O.avisos.forEach(function (a) { h += '<p style="font-size:12px;margin:4px 0;color:#a86a10">' + esc(a) + "</p>"; });
+h += '<p style="font-size:11px;margin:8px 0 0" class="muted">Preços, horas, produtividades e BDI são os da tabela de parâmetros da fábrica (nenhum valor é inventado). Fora deste orçamento: parafusos e chumbadores, tinta, galvanização, içamento e frete — ver o Orçamento da estrutura. Modelagem e fabricação; não é cálculo estrutural.</p>';
+return h + "</div>";
+}
+function htmlDocumento(O, info) {
+return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Orçamento de fábrica — por kg e hora</title><style>body{font:13px/1.4 Arial,sans-serif;margin:24px;color:#1d2733}table{border-collapse:collapse;width:100%;margin:6px 0}th,td{border:1px solid #9aa7b4;padding:3px 8px;text-align:left}th{background:#dde5ee}.num{text-align:right}</style></head><body><h2>Orçamento de fábrica — por kg e hora</h2>' + html(O, info) + "</body></html>";
+}
+function xlsx(O, ExcelJS, info) {
+info = info || {}; var s = O.resumo, P = O.parametros;
+var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO"; wb.created = info.data ? new Date(info.data) : new Date(0);
+var CINZA = "FFDDE5EE", BORDA = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+function aba(nome, cols, linhas) {
+var ws = wb.addWorksheet(nome);
+ws.columns = cols.map(function (c) { return { header: c[1], key: c[0], width: c[2] || 14 }; });
+linhas.forEach(function (l) { ws.addRow(l); });
+var cab = ws.getRow(1); cab.font = { bold: true }; cab.eachCell(function (c) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CINZA } }; c.border = BORDA; });
+cols.forEach(function (c, i) { if (c[3]) ws.getColumn(i + 1).numFmt = c[3]; });
+ws.views = [{ state: "frozen", ySplit: 1 }];
+return ws;
+}
+var ws = wb.addWorksheet("Resumo");
+ws.columns = [{ width: 44 }, { width: 22 }, { width: 30 }];
+ws.getCell("A1").value = "ORÇAMENTO DE FÁBRICA — POR KG E HORA"; ws.getCell("A1").font = { bold: true, size: 14 };
+ws.getCell("A2").value = info.obra || "";
+var linhas = [["Aço do modelo (kg)", s.kg, "#,##0.00"], ["Aço do modelo (t)", s.ton, "#,##0.000"], ["Material com perda (R$)", s.custoMaterial, "#,##0.00"],
+["Mão de obra (R$)", s.custoMaoDeObra, "#,##0.00"], ["Horas totais", s.horasTotal, "#,##0.00"], ["Consumíveis (R$)", s.custoConsumiveis, "#,##0.00"],
+["CUSTO" + (s.parcial ? " (PARCIAL — há pendências)" : "") + " (R$)", s.custo, "#,##0.00"], ["BDI / margem (%)", s.bdiPct, "0.00"], ["PREÇO DE VENDA (R$)", s.precoVenda, "#,##0.00"],
+["Custo por kg (R$/kg)", s.custoPorKg, "#,##0.00"], ["Venda por kg (R$/kg)", s.vendaPorKg, "#,##0.00"], ["Área construída (m²)", s.areaM2, "#,##0.00"],
+["Custo por m² (R$/m²)", s.custoPorM2, "#,##0.00"], ["Venda por m² (R$/m²)", s.vendaPorM2, "#,##0.00"]];
+linhas.forEach(function (l, i) { var r = 4 + i, c = ws.getCell("B" + r); ws.getCell("A" + r).value = l[0]; ws.getCell("A" + r).border = BORDA; c.border = BORDA; if (l[1] == null) { c.value = STATUS_COTAR.replace("cotar", "informar"); c.font = { italic: true }; } else { c.value = l[1]; c.numFmt = l[2]; } if (/^(CUSTO|PREÇO)/.test(l[0])) { ws.getCell("A" + r).font = { bold: true }; c.font = { bold: true }; } });
+aba("Material", [["nome", "Família", 42], ["pecas", "Peças", 8, "0"], ["kg", "Peso (kg)", 14, "#,##0.00"], ["kgBruto", "Com perda (kg)", 16, "#,##0.00"], ["precoKg", "R$/kg", 12, "#,##0.00"], ["custo", "Custo (R$)", 16, "#,##0.00"], ["status", "Situação", 22]],
+O.material.map(function (m) { return { nome: m.nome, pecas: m.pecas, kg: m.kg, kgBruto: m.kgBruto, precoKg: m.precoKg == null ? "" : m.precoKg, custo: m.custo == null ? "" : m.custo, status: m.status }; }));
+var linMO = []; O.postos.forEach(function (p) {
+if (!p.drivers.length) linMO.push({ posto: p.nome, base: "", qtd: "", hun: "", horas: "", hora: p.hora == null ? "" : p.hora, custo: "", status: p.status });
+p.drivers.forEach(function (d, i) { linMO.push({ posto: p.nome, base: d.rotulo, qtd: d.qtd, hun: d.hPorUn, horas: d.horas, hora: i === 0 ? (p.hora == null ? "" : p.hora) : "", custo: i === 0 ? (p.custo == null ? "" : p.custo) : "", status: i === 0 ? p.status : "" }); });
+});
+aba("Mão de obra", [["posto", "Posto", 22], ["base", "Base de cálculo", 36], ["qtd", "Quantidade", 14, "#,##0.00"], ["hun", "h por unidade", 14, "0.000"], ["horas", "Horas", 12, "#,##0.00"], ["hora", "R$/h", 12, "#,##0.00"], ["custo", "Custo (R$)", 16, "#,##0.00"], ["status", "Situação", 34]], linMO);
+aba("Consumíveis", [["descricao", "Consumível", 34], ["unidade", "Unid.", 8], ["indice", "Índice por tonelada", 18, "0.000"], ["qtd", "Quantidade", 12, "0"], ["preco", "Preço unit. (R$)", 16, "#,##0.00"], ["custo", "Custo (R$)", 16, "#,##0.00"], ["status", "Situação", 22]],
+O.consumiveis.map(function (c) { return { descricao: c.descricao, unidade: c.unidade, indice: c.indice, qtd: c.qtd, preco: c.preco == null ? "" : c.preco, custo: c.custo == null ? "" : c.custo, status: c.status }; }));
+aba("Pendências", [["t", "O que falta informar / cotar", 100]], O.pendencias.map(function (t) { return { t: t }; }));
+var par = []; FAMILIAS.forEach(function (f) { par.push({ g: "Aço (R$/kg)", i: f[1], v: P.aco[f[0]] == null ? "" : P.aco[f[0]] }); });
+POSTOS.forEach(function (po) { par.push({ g: "Hora (R$/h)", i: po.nome, v: P.hora[po.id] == null ? "" : P.hora[po.id] }); po.drivers.forEach(function (d) { par.push({ g: "Produtividade", i: po.nome + " — " + d[1], v: P.prod[po.id][d[0]] == null ? "" : P.prod[po.id][d[0]] }); }); });
+O.consumiveis.forEach(function (c) { par.push({ g: "Consumível (R$/unid.)", i: c.descricao, v: c.preco == null ? "" : c.preco }); });
+par.push({ g: "Perda", i: "Perda de material (%)", v: P.perdaPct == null ? "" : P.perdaPct }); par.push({ g: "BDI", i: "BDI / margem (%)", v: P.bdiPct == null ? "" : P.bdiPct });
+aba("Parâmetros", [["g", "Grupo", 24], ["i", "Item", 60], ["v", "Valor", 14, "#,##0.00##"]], par);
+var wl = wb.addWorksheet("Leia-me");
+["OrçaPRO Modela — Metálica: orçamento de fábrica por kg e hora.",
+"Aço por kg (por família de perfil) × peso do modelo, com a perda da fábrica; mão de obra por posto = horas (produtividade × quantidade do modelo) × custo da hora; consumíveis = índice por tonelada (js/metalrelacaofab.js) × aço × preço unitário; BDI/margem sobre o custo.",
+"Todos os preços, horas, produtividades e o BDI vêm da tabela de parâmetros da fábrica. Nenhum valor foi inventado: o que está em branco sai 'pendente' e fica fora da soma (total PARCIAL).",
+"Metros de solda são ESTIMADOS (comprimento da peça soldada × lados). Fora deste orçamento: parafusos e chumbadores, tinta, galvanização, içamento e frete (ver o Orçamento da estrutura).",
+"Modelagem e fabricação — não é cálculo estrutural."].concat(O.avisos).forEach(function (t) { wl.addRow([t]); });
+wl.getColumn(1).width = 150;
+return wb;
+}
+var BimMetalOrcFab = {
+ENTIDADE: ENTIDADE, STATUS_COTAR: STATUS_COTAR, STATUS_PROD: STATUS_PROD, FAMILIAS: FAMILIAS, POSTOS: POSTOS, UNID_DRIVER: UNID_DRIVER,
+vazio: vazio, normalizar: normalizar, algumPreenchido: algumPreenchido, familiaDe: familiaDe, levantar: levantar, calcular: calcular,
+html: html, htmlDocumento: htmlDocumento, xlsx: xlsx, br: br, postoDe: postoDe
+};
+global.BimMetalOrcFab = BimMetalOrcFab;
+if (typeof module !== "undefined" && module.exports) module.exports = BimMetalOrcFab;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalmontagem.js ==== */
@@ -41699,7 +41976,7 @@ function qTesouraLeve(Q, p) {
 var B = p.vao, H = p.peDireito, i = p.inclinacao / 100, bc = p.larguraColuna, gl = geomLeve(p), he = gl.he, n = gl.n, dx = gl.dx, sub = gl.sub, pad = p.padrao;
 var yT = function (x) { return H + i * Math.min(x, B - x); };
 var yB = p.forma === "trapezoidal" ? function () { return H - he; } : function (x) { return yT(x) - he; };
-var pb = perfilCat(p.banzo), dch = Math.max(pb.d || 0, pb.h || 0, pb.bw || 0, 0.05), usados = {}, pend = {};
+var pb = perfilCat(p.banzo), dch = Math.max(pb.b || 0, pb.bf || 0) || Math.max(pb.d || 0, pb.h || 0, pb.bw || 0, 0.05), usados = {}, pend = {};
 function pt(nm, x, y) { pend[nm] = [x, y]; return nm; }
 function M(a, b, o) { usados[a] = 1; usados[b] = 1; Q.M(a, b, o); }
 var nomT = function (ld, k) { return k === n ? "TC" : "T" + ld + k; }, nomD = function (ld, k) { return k === n ? "DC" : "D" + ld + k; };
@@ -42021,8 +42298,15 @@ mapa[b.id] = c.id; pecas.push(c); ops.push({ op: "criar", id: c.id, caixa: c });
 if (erros.length) return { ok: false, motivo: "Peças que não deu para desenhar: " + erros.slice(0, 4).join("; ") + (erros.length > 4 ? "…" : "") };
 var areas = M.areas.map(function (a) { var q = clone(a); q.vigas = a.vigas.map(function (id) { return mapa[id]; }).filter(Boolean); return q; });
 var pontuais = M.pontuais.map(function (q) { var o = clone(q); o.peca = mapa[q.barra]; delete o.barra; return o; });
-return { ok: true, motor: "livre", tipo: t, par: p, op: { op: "lote", id: String(novoId()), origem: "metal-porticos", pedido: "Pórtico paramétrico: " + TIPOS[t].rotulo, ops: ops }, pecas: pecas, mapa: mapa, porticoId: gid,
+var g = { ok: true, motor: "livre", tipo: t, par: p, op: { op: "lote", id: String(novoId()), origem: "metal-porticos", pedido: "Pórtico paramétrico: " + TIPOS[t].rotulo, ops: ops }, pecas: pecas, mapa: mapa, porticoId: gid,
 areas: areas, pontuais: pontuais, contagem: M.contagem, resumo: M.resumo, avisos: M.avisos, decisoes: M.decisoes, naoVerificados: M.naoVerificados, modelo: M };
+var PA = opG.semAcabamento ? null : dep("MetalPorticosAcab", "./metalporticosacab.js");
+if (PA) {
+var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
+var ac = PA.completar(t, p, g, novoId, acO);
+if (ac.ok) { g.acab = ac; ac.ops.forEach(function (o) { ops.push(o); }); if (ac.resumo) g.resumo = g.resumo + " Acabamento: " + ac.resumo + "."; g.avisos = arr(g.avisos).concat(ac.avisos); }
+}
+return g;
 }
 function fechamentoFaces(caixas, ids, p) {
 var M = MLv(), E = Env(); if (!M || !E) return {};
@@ -42059,7 +42343,7 @@ if (!pg.vento) return { ok: false, motor: "galpao", motivo: "Falta o local da ob
 var r = D.calcular(pg, op.calc || {});
 return { ok: !!(r && r.ok), motor: "galpao", tipo: t, r: r, par: pg, situacao: r && r.ok ? (r.aprovado ? "aprovado" : "reprovado") : "nao-calculou", naoVerificados: [] };
 }
-var k = 0, g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }); if (!g.ok) return g;
+var k = 0, g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }, { semAcabamento: true }); if (!g.ok) return g;
 var ent = entradaLivre(t, p, g, op), DL = DLv(); if (!DL) return { ok: false, motivo: "O cálculo da estrutura desenhada (js/acodimlivre.js) não carregou." };
 var r2 = DL.calcular(ent, op.calc || {});
 var trocasCor = [];
@@ -42100,9 +42384,9 @@ var PRESETS = {
 "pedido-gabriel": {
 rotulo: "Pedido Gabriel — galpão 20 × 30 m (Alumetal)", tipo: "tesoura-leve",
 base: { vao: 20, nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
-diagonal: "TQ 50,8 x 50,8 x 1,25 Tuper", montante: "TQ 60 x 60 x 1,11 Tuper", travejamento: "TQ 38 x 38 x 0,95 Tuper",
+diagonal: "TQ 60 x 60 x 1,55 Tuper", montante: "TQ 60 x 60 x 1,11 Tuper", travejamento: "TQ 38 x 38 x 0,95 Tuper",
 terca: "Ue 250 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", banzoColuna: "U 300 x 100 x 3,75", banzo: "TR 50 x 100 x 3,75 Tuper",
-escora: "TQ 80 x 80 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB", tapamento: "TR 250 x 100 x 6,4 VMB",
+escora: "TQ 88,9 x 88,9 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB", tapamento: "TR 250 x 100 x 6,4 VMB",
 barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "BR 1/2\" (D 12,70 mm) Gerdau",
 vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },
 solar: 0.15, instalacoes: 0.10,
@@ -42124,6 +42408,169 @@ var MetalPorticos = { PRESETS: PRESETS, presetPar: presetPar, presetVariantes: p
 misulaMedidas: misulaMedidas, tolLeitor: tolLeitor, parGalpaoBIM: parGalpaoBIM, parGalpao: parGalpao, entradaLivre: entradaLivre, presetLivre: presetLivre, NAO_VERIFICA: NAO_VERIFICA, calcular: calcular, esquema: esquema, consoleCota: consoleCota };
 global.MetalPorticos = MetalPorticos;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalPorticos;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/metalporticosacab.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BM() { return dep("BimMetal", "./metalpeca.js"); }
+function LG() { return dep("BimMetalLig", "./metalligacao.js"); }
+function VD() { return dep("AcoVedacao", "./acovedacao.js"); }
+function Aco() { return dep("PerfisAco", "./perfisaco.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function br(v, c) { c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+var ACAB_PADRAO = { tipo: "pintura", cor: "#3e5b74", brilho: "acetinado", sistema: null };
+var ACAB_PARAFUSO = { tipo: "galvanizado" };
+var DUAS_AGUAS = { "tesoura-leve": 1, "tesoura": 1, "trelica-paralelos": 1, "trelica-trapezoidal": 1, "coluna-trelicada": 1, "ponte": 1, "mezanino": 1, "misula": 1, "atirantado": 1 };
+var FOLGA = 0.025;
+function vertices(c) {
+var M = BM(), out = []; if (!M || !c || !c.metal) return out;
+var sd; try { sd = M.solidos(c); } catch (e) { return out; }
+sd.forEach(function (s) { arr(s.poli).forEach(function (q) { out.push(s.ponto(q[0], q[1], s.z0)); out.push(s.ponto(q[0], q[1], s.z1)); }); });
+return out;
+}
+function completar(t, p, g, novoId, op) {
+op = op || {};
+var avisos = [], ops = [], novas = [], ligs = [], cont = { placaBase: 0, clipTerca: 0, barraRedonda: 0, vedacao: 0 };
+if (!g || !g.ok || g.motor !== "livre" || !g.modelo) return { ok: false, motivo: "Sem o pórtico gerado (estrutura desenhada)." };
+if (typeof novoId !== "function") return { ok: false, motivo: "Sem gerador de id." };
+var Mod = g.modelo, nos = Mod.nos, gid = g.porticoId, porId = {};
+g.pecas.forEach(function (c) { porId[c.id] = c; });
+var cx = function (b) { return b ? porId[g.mapa[b.id]] : null; };
+var acab = op.acab === null ? null : clone(op.acab || ACAB_PADRAO);
+if (acab) g.pecas.forEach(function (c) { if (!c.acab) c.acab = clone(acab); });
+if (op.ligacoes !== false) {
+var Lg = LG();
+if (!Lg) avisos.push("Ligações: o motor das ligações (js/metalligacao.js) não carregou — o pórtico saiu sem placas e clips.");
+else {
+var atual = {}; g.pecas.forEach(function (c) { atual[c.id] = c; });
+var cur = function (c) { return c && atual[c.id] ? atual[c.id] : c; };
+var aplicar = function (tipo, sel, par) {
+var pr = clone(par || {}); if (pr.terca2) pr.terca2 = cur(par.terca2); pr.lig = String(novoId());
+var r; try { r = Lg.aplicar(tipo, sel.map(cur), pr); } catch (eL) { r = { ok: false, motivo: String(eL && eL.message || eL) }; }
+ligs.push({ tipo: tipo, ok: !!r.ok, motivo: r.ok ? "" : r.motivo });
+if (!r.ok) return false;
+var lote = Lg.ops(r, novoId);
+lote.ops.forEach(function (o) {
+if (o.op === "criar" && o.caixa) {
+if (atual[o.id]) { o.caixa.id = o.id; atual[o.id] = clone(o.caixa); }
+else { o.caixa.id = o.id; o.caixa.portico = gid; if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
+}
+if (o.op === "metalFuros" && atual[o.id]) { var q = atual[o.id]; q.metalFuros = arr(q.metalFuros).filter(function (f) { return f.lig !== o.lig; }).concat(o.furos.map(function (f) { var h = clone(f); h.lig = o.lig; return h; })); }
+ops.push(o);
+});
+cont[tipo] = (cont[tipo] || 0) + 1;
+return true;
+};
+var cota = num(p.cota, 0);
+Mod.barras.forEach(function (b) {
+if (b.ferr !== "pilar") return;
+var a = nos[b.a], z = nos[b.b]; if (!a || !z || Math.abs(a[1] - cota) > 1e-6) return;
+aplicar("placaBase", [cx(b)], { nChumb: 4 });
+});
+var porK = {}, linhaDe = function (nm) { var m = /^t(\d+):(\d+)'?$/.exec(nm); return m ? { k: +m[1], j: +m[2] } : null; };
+var vigasK = {}, semClip = 0;
+Mod.barras.forEach(function (b) {
+if (b.grupo === "banzoSup" || b.grupo === "viga" || b.grupo === "misula") { var k = +String(b.a).split(":")[0]; (vigasK[k] = vigasK[k] || []).push(b); }
+if (b.grupo !== "terca") return;
+var la = linhaDe(b.a), lb = linhaDe(b.b); if (!la || !lb) return;
+(porK[la.k] = porK[la.k] || {})[la.j] = (porK[la.k] || {})[la.j] || {}; porK[la.k][la.j].depois = b;
+(porK[lb.k] = porK[lb.k] || {})[lb.j] = (porK[lb.k] || {})[lb.j] || {}; porK[lb.k][lb.j].antes = b;
+});
+Object.keys(porK).forEach(function (k) {
+Object.keys(porK[k]).forEach(function (j) {
+var par = porK[k][j], t1 = par.antes || par.depois, t2 = par.antes && par.depois ? par.depois : null, P = nos[par.depois ? par.depois.a : par.antes.b];
+var vs = arr(vigasK[k]), melhor = null, dMin = 1e9, sM = 0, LM = 0;
+vs.forEach(function (v) {
+var A = nos[v.a], B = nos[v.b], dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1, s = ((P[0] - A[0]) * dx + (P[1] - A[1]) * dy) / L2;
+if (s < -0.02 || s > 1.02) return;
+var ex = A[0] + s * dx - P[0], ey = A[1] + s * dy - P[1], d = Math.sqrt(ex * ex + ey * ey);
+if (d < dMin) { dMin = d; melhor = v; sM = s; LM = Math.sqrt(L2); }
+});
+if (!melhor || dMin > 0.5) return;
+if (sM * LM < 0.10 || (1 - sM) * LM < 0.10) { semClip++; return; }
+aplicar("clipTerca", [cx(t1), cx(melhor)], { terca2: t2 ? cx(t2) : null, parafuso: "M12", parafusos: 2 });
+});
+});
+var apoios = Mod.barras.filter(function (b) { return b.grupo !== "contravento" && b.grupo !== "corrente" && b.grupo !== "maoFrancesa" && b.ferr !== "diagonal"; });
+var apoioEm = function (P, excl) {
+var melhor = null, dMin = 0.03;
+apoios.forEach(function (b) {
+if (b === excl) return;
+var A = nos[b.a], B = nos[b.b], d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], L2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] || 1;
+var s = ((P[0] - A[0]) * d[0] + (P[1] - A[1]) * d[1] + (P[2] - A[2]) * d[2]) / L2; if (s < -1e-6 || s > 1 + 1e-6) return;
+var e = [A[0] + s * d[0] - P[0], A[1] + s * d[1] - P[1], A[2] + s * d[2] - P[2]], dd = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+if (dd < dMin) { dMin = dd; melhor = b; }
+});
+return melhor;
+};
+Mod.barras.forEach(function (b) {
+if (b.grupo !== "contravento") return;
+var c = cx(b); if (!c || !c.metal || !c.metal.perfil || c.metal.perfil.forma !== "circ") return;
+var Pa = nos[b.a], Pb = nos[b.b], ap = apoioEm(Pa[1] <= Pb[1] ? Pa : Pb) || apoioEm(Pa[1] <= Pb[1] ? Pb : Pa);
+if (ap) aplicar("barraRedonda", [c, cx(ap)], { ajustar: false });
+});
+if (semClip) avisos.push("Clip de terça: " + semClip + " terça(s) na ponta do banzo (beiral/cumeeira) sem clip — o apoio no nó da treliça é detalhe da serralheria (um clip ali mudaria a ponta contínua do banzo no cálculo).");
+var falhas = ligs.filter(function (l) { return !l.ok; });
+if (falhas.length) avisos.push("Ligações: " + falhas.length + " não couberam (" + falhas.slice(0, 3).map(function (l) { return l.tipo + ": " + l.motivo; }).join("; ") + (falhas.length > 3 ? "…" : "") + ") — detalhe à mão.");
+g.pecas.forEach(function (c, i) { if (atual[c.id] !== c) g.pecas[i] = atual[c.id]; });
+}
+}
+var ved = null, chapas = null;
+if (op.vedacao !== false) {
+var V = VD();
+if (!V) avisos.push("Vedação: o motor das telhas (js/acovedacao.js) não carregou — o pórtico saiu sem telhas.");
+else if (!DUAS_AGUAS[t]) avisos.push("Vedação: a tipologia " + t + " (telhado múltiplo/geminado) ainda não desenha as telhas — lance pelo Telhado.");
+else {
+var B = num(p.vao, 0), H = num(p.peDireito, 0), i = num(p.inclinacao, 0) / 100, th = Math.atan(i), co = Math.cos(th);
+var X0 = num(p.x0, 0), Z0 = num(p.z0, 0), B0 = num(p.cota, 0), Lt = (num(p.nPorticos, 2) - 1) * num(p.espacamento, 6);
+var yLin = function (xl) { return B0 + H + i * Math.min(xl, B - xl); };
+var dT = 0, xmin = 1e9, xmax = -1e9, zmin = 1e9, zmax = -1e9;
+g.pecas.concat(novas).forEach(function (c) {
+vertices(c).forEach(function (P) {
+var xl = P[0] - X0;
+if (xl > -1 && xl < B + 1) { var h = (P[1] - yLin(xl)) * co; if (h > dT) dT = h; }
+if (P[0] < xmin) xmin = P[0]; if (P[0] > xmax) xmax = P[0]; if (P[2] < zmin) zmin = P[2]; if (P[2] > zmax) zmax = P[2];
+});
+});
+var fech = p.fechamento === "fechado", tF = op.telhaFechamento || op.telhaId || null, faces = {};
+["esquerda", "direita", "frente", "fundo"].forEach(function (k) { faces[k] = fech ? { tipo: "telha", telhaId: tF || "" } : { tipo: "aberto" }; });
+ved = V.galpao({ vao: B, comprimento: Lt, peDireito: H, inclinacao: num(p.inclinacao, 0), aguas: 2, base: B0, x0: X0, z0: Z0,
+apoio: { telha: dT + FOLGA, lateral: { esquerda: Math.max(0, X0 - xmin) + FOLGA, direita: Math.max(0, xmax - X0 - B) + FOLGA }, oitao: { frente: Math.max(0, Z0 - zmin) + FOLGA, fundo: Math.max(0, zmax - Z0 - Lt) + FOLGA } },
+cobertura: { telhaId: op.telhaId || "" }, faces: faces, beiral: op.beiral, beiralOitao: op.beiralOitao, calha: false });
+if (!ved.ok) avisos.push("Vedação: " + ved.motivo);
+else {
+ved.pecas.forEach(function (pv) {
+var c = V.caixa(pv); if (c.erro) { avisos.push("Vedação (" + pv.nome + "): " + c.erro); return; }
+c.id = String(novoId()); c.portico = gid; if (op.corTelha && c.vedacao && c.vedacao.material === "telha") c.vedacao.cor = String(op.corTelha); novas.push(c); ops.push({ op: "criar", id: c.id, caixa: c }); cont.vedacao++;
+});
+ved.avisos.forEach(function (a) { avisos.push("Vedação: " + a); });
+chapas = { cobertura: [], fechamento: [] };
+var tc = ved.telhas && ved.telhas.cobertura;
+ved.pecas.forEach(function (pv) {
+if (pv.papel === "Telha de cobertura" && pv.nPecas) chapas.cobertura.push({ agua: pv.chave, n: pv.nPecas, comprimento: pv.comprimentoPeca, telha: tc && tc.nome });
+if (pv.papel === "Telha de fechamento" && pv.telha && pv.telha.larguraUtil > 0 && pv.chapa) {
+var us = arr(pv.chapa.contorno).map(function (q) { return Array.isArray(q) ? q[0] : q.u; }), vs = arr(pv.chapa.contorno).map(function (q) { return Array.isArray(q) ? q[1] : q.v; });
+var larg = Math.max.apply(null, us) - Math.min.apply(null, us), alt = Math.max.apply(null, vs) - Math.min.apply(null, vs);
+chapas.fechamento.push({ face: pv.face, n: Math.ceil(larg / pv.telha.larguraUtil - 1e-6), comprimento: Math.round(alt * 1000) / 1000, telha: pv.telha.nome });
+}
+});
+}
+}
+}
+var q = ved && ved.ok ? ved.quantidades : null, nCob = chapas ? chapas.cobertura.reduce(function (s, x) { return s + x.n; }, 0) : 0, nFech = chapas ? chapas.fechamento.reduce(function (s, x) { return s + x.n; }, 0) : 0;
+var nLig = ligs.filter(function (l) { return l.ok; }).length;
+var resumo = (nLig ? nLig + " ligações (" + cont.placaBase + " placas de base, " + cont.clipTerca + " clips de terça, " + cont.barraRedonda + " contraventos em barra redonda)" : "") +
+(q ? (nLig ? "; " : "") + "telhas: " + nCob + " na cobertura" + (nFech ? ", " + nFech + " no fechamento" : "") : "");
+return { ok: true, ops: ops, pecas: novas, vedacao: q, chapas: chapas, ligacoes: ligs, contagem: cont, avisos: avisos, resumo: resumo };
+}
+var MetalPorticosAcab = { completar: completar, vertices: vertices, ACAB_PADRAO: ACAB_PADRAO, DUAS_AGUAS: DUAS_AGUAS };
+global.MetalPorticosAcab = MetalPorticosAcab;
+if (typeof module !== "undefined" && module.exports) module.exports = MetalPorticosAcab;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metaldetalhe.js ==== */
@@ -110827,7 +111274,8 @@ Ribbon.SUBSTITUIDOS_B1 = {
 "p3d": "gerar-volumetria", "corte-tecnico": "corte-2d", "cotas-auto": "planta-2d",
 "familia-bloco": "conferir-modulacao", "modular": "conferir-modulacao", "junta": "conferir-modulacao", "peso-alvenaria": "conferir-modulacao",
 "cota-alinhada": "p7-cota-alinhada",
-"fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada"
+"fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada",
+"met-calc-cype": "met-calc-resultados"
 };
 Ribbon.SUBSTITUIDOS_MODELADOR = { "editor": "parede" };
 Ribbon.substituto = function (id) {
@@ -129988,7 +130436,7 @@ for (k = 0; k < ls.length; k++) for (r = 0; r < 6; r++) a[ls[k] + l * 6 + r] = 0
 };
 Esparsa.prototype.identidade = function (g0) { this.zerar(g0); var p = (g0 / 6) | 0, l = g0 - 6 * p; this.a[this.S.off[p] + l * 7] = 1; };
 Esparsa.prototype.fatorar = function () {
-var S = this.S, a = this.a, N = S.N, pivMin = 1, c, k, k2, r, t, s, u, D0 = new Float64Array(this.n);
+var S = this.S, a = this.a, N = S.N, pivMin = 1, glMin = -1, c, k, k2, r, t, s, u, D0 = new Float64Array(this.n);
 for (c = 0; c < N; c++) for (t = 0; t < 6; t++) D0[c * 6 + t] = a[S.off[c] + t * 7];
 for (c = 0; c < N; c++) {
 var d = S.off[c], cols = S.colunas[c], nc = cols.length;
@@ -129996,7 +130444,7 @@ for (t = 0; t < 6; t++) {
 var g = c * 6 + t, d0 = D0[g], dd = a[d + t * 7];
 for (s = 0; s < t; s++) { var v0 = a[d + t * 6 + s]; dd -= v0 * v0; }
 if (!(dd > 0)) return { ok: false, gl: g, pivo: dd };
-if (d0 > 0 && dd / d0 < pivMin) pivMin = dd / d0;
+if (d0 > 0 && dd / d0 < pivMin) { pivMin = dd / d0; glMin = g; }
 var dt = Math.sqrt(dd); a[d + t * 7] = dt;
 for (u = t + 1; u < 6; u++) { var x = a[d + u * 6 + t]; for (s = 0; s < t; s++) x -= a[d + u * 6 + s] * a[d + t * 6 + s]; a[d + u * 6 + t] = x / dt; }
 }
@@ -130014,7 +130462,7 @@ for (r = 0; r < 6; r++) for (t = 0; t < 6; t++) { var w = 0; for (s = 0; s < 6; 
 }
 }
 }
-return { ok: true, pivMin: pivMin };
+return { ok: true, pivMin: pivMin, glMin: glMin };
 };
 Esparsa.prototype.resolver = function (b) {
 var S = this.S, a = this.a, N = S.N, x = Float64Array.from(b), c, k, r, t;
@@ -130041,7 +130489,7 @@ for (k = 0; k < cols.length; k++) { var o = S.idx[c][cols[k]], bq = cols[k] * 6;
 }
 return y;
 };
-var OPC = { solver: (typeof process !== "undefined" && process.env && process.env.ACO_SOLVER) || "esparso" };
+var OPC = { aoProgresso: null, solver: (typeof process !== "undefined" && process.env && process.env.ACO_SOLVER) || "esparso" };
 function novaMatriz(M) { return M.simb ? new Esparsa(M.simb) : new Perfil(M.nGL, M.primeira); }
 function perfilDe(pos, viz) {
 var t = 0;
@@ -130498,6 +130946,7 @@ var res = resultados(M, R, op); res.ok = true;
 if (!R.convergiu) { res.aviso = "não convergiu em " + R.iteracoes + " iterações"; saida.avisos.push(cb.id + ": " + res.aviso); }
 if (res.travados.length) saida.avisos.push(cb.id + ": " + res.travados.length + " grau(s) de liberdade sem rigidez travado(s) (ex.: rotação de nó com todas as barras rotuladas)");
 saida.combinacoes[cb.id] = res;
+if (OPC.aoProgresso) { try { OPC.aoProgresso({ k: i + 1, n: combs.length, comb: cb.id }); } catch (eP) {} }
 }
 saida.tempoMs = Date.now() - t0;
 return saida;
@@ -134655,6 +135104,7 @@ for (var k = 0; k + 1 < lst.length; k++) {
 var bid = p.mid + "_" + (k + 1), Lb = lst[k + 1].s - lst[k].s;
 var lib = {};
 if (k === 0 && condI.tipo === "rotulada") lib.i = { ry: true, rz: true };
+if (k === 0 && condI.tipo === "rotulada" && p.calc && p.calc.escora) lib.i.rx = true;
 if (k + 2 === lst.length && condF.tipo === "rotulada") lib.j = { ry: true, rz: true };
 var bar = { id: bid, i: lst[k].no, j: lst[k + 1].no, secao: { A: p.sec.A, Iy: p.sec.Iy, Iz: p.sec.Iz, J: p.sec.J }, E: E, G: G, vy: p.ey.slice(), nElem: p.tracao ? 1 : (Lb > 3 ? 4 : 2), peca: p.id, membro: p.mid };
 if (lib.i || lib.j) bar.libera = lib;
@@ -135513,7 +135963,16 @@ if (Nt > lim || diag || soTracao) add("Esbeltez da barra tracionada (L/r ≤ 300
 v.verificacoes = vs; v.ok = num(v.razao, 0) <= 1 + 1e-9; v.esbeltez = e.lam;
 return v;
 }
-function rodada(lido, entrada, op) { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
+var PROG = { f: null, fase: null, rodada: 0 };
+function avisar(fase, k, n) { PROG.fase = fase; if (PROG.f) { try { PROG.f({ fase: fase, k: k || 0, n: n || 0, rodada: PROG.rodada }); } catch (e) {} } }
+function rodada(lido, entrada, op) {
+var A = Ana(), antes = PROG.f, antA = A && A.OPC ? A.OPC.aoProgresso : null;
+PROG.f = op && typeof op.aoProgresso === "function" ? op.aoProgresso : null; PROG.rodada++;
+if (PROG.f && A && A.OPC) A.OPC.aoProgresso = function (m) { avisar(PROG.fase, m.k, m.n); };
+avisar("modelo", 0, 0);
+try { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
+finally { if (A && A.OPC) A.OPC.aoProgresso = antA; PROG.f = antes; }
+}
 function restaurar(lido, r) { if (!r || !r._perfis) return; lido.pecas.forEach(function (p) { var n = r._perfis[p.id]; if (n && n !== p.cat) trocarPerfil(p, n); }); }
 function rodada0(lido, entrada, op) {
 var M = ML(), C = Car(), A = Ana(), Dm = Dim();
@@ -135539,6 +135998,7 @@ G.cobertura = [];
 arr(CG.resumo.areas).forEach(function (a) { if (!a.cobertura || !a.distribuicao) return; arr(a.distribuicao.vigas).forEach(function (mid) { var m = G.membros.filter(function (x) { return x.id === mid; })[0]; if (m && G.cobertura.indexOf(m.peca) < 0) G.cobertura.push(m.peca); }); });
 var combs = C.combinacoes(casos, { segundaOrdem: true, nocional: true });
 var elu = combs.filter(function (c) { return c.tipo === "ELU"; }), els = combs.filter(function (c) { return c.tipo !== "ELU"; });
+avisar("analise", 0, 0);
 var res = A.analisar(G.modelo, { combinacoes: elu.concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
 if (!res.ok) {
 var tr = G.modelo.barras.some(function (b) { return b.tracao; });
@@ -135566,6 +136026,7 @@ G.decisoes.push({ tema: "Esbeltez", decisao: "L/r ≤ 200 nas barras comprimidas
 motivo: "NBR 8800:2008, 5.3.4.1 (compressão; na 2024, 5.3.7, recomendação) e 5.2.8.1 (tração; recomendação, exceto barra redonda pré-tensionada) — o OrçaPRO adota os dois como exigência. Premissa: barras redondas e cabos montados com pré-tensão (esticador). Comprimida/tracionada: diagonais de perfil sempre; pilares com qualquer força axial; vigas e terças com força axial ≥ 5 % de Ag·fy/γa1" });
 G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais em x e em z; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:2024, 4.10 (limites 1,13 e 1,55)" + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
 if (classe !== "pequena") {
+avisar("analise80", 0, 0);
 var r80 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, segundaOrdem: true, nocional: c.nocional, reducaoRigidez: 0.8 }; }), estacoes: 7 });
 if (r80.ok) Object.keys(r80.combinacoes).forEach(function (k) { res.combinacoes[k] = r80.combinacoes[k]; });
 }
@@ -135575,8 +136036,9 @@ texto: classe === "grande" ? "Estrutura de GRANDE deslocabilidade (Δ2/Δ1 = " +
 if (classe === "grande") avisos.push(estabGlobal.texto);
 var bordaLista = OPC.cpeMedioLocal && CG.resumo.vento ? arr(CG.resumo.vento.cpeMedioNaoAplicado) : [], bordaPorMid = {};
 bordaLista.forEach(function (q) { if (q.mid && q.s > 0 && isFinite(q.pUso)) bordaPorMid[q.mid] = q; });
-var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1;
-G.membros.forEach(function (m) {
+var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1, nMb = G.membros.length;
+G.membros.forEach(function (m, jM) {
+if (PROG.f && jM % 25 === 0) avisar("verificacao", jM, nMb);
 var est2 = []; elu.forEach(function (c) { est2 = est2.concat(Dm.estacoesMembro(res, m, c.id)); });
 var v = aplicarEsbeltez(verificarMembro(m, est2, elu), m, est2);
 if (bordaPorMid[m.id]) verificarLocalCpeMedio(m, v, bordaPorMid[m.id], est2, elu);
@@ -135667,6 +136129,7 @@ if (!op.semFlambagem) {
 var gravRef = elu.filter(function (c) { return !Object.keys(c.fatores).some(function (k) { return /^W/.test(k); }); })[0] || elu[0], ventoRef = elu.filter(function (c) { return Object.keys(c.fatores).some(function (k) { return /^W/.test(k); }); })[0] || null;
 [gravRef, ventoRef].forEach(function (c) {
 if (!c) return;
+avisar("flambagem", 0, 0);
 var fb = A.flambagem(G.modelo, { combinacao: { id: c.id, fatores: c.fatores, nocional: c.nocional }, modos: 2 });
 if (fb.ok) flamb.push({ combinacao: c.id, nome: c.nome, lambda: fb.lambdaCritico, modos: fb.modos });
 });
@@ -135835,6 +136298,7 @@ if (lido.curtas.length) avisosLeitura.push(lido.curtas.length + " peça(s) com m
 if (lido.ignoradas.length) avisosLeitura.push(lido.ignoradas.length + " chapa(s)/peça(s) mecânica(s) fora de ligação não entram no modelo de barras (o peso delas não está no peso próprio).");
 var orig = {}; lido.pecas.forEach(function (p) { orig[p.id] = p.cat; });
 Object.keys(entrada.perfisGrupo || {}).forEach(function (gk) { lido.pecas.forEach(function (p) { if (chaveGrupo(p) === gk) trocarPerfil(p, entrada.perfisGrupo[gk]); }); });
+PROG.rodada = 0;
 var r = rodada(lido, entrada, op), log = [], r0 = r;
 var alvo = entrada.otimizar === true ? null : (arr(entrada.otimizar).length ? entrada.otimizar : (entrada.otimizar ? null : []));
 if (r.ok && !(alvo && !alvo.length)) {
@@ -143665,6 +144129,55 @@ global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.messag
 };
 })(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : (typeof global !== "undefined" ? global : this)));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/acolivreworker.js ==== */
+try {
+(function (global) {
+"use strict";
+var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
+var MOTORES = ["perfisaco.js", "bimarq.js", "bimedit.js", "bimprecisao.js", "metalnorma.js", "metalpeca.js", "metalcriar.js", "metalligacao.js",
+"acomateriais.js", "acosecao.js", "acofsm.js", "acodim14762.js", "acoanalise.js", "acocargas.js", "acomodelo.js", "acodim8800.js",
+"acoisopletas.js", "acovento.js", "acosecundarias.js", "acoligcalc.js", "acodimensionar.js", "acomodelolivre.js", "acofechamentos.js",
+"acoenvoltorio.js", "acodimlivre.js"];
+var OBRIGATORIOS = { "perfisaco.js": 1, "acomateriais.js": 1, "acosecao.js": 1, "acoanalise.js": 1, "acocargas.js": 1, "acodim8800.js": 1, "acomodelolivre.js": 1, "acodimlivre.js": 1 };
+function agora() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function limitador(enviar, ms) {
+var ult = -1e9, faseUlt = null;
+return function (p) { var t = agora(); if (p.fase !== faseUlt || t - ult >= ms) { ult = t; faseUlt = p.fase; enviar(p); } };
+}
+function rodar(entrada, op, aoProgresso) {
+var DL = global.AcoDimLivre; if (!DL) return { ok: false, motivo: "O cálculo da estrutura desenhada (js/acodimlivre.js) não carregou." };
+var o = {}; Object.keys(op || {}).forEach(function (k) { o[k] = op[k]; });
+if (typeof aoProgresso === "function") o.aoProgresso = aoProgresso;
+return DL.calcular(entrada, o);
+}
+function limpo(r) { return JSON.parse(JSON.stringify(r)); }
+var API = { MOTORES: MOTORES, rodar: rodar, limpo: limpo, limitador: limitador };
+if (!NO_WORKER) {
+global.AcoLivreWorker = API;
+if (typeof module !== "undefined" && module.exports) module.exports = API;
+return;
+}
+var carregados = null, faltam = [], ver = "";
+try { var mv = /[?&]v=([^&]+)/.exec(String(global.location && global.location.search || "")); if (mv) ver = "?v=" + mv[1]; } catch (e) {}
+function carregar() {
+if (carregados) return; carregados = [];
+MOTORES.forEach(function (arq) { try { global.importScripts(arq + ver); carregados.push(arq); } catch (e) { if (OBRIGATORIOS[arq]) faltam.push(arq + " (" + (e && e.message) + ")"); } });
+}
+global.onmessage = function (ev) {
+var m = ev.data || {}; if (m.tipo !== "calcular") return;
+var t0 = Date.now();
+try {
+carregar();
+if (faltam.length) { global.postMessage({ tipo: "erro", id: m.id, mensagem: "Não carregou: " + faltam.join(", ") }); return; }
+var prog = limitador(function (p) { p.tipo = "progresso"; p.id = m.id; global.postMessage(p); }, 250);
+var r = rodar(m.entrada, m.op || {}, prog), tx = JSON.stringify(r);
+global.postMessage({ tipo: "fim", id: m.id, ms: Date.now() - t0, bytes: tx.length, texto: tx });
+} catch (e) {
+global.postMessage({ tipo: "erro", id: m.id, mensagem: e && e.message ? e.message : String(e), pilha: e && e.stack ? String(e.stack).slice(0, 1200) : "" });
+}
+};
+})(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : (typeof global !== "undefined" ? global : this)));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/unidades.js ==== */
 try {
 (function (global) {
@@ -145927,8 +146440,8 @@ return '<footer class="mc-rod"><div class="mc-acoes">' +
 bt("vista3d", "Ver em 3D", "olho", ok && !!global.MetalCalcVista, global.MetalCalcVista ? "Deformada, esforços e flambagem no 3D" : "A vista 3D dos resultados está em preparação (js/metalcalcvista.js)") +
 bt("memorial", "Memorial", "relatorio", ok && !!(global.AcoMemorial && AcoMemorial.gerar), global.AcoMemorial ? "Memorial de cálculo para imprimir ou salvar em PDF" : "O memorial está em preparação (js/acomemorial.js)") +
 bt("pranchas", "Pranchas", "prancha", ok && !!(global.AcoPranchas && AcoPranchas.gerar), global.AcoPranchas ? "Pranchas no padrão da casa, na tela e em Navegador › Folhas" : "As pranchas estão em preparação (js/acopranchas.js)") +
-bt("cype", "Exportar para o CYPE", "exportar", ok && !!global.AcoCype, global.AcoCype ? "Arquivo para o CYPE 3D com perfis, cargas e apoios" : "A exportação para o CYPE está em preparação (js/acocype.js)") +
-bt("cype-guia", "Como usar no CYPE 3D", "checklist", !!(global.AcoCype && AcoCype.comoUsarHTML), "Passo a passo no CYPE 3D com os números deste cálculo: abrir o IFC, perfis, vínculos, flambagem, cargas e conferir o resultado") +
+"" +
+"" +
 (function () {
 var podeG = ok && !!global.BimMetalUI && !!(global.BimMetalGalpao && BimMetalGalpao.parDoCalculo), gl = galpaoLigado();
 if (gl) return bt("gerar3d", "Atualizar o galpão no modelo", "estrutura", podeG, "Refaz no mesmo lugar as " + gl.n + " peças do galpão que este cálculo desenhou, com os perfis e ligações novos — não cria outro. As peças desenhadas à parte ficam. Ctrl+Z desfaz.");
@@ -146702,7 +147215,7 @@ h += '<div class="ml-corpo"><nav class="ml-trilho" aria-label="Passos">' + PASSO
 (U.passo > 1 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo - 1) + '">Voltar</button>' : "") +
 (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button>" + '<button class="ml-bt" data-ml-acao="corrigir" title="Calcula, troca toda peça que não passa pelo perfil mais leve da mesma família que atende (e alivia a que tem folga), refaz até fechar e aplica no modelo (Ctrl+Z desfaz)"' + (U.calculando ? " disabled" : "") + ">Calcular e corrigir</button></footer>";
 } else if (U.modo === "calculando") {
-h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
+h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p><div data-ml=\"progresso\" style=\"text-align:left\"></div></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
 } else if (U.modo === "resultado") {
 h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="resultado">' + resultadoHtml(U.r) + "</main></div>" + rodapeResultado();
 } else if (U.modo === "pranchas" || U.modo === "folha") {
@@ -146919,7 +147432,7 @@ if (r.estabilidadeGlobal && !r.estabilidadeGlobal.ok) h += probExtraHtml("estabi
 solucoes: [{ id: "engastar-bases", texto: "Engastar as bases dos pilares", muda: "bases engastadas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "ligacoes-rigidas", texto: "Ligações viga × pilar rígidas", muda: "ligações rígidas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "contraventar", texto: "Gerar o contraventamento (X nos planos que se movem)", muda: "diagonais novas no modelo (Ctrl+Z desfaz)" }] }, 'data-ml="estabilidade"');
 if (nvs.length) h += PC() ? PC().lista(nvs.map(function (x, k) {
 var vento = /Vento/.test(x.tema), sols = vento ? [{ id: "interna", texto: "A estrutura fica dentro de outra edificação (sem vento)" }, { id: "vento-local", texto: "Informar o local da obra (vento)" }] : [];
-sols.push({ id: "rever-envoltorio", texto: "Rever o envoltório (faces e fechamentos)" });
+if (vento) sols.push({ id: "rever-envoltorio", texto: "Rever o envoltório (faces e fechamentos)" });
 var p = { tipo: "nao-verificado", titulo: x.tema + " não foi verificado", texto: x.motivo, gravidade: "aviso", solucoes: sols }; U.probExtra["nv" + k] = p; return p;
 }), { pre: "ml", titulo: "Não verificado", gravidade: "aviso", attrs: 'data-ml="nao-verificado"', acoes: BOTAO_SOL, prefixoIndice: "x:nv" })
 : '<div class="ml-prob" data-ml="nao-verificado"><h4>Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") + "</div>";
@@ -146944,8 +147457,8 @@ return h;
 }
 function rodapeResultado() {
 var r = U.r, ok = r && r.ok;
-return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, pranchas (DXF/DWG), vista 3D e CYPE saem deste resultado." : "Resolva o problema e calcule de novo.") + '</span><button class="ml-bt" data-ml-acao="passo" data-ml-v="1">Dados</button>' +
-(ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button><button class="ml-bt" data-ml-acao="memorial-docx">Memorial em Word (.docx)</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '<button class="ml-bt" data-ml-acao="cype">Para o CYPE 3D</button>' : "") +
+return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, pranchas (DXF/DWG) e vista 3D saem deste resultado." : "Resolva o problema e calcule de novo.") + '</span><button class="ml-bt" data-ml-acao="passo" data-ml-v="1">Dados</button>' +
+(ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button><button class="ml-bt" data-ml-acao="memorial-docx">Memorial em Word (.docx)</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '' : "") +
 '<button class="ml-bt pri" data-ml-acao="calcular">Calcular de novo</button></footer>';
 }
 function campo(el) {
@@ -147362,23 +147875,70 @@ if (global.UI && UI.modal) UI.modal("DWG das pranchas", '<p style="font-size:13p
 else baixarDxf();
 }
 function selecionarNoModelo(ids) { try { if (global.BIM && BIM.selecionar) BIM.selecionar(ids.map(function (id) { return "edit:" + id; }), "trocar"); toast(ids.length + " peça(s) selecionada(s) no modelo.", "ok", 3000); } catch (e) { toast("Não deu para selecionar: " + e.message, "aviso"); } }
+var ROT_FASE = { modelo: "Montando o modelo", analise: "Análise", analise80: "Análise com rigidez 0,8 (2ª ordem)", flambagem: "Flambagem global", verificacao: "Verificando as barras" };
+function textoProg(p) {
+var t = ROT_FASE[p.fase] || "Calculando";
+if (p.n && (p.fase === "analise" || p.fase === "analise80")) t += " — combinação " + p.k + " de " + p.n;
+if (p.n && p.fase === "verificacao") t += " — barra " + p.k + " de " + p.n;
+if (p.rodada > 1) t = "Otimizador, rodada " + p.rodada + ": " + t;
+return t;
+}
+function etapasProg(otim) {
+var P = global.Progresso, base = P ? P.ETAPAS_CALCULO.slice() : [];
+return otim ? base.map(function (e) { return { id: e.id, peso: e.peso * 0.3, rotulo: e.rotulo }; }).concat([{ id: "otimizador", peso: 70, rotulo: "Otimizador" }]) : base;
+}
+function progressoDe(pg, p) {
+if (!pg) return;
+if (p.rodada > 1) { pg.etapa("otimizador", 1 - Math.pow(0.85, p.rodada - 1), textoProg(p)); return; }
+var f = p.n ? p.k / p.n : 0.5; pg.etapa(p.fase === "flambagem" ? "flambagem" : p.fase, f, textoProg(p));
+}
 function calcular() {
 if (!lic("calcular a estrutura desenhada")) return false;
 var D = DL(); if (!D) { toast("O cálculo da estrutura desenhada não carregou (js/acodimlivre.js).", "erro", 8000); return false; }
-var ent = entrada();
-U.calculando = true; U.modo = "calculando"; render();
-setTimeout(function () {
-var r;
-try { r = D.calcular(ent); } catch (e) { r = { ok: false, motivo: "Erro no cálculo: " + (e && e.message), problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + (e && e.message), solucoes: [] }] }; }
+var ent = entrada(), idc = "c" + Date.now(), otim = !!ent.otimizar, pg = null, w = null;
+U.calculando = true; U.modo = "calculando"; U.calcId = idc; render();
+function concluir(r) {
+if (U.calcId !== idc) return;
+if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+if (pg) pg.fim();
 if (r) r._assin = assinaturaAgora();
 U.ligAuto = null;
-if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "erro", 8000); } }
+if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "aviso", 8000); } }
 U.calculando = false; U.r = r; U.modo = "resultado";
 var corr = U.corrigir; U.corrigir = false; if (corr) estado().otimizar = corr.otimizarAntes;
 render();
 if (corr && r && r.ok) { if (r.trocas) aplicar(); else toast("Calcular e corrigir: nenhuma peça precisou trocar.", "ok", 6000); }
-status(r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA (" + r.falhas + " falha(s))") + " — " + fmt(r.peso, 0) + " kg de aço." : "Estrutura desenhada: " + (r.motivo || "não calculou"));
+status(r && r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA") : "Estrutura desenhada: não calculou");
+}
+function erroCalc(msg) { return { ok: false, motivo: "Erro no cálculo: " + msg, problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + msg, solucoes: [] }] }; }
+function cancelar() {
+if (U.calcId !== idc) return;
+U.calcId = null; if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+U.calculando = false; U.corrigir = false; U.modo = U.r ? "resultado" : "passos"; render();
+toast("Cálculo cancelado — nada foi gravado.", "aviso", 6000);
+}
+function naPagina() {
+setTimeout(function () {
+if (U.calcId !== idc) return;
+var r; try { r = D.calcular(ent); } catch (e) { r = erroCalc(e && e.message); }
+concluir(r);
 }, 40);
+}
+setTimeout(function () {
+var el = document.querySelector('[data-ml="progresso"]');
+if (el && global.UI && UI.progresso) pg = UI.progresso(el, { titulo: otim ? "Calcular e otimizar" : "Calcular", etapas: etapasProg(otim), cancelar: cancelar, texto: "Montando o modelo" });
+var podeW = typeof Worker === "function" && !(global.location && global.location.protocol === "file:");
+if (podeW) { try { w = new Worker("js/acolivreworker.js" + (global.ORCAPRO_VER ? "?v=" + global.ORCAPRO_VER : "")); } catch (eW) { w = null; } }
+if (!w) { if (pg) pg.texto("Calculando nesta tela (sem processo paralelo) — a tela fica parada até terminar"); naPagina(); return; }
+w.onmessage = function (ev) {
+var m = ev.data || {}; if (m.id !== idc || U.calcId !== idc) return;
+if (m.tipo === "progresso") progressoDe(pg, m);
+else if (m.tipo === "fim") { var r; try { r = JSON.parse(m.texto); } catch (eJ) { r = erroCalc("resultado ilegível do processo paralelo"); } concluir(r); }
+else if (m.tipo === "erro") { try { w.terminate(); } catch (eT) {} w = null; if (pg) pg.texto("O processo paralelo falhou (" + m.mensagem + ") — calculando nesta tela"); naPagina(); }
+};
+w.onerror = function (ev) { if (U.calcId !== idc) return; if (ev && ev.preventDefault) ev.preventDefault(); try { w.terminate(); } catch (eT) {} w = null; naPagina(); };
+w.postMessage({ tipo: "calcular", id: idc, entrada: JSON.parse(JSON.stringify(ent)), op: {} });
+}, 30);
 return true;
 }
 function calcularCorrigir() { var e = estado(); U.corrigir = { otimizarAntes: !!e.otimizar }; e.otimizar = true; return calcular(); }
@@ -148035,6 +148595,119 @@ global.MetalFabUI = MetalFabUI;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalFabUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/metalorcfabui.js ==== */
+try {
+(function (global) {
+"use strict";
+function O() { return global.BimMetalOrcFab; }
+function U() { return global.BimMetalUI; }
+function RF() { return global.BimMetalRelacaoFab; }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(/\./g, function (m, i, s) { return /,/.test(s) ? "" : m; }).replace(",", ".")); return isFinite(n) ? n : d; }
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function toast(t, tipo, ms) { try { if (global.UI) UI.toast(t, tipo || "ok", ms || 7000); } catch (e) {} }
+function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
+function q(sel) { return document.querySelector(sel); }
+function val(id) { var e = q('[data-mfo-campo="' + id + '"]'); return e ? e.value : null; }
+function eid() { try { return global.Auth && Auth.empresaId ? Auth.empresaId() : "default"; } catch (e) { return "default"; } }
+var ID = "cfg";
+var CSS_CAMPOS = "display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 12px;margin:0 0 10px";
+function campo(id, rotulo, valor) {
+return '<label style="display:flex;flex-direction:column;font-size:12px;gap:3px"><span>' + esc(rotulo) + '</span><input data-mfo-campo="' + id + '" value="' + esc(valor == null ? "" : valor) + '" inputmode="decimal" placeholder="não informado"></label>';
+}
+function titulo(t) { return '<h4 style="margin:10px 0 4px;font-size:13px">' + esc(t) + "</h4>"; }
+function chaveObra() { try { var G = U() && U()._G || global.Gestao; return (G && G._bimSel) || ""; } catch (e) { return ""; } }
+var MetalOrcFabUI = {
+ultimo: null,
+doc: function () {
+var d = null; try { d = global.Store ? Store.obter(eid(), O().ENTIDADE, ID) : null; } catch (e) { d = null; }
+return d || null;
+},
+carregar: function () { return O().normalizar(this.doc() || {}); },
+area: function () { var d = this.doc(), k = chaveObra(); return d && d.areaPorObra && k && d.areaPorObra[k] != null ? d.areaPorObra[k] : ""; },
+gravar: function (P, area) {
+if (!global.Store) return false;
+var d = this.doc() || {}, o = JSON.parse(JSON.stringify(P)), k = chaveObra();
+o.id = ID; o.areaPorObra = d.areaPorObra || {};
+if (k) { if (area != null && area !== "") o.areaPorObra[k] = area; else delete o.areaPorObra[k]; }
+if (d.criadoEm) o.criadoEm = d.criadoEm;
+return !!Store.salvar(eid(), O().ENTIDADE, o);
+},
+estado: function () { return U() ? U().estado() : null; },
+numeracao: function () {
+var st = this.estado(); if (!st) { toast("Abra o modelador primeiro.", "aviso"); return null; }
+var F = global.BimMetalFab; if (!F) { toast("A fabricação da Metálica não carregou (js/metalfab.js).", "erro", 8000); return null; }
+return F.numerar(st);
+},
+nomeArq: function (suf) { return (U() ? U().arqBase() : "obra") + "-" + suf; },
+abrir: function () {
+var self = this;
+if (!O()) { toast("O orçamento de fábrica não carregou (js/metalorcfab.js).", "erro", 8000); return; }
+var n = this.numeracao(); if (!n) return;
+if (!n.pecas.length) { toast("Não há peça de aço no modelo para orçar.", "aviso"); return; }
+var P = this.carregar(), M = O(), cons = RF() && RF().INDICE_ROTULOS ? RF().INDICE_ROTULOS : {};
+var h = '<p class="muted" style="font-size:12px;margin:0 0 6px">Orçamento da <b>fábrica</b>: aço por kg, mão de obra por hora de cada posto, consumíveis e BDI. A tabela abaixo é da <b>sua empresa</b> (fica salva) e nasce <b>vazia</b>: campo em branco = <b>pendente</b>, o sistema não inventa preço nem produtividade. Modelagem e fabricação — não é cálculo estrutural.</p>';
+h += titulo("Aço — preço por kg, por família (R$/kg)") + '<div style="' + CSS_CAMPOS + '">' + M.FAMILIAS.map(function (f) { return campo("aco_" + f[0], f[1], P.aco[f[0]]); }).join("") + "</div>";
+h += titulo("Custo da hora de cada posto (R$/h)") + '<div style="' + CSS_CAMPOS + '">' + M.POSTOS.map(function (po) { return campo("hora_" + po.id, po.nome, P.hora[po.id]); }).join("") + "</div>";
+h += titulo("Produtividade por posto (horas por unidade — preencha a base que a fábrica usa)") + '<div style="' + CSS_CAMPOS + '">' +
+M.POSTOS.map(function (po) { return po.drivers.map(function (d) { return campo("prod_" + po.id + "_" + d[0], po.nome + " — " + d[1], P.prod[po.id][d[0]]); }).join(""); }).join("") + "</div>";
+h += titulo("Consumíveis — preço unitário (a quantidade vem do índice por tonelada da Relação fábrica)") + '<div style="' + CSS_CAMPOS + '">' + Object.keys(cons).map(function (k) { return campo("cons_" + k, cons[k][0] + " — preço unitário (R$)", P.consum[k]); }).join("") + "</div>";
+h += titulo("Perda, BDI e área") + '<div style="' + CSS_CAMPOS + '">' + campo("perda", "Perda de material (%)", P.perdaPct) + campo("bdi", "BDI / margem sobre o custo (%)", P.bdiPct) + campo("area", "Área construída desta obra (m²) — para o R$/m²", this.area()) + "</div>";
+h += '<div data-mfo="res-orcfab"></div>';
+UI.modal("Orçamento de fábrica — por kg e hora", h, [
+{ texto: "Calcular e salvar a tabela", classe: "primary", onClick: function () { self._calc(true); } },
+{ texto: "Baixar .xlsx", onClick: function () { self._calc(true); self.xlsx(); } },
+{ texto: "Baixar HTML", onClick: function () { self._calc(true); self.htmlDoc(); } },
+{ texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+this._calc(false);
+},
+_calc: function (ler) {
+var M = O(), P = this.carregar(), area = this.area();
+if (ler) {
+var cons = RF() && RF().INDICE_ROTULOS ? Object.keys(RF().INDICE_ROTULOS) : [];
+P = M.vazio();
+M.FAMILIAS.forEach(function (f) { P.aco[f[0]] = num(val("aco_" + f[0]), null); });
+M.POSTOS.forEach(function (po) { P.hora[po.id] = num(val("hora_" + po.id), null); po.drivers.forEach(function (d) { P.prod[po.id][d[0]] = num(val("prod_" + po.id + "_" + d[0]), null); }); });
+cons.forEach(function (k) { P.consum[k] = num(val("cons_" + k), null); });
+P.perdaPct = num(val("perda"), null); P.bdiPct = num(val("bdi"), null);
+P = M.normalizar(P); area = val("area");
+if (!this.gravar(P, area)) toast("Não consegui salvar a tabela de parâmetros (armazenamento cheio?).", "erro");
+}
+var n = this.numeracao(); if (!n) return null;
+var L = global.BimMetalFab.listas(this.estado(), n);
+var cfgRel = null; try { cfgRel = global.MetalFabUI && MetalFabUI.cfg ? MetalFabUI.cfg().relacao : null; } catch (e) { cfgRel = null; }
+var R = M.calcular(L, n, P, { areaM2: num(area, 0), relacao: cfgRel || {} });
+this.ultimo = { tipo: "orcfab", orcamento: R, resumo: R.resumo };
+var el = q('[data-mfo="res-orcfab"]'); if (el) el.innerHTML = M.html(R, { obra: U() ? U().nomeObra() : "" });
+status("Orçamento de fábrica: " + M.br(R.resumo.kg, 0) + " kg, custo R$ " + M.br(R.resumo.custo, 2) + (R.resumo.parcial ? " (parcial — " + R.pendencias.length + " pendência(s))" : "") + ".");
+return R;
+},
+_atual: function () { return this.ultimo && this.ultimo.tipo === "orcfab" ? this.ultimo.orcamento : this._calc(false); },
+excel: function (gerar, nome, fim) {
+var self = this;
+var go = function () {
+gerar(global.ExcelJS).xlsx.writeBuffer().then(function (buf) { if (U()) U().baixar(nome, buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); if (fim) fim(buf); },
+function (e) { toast("Não gerei a planilha: " + (e && e.message ? e.message : e), "erro"); });
+};
+if (global.ExcelJS) go(); else if (global.ExcelOrc && ExcelOrc.ensureExcelJS) ExcelOrc.ensureExcelJS(go); else toast("O gerador de Excel não carregou.", "erro");
+},
+xlsx: function () {
+var R = this._atual(), self = this, nome = this.nomeArq("orcamento-de-fabrica.xlsx"); if (!R) return;
+this.excel(function (X) { return O().xlsx(R, X, { obra: U() ? U().nomeObra() : "" }); }, nome, function () {
+self.ultimo = { tipo: "orcfab", orcamento: R, resumo: R.resumo, xlsx: nome };
+toast("Orçamento de fábrica" + (R.resumo.parcial ? " (parcial — " + R.pendencias.length + " pendência(s))" : "") + " — " + nome + ".", "ok", 9000);
+});
+},
+htmlDoc: function () {
+var R = this._atual(); if (!R) return;
+var nome = this.nomeArq("orcamento-de-fabrica.html"); if (U()) U().baixar(nome, O().htmlDocumento(R, { obra: U().nomeObra() }), "text/html;charset=utf-8");
+this.ultimo = { tipo: "orcfab", orcamento: R, resumo: R.resumo, html: nome };
+toast("Orçamento de fábrica em HTML — " + nome + ".", "ok", 7000);
+}
+};
+global.MetalOrcFabUI = MetalOrcFabUI;
+if (typeof module !== "undefined" && module.exports) module.exports = MetalOrcFabUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalui.js ==== */
 try {
 (function (global) {
@@ -148118,7 +148791,6 @@ COMANDOS: {
 { id: "met-calc-resultados", rotulo: "Resultados", icone: "grafico", grande: true, dica: "Aprovado ou não, peso e kg/m², aproveitamento por grupo, as decisões do sistema com o motivo e os problemas com as soluções." },
 { id: "met-calc-memorial", rotulo: "Memorial", icone: "relatorio", grande: false, dica: "Memorial de cálculo: ações, vento com o mapa, combinações, verificações passo a passo, cargas na fundação e as normas usadas." },
 { id: "met-calc-pranchas", rotulo: "Pranchas", icone: "prancha", grande: false, dica: "Pranchas no padrão da casa: locação, cobertura, elevações, pórtico típico, detalhes e lista de materiais. Saem na tela do cálculo e também em Navegador › Folhas (gerar de novo atualiza as mesmas folhas; entram no CAD único e no PDF em lote)." },
-{ id: "met-calc-cype", rotulo: "Para o CYPE 3D", icone: "exportar", grande: false, dica: "Arquivo para o CYPE 3D com os perfis (inclusive os que o CYPE não tem), as cargas e os apoios." },
 { id: "met-calc-normas", rotulo: "Normas", icone: "livro", grande: true, dica: "As normas configuradas: a edição em vigor, a que o motor usa e o que falta conferir." }
 ],
 "Fabricação": [
@@ -148133,11 +148805,14 @@ COMANDOS: {
 { id: "met-dxf", rotulo: "DXF de\nchapas", icone: "baixar", grande: true, dica: "DXF 1:1 em mm para laser/plasma: CUT_OUTSIDE, CUT_INSIDE e ETCH, um por marca, e o aproveitamento numa chapa padrão." },
 { id: "met-listas", rotulo: "Listas\n(.xlsx)", icone: "planilha", grande: true, dica: "Lista de peças, de conjuntos, de parafusos/porcas/arruelas, de chapas e o resumo de peso por material (o mesmo peso do içamento)." },
 { id: "met-relacao", rotulo: "Relação\nfábrica", icone: "planilha", grande: true, dica: "Relação de materiais no formato da metalúrgica: componentes da estrutura (tesoura, terças, colunas, linha de corrente) e materiais (barras de 6/12 m, chapas, cachorros, parafusos, calha, consumíveis) — .xlsx e HTML. Consumíveis por índice editável; sem preço." },
+{ id: "met-etiquetas", rotulo: "Etiquetas\nde produção", icone: "lista", grande: true, dica: "Uma etiqueta com QR (obra + marca) para cada peça e conjunto soldado numerado, numa folha para imprimir ou salvar em PDF. O QR abre a marca no OrçaPRO do celular para marcar a etapa cumprida (corte, furação, solda/montagem, pintura, expedição, montado em campo)." },
+{ id: "met-producao", rotulo: "Produção\npor QR", icone: "grafico", grande: true, dica: "Acompanhamento da fábrica por marca e por etapa: % do peso concluído, filtro por etapa e situação, marcar a próxima etapa e baixar .xlsx. Cada marcação guarda quem, quando e a quantidade (idempotente, com histórico)." },
 { id: "met-executivo", rotulo: "Pranchas\nexecutivas", icone: "prancha", grande: true, dica: "Jogo de pranchas executivas do pórtico da biblioteca (1 clique): planta de montagem da cobertura, elevações, tesoura e coluna tipo cotadas, detalhes das ligações recortados do modelo, base e chumbadores, seções dos perfis e quadro de materiais. Vai para Navegador › Folhas; as ligações saem como A DIMENSIONAR - NÃO VERIFICADAS." },
 { id: "met-vista-portico", rotulo: "Vista do\npórtico", icone: "alvo", grande: true, dica: "Com UMA peça do pórtico selecionada (dois cliques no 3D), isola no 3D todas as peças do mesmo pórtico (a tesoura inteira) e oferece Salvar como vista 3D, para arrastar para uma prancha. Acha o pórtico pela referência da biblioteca de pórticos ou, sem ela, pelo plano (mesmo Z)." },
 { id: "met-ifc", rotulo: "IFC de\nfabricação", icone: "estrutura", grande: true, dica: "IFC4 com IfcPlate, IfcMember, IfcBeam e IfcColumn agrupados em conjuntos (IfcElementAssembly), parafusos como IfcMechanicalFastener e os furos como aberturas." },
 { id: "met-pacote", rotulo: "Pacote da\nfábrica", icone: "pasta", grande: true, dica: "Tudo num .zip: DSTV, DXF, nesting, listas em Excel e o IFC de fabricação." },
 { id: "met-orcamento", rotulo: "Orçamento\nda estrutura", icone: "calculadora", grande: true, dica: "Orçamento 100 % da estrutura de aço por peso: fornecimento, fabricação e montagem (por tipo de perfil), parafusos e chumbadores por diâmetro, pintura por demão ou galvanização, içamento pelo plano de montagem e frete. O que a base pública não tem sai pelo maior preço público, marcado provisório." },
+{ id: "met-orcfab", rotulo: "Orçamento\nde fábrica", icone: "calculadora", grande: true, dica: "Orçamento da metalúrgica por kg e por hora: aço por família de perfil, horas de cada posto (corte, furação, montagem e solda, pintura, expedição, campo), consumíveis e BDI — a tabela de preços e produtividades é da sua empresa e nasce vazia (campo em branco = pendente, nada é inventado). Sai custo, preço de venda, R$/kg e R$/m² — .xlsx e HTML." },
 { id: "met-montagem", rotulo: "Plano de\nmontagem", icone: "estrutura", grande: true, dica: "A estrutura de aço vira os içamentos do plano de içamento, na ordem de montagem: o vão contraventado primeiro, linha a linha; acessórios sobem com a peça, terças em feixe. Depois o sistema sugere o guindaste ou munck pela tabela de carga, e as horas vão para o orçamento." },
 { id: "met-fontes", rotulo: "De onde vem\ncada número", icone: "livro", grande: true, dica: "As fontes de cada regra (NBR 8800, catálogos, DSTV) e o que é valor de partida a conferir." }
 ]
@@ -148182,6 +148857,8 @@ var h = {
 "met-planif": function () { self.fab("planificacao"); }, "met-nesting": function () { self.fab("nesting"); }, "met-pintura": function () { self.fab("pintura"); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
 "met-listas": function () { self.listas(); }, "met-relacao": function () { self.fab("relacao"); }, "met-vista-portico": function () { self.fab("vistaPortico"); }, "met-executivo": function () { self.fab("executivo"); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); },
 "met-orcamento": function () { if (!global.MetalOrc || !global.MetalOrc.abrir) { toast("O orçamento da estrutura não carregou (js/metalorc.js).", "erro", 8000); return; } global.MetalOrc.abrir(); },
+"met-etiquetas": function () { if (!global.MetalProducaoUI) { toast("O controle de produção não carregou (js/metalproducaoui.js).", "erro", 8000); return; } global.MetalProducaoUI.etiquetas(); }, "met-producao": function () { if (!global.MetalProducaoUI) { toast("O controle de produção não carregou (js/metalproducaoui.js).", "erro", 8000); return; } global.MetalProducaoUI.acompanhar(); },
+"met-orcfab": function () { if (!global.MetalOrcFabUI || !global.MetalOrcFabUI.abrir) { toast("O orçamento de fábrica não carregou (js/metalorcfabui.js).", "erro", 8000); return; } global.MetalOrcFabUI.abrir(); },
 "met-montagem": function () {
 var G = self._G || global.Gestao;
 if (!global.MetalMontagem || !G || !G._icarMontagem) { toast("O plano de montagem não carregou (js/metalmontagem.js).", "erro", 8000); return; }
@@ -150530,6 +151207,124 @@ global.MetalProntasUI = MetalProntasUI;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalProntasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/metalcomparativo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { return null; } }
+return null;
+}
+function MP() { return dep("MetalPorticos", "./metalporticos.js"); }
+function MO() { return dep("MetalOrc", "./metalorc.js"); }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(",", ".")); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function br(v, c) { c = c == null ? 2 : c; var s = (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c), neg = s.charAt(0) === "-"; if (neg) s = s.slice(1); var p = s.split("."); return (neg ? "-" : "") + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + (p[1] ? "," + p[1] : ""); }
+function dist(a, b) { return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2) + Math.pow(a[2] - b[2], 2)); }
+var GRUPOS = [
+{ id: "tercas", rotulo: "Terças", de: ["terca"] },
+{ id: "tesouras", rotulo: "Tesouras", de: ["banzoSup", "banzoInf", "montante", "diagonal", "maoFrancesa", "viga", "misula"] },
+{ id: "colunas", rotulo: "Colunas", de: ["banzoColuna", "travejamento", "pilar", "pilarInterno"] },
+{ id: "escoras", rotulo: "Escoras", de: ["escora"] },
+{ id: "tapamento", rotulo: "Tapamento (oitões)", de: ["tapamento"] },
+{ id: "contravento", rotulo: "Contraventos e correntes", de: ["contravento", "corrente", "tirante", "pendural"] }
+];
+function grupoDe(g) { for (var i = 0; i < GRUPOS.length; i++) if (GRUPOS[i].de.indexOf(g) >= 0) return GRUPOS[i].id; return "outros"; }
+var SIT = { aprovado: "Aprovado", incompleto: "Atende (falta só o que o motor não verifica: ligações)", reprovado: "REPROVADO", "nao-calculou": "Não calculou" };
+function linha(v, calc, orc) {
+var o = { id: v.id, rotulo: v.rotulo, par: v.par || {}, ok: !!(calc && calc.ok), situacao: calc ? calc.situacao : "nao-calculou", grupos: {}, pesoTotal: 0, area: 0, kgm2: null, criticos: [], naoVerificados: [] };
+GRUPOS.forEach(function (g) { o.grupos[g.id] = 0; }); o.grupos.outros = 0;
+if (!o.ok) { o.motivo = calc && (calc.motivo || (calc.r && calc.r.motivo)) || "sem cálculo"; return o; }
+var r = calc.r, M = calc.gerado.modelo, massa = {};
+arr(r.modelo && r.modelo.membros).forEach(function (m) { var kg = num(m.secao && (m.secao.massa || (m.secao.mm && m.secao.mm.massa)), 0); if (kg > 0) massa[m.secao.nome] = kg; });
+var mapaPeca = {}; Object.keys(calc.gerado.mapa || {}).forEach(function (b) { mapaPeca[calc.gerado.mapa[b]] = b; });
+var final = {}; Object.keys(r.pecas || {}).forEach(function (pid) { final[mapaPeca[pid]] = r.pecas[pid].para; });
+M.barras.forEach(function (b) {
+var cat = final[b.id] || b.cat, kg = dist(M.nos[b.a], M.nos[b.b]) * num(massa[cat], 0), g = grupoDe(b.grupo);
+o.grupos[g] += kg; o.pesoTotal += kg;
+});
+var p = calc.gerado.par || v.par || {};
+o.area = num(p.vao, 0) * num(p.comprimento, 0);
+o.kgm2 = o.area > 0 ? o.pesoTotal / o.area : null;
+o.naoVerificados = arr(calc.naoVerificados).map(function (x) { return x.tema; });
+var piores = []; Object.keys(r.membros || {}).forEach(function (id) { var x = r.membros[id]; if (isFinite(x.razao)) piores.push({ id: id, razao: x.razao, governante: x.governante }); });
+piores.sort(function (a, b) { return b.razao - a.razao; });
+o.criticos = piores.slice(0, 3);
+if (orc && orc.ok) {
+var prov = arr(orc.linhas).filter(function (l) { return l.provisorio; }), sem = arr(orc.linhas).filter(function (l) { return l.status !== "ok"; });
+o.orcamento = { total: num(orc.total, 0), provisorios: prov.map(function (l) { return { codigo: l.codigo, descricao: l.descricao, total: l.total, motivo: l.provisorio.motivo }; }), semPreco: sem.map(function (l) { return { codigo: l.codigo, descricao: l.descricao }; }), linhas: arr(orc.linhas).length };
+o.orcamento.completo = sem.length === 0;
+} else o.orcamento = { total: null, provisorios: [], semPreco: [], motivo: orc ? orc.erro || orc.motivo || "o orçamento não fechou" : "sem orçamento" };
+return o;
+}
+function calcularVariante(id, vid, op) {
+op = op || {};
+var P = MP(); if (!P) return null;
+var vs = P.presetVariantes(id), v = vs.filter(function (x) { return x.id === vid; })[0]; if (!v) return null;
+var par = JSON.parse(JSON.stringify(v.par)); par.x0 = 0;
+var calc = P.calcular(v.tipo, par, { vento: par.vento, calc: op.calc || {} }), orc = null;
+var O = MO();
+if (calc && calc.ok && O && O.orcar) { try { orc = O.orcar({ caixas: calc.gerado.pecas }, op.orcamento || {}); } catch (e) { orc = { ok: false, erro: e && e.message }; } }
+var lin = linha(v, calc, orc), out = { v: v, linha: lin, orc: orc, pecas: calc && calc.gerado ? calc.gerado.pecas : [], situacao: calc ? calc.situacao : "nao-calculou",
+falhas: calc && calc.r ? calc.r.falhas : null, naoVerificados: arr(calc && calc.naoVerificados).map(function (x) { return x.tema; }), pesoMotor: calc && calc.r ? calc.r.peso : null, ok: !!(calc && calc.ok) };
+if (op.manterCalculo) out.calc = calc;
+return out;
+}
+function colunasValor(ls, f) { return ls.map(function (l) { return "<td>" + f(l) + "</td>"; }).join(""); }
+function html(ls, info) {
+info = info || {};
+var h = '<table class="mcomp" style="border-collapse:collapse;font:13px system-ui,sans-serif;width:100%">';
+var th = function (t) { return '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #00406a;background:#eef4f9">' + t + "</th>"; };
+h += "<thead><tr>" + th("") + ls.map(function (l) { return th(esc(l.rotulo)); }).join("") + "</tr></thead><tbody>";
+function lin(rot, f, forte) { h += '<tr><td style="padding:5px 8px;border-bottom:1px solid #dde5ee' + (forte ? ";font-weight:600" : "") + '">' + rot + "</td>" + ls.map(function (l) { return '<td style="padding:5px 8px;border-bottom:1px solid #dde5ee;text-align:right' + (forte ? ";font-weight:600" : "") + '">' + f(l) + "</td>"; }).join("") + "</tr>"; }
+lin("Situação do cálculo", function (l) { return '<span style="color:' + (l.situacao === "reprovado" || !l.ok ? "#b91c1c" : "#15803d") + '">' + esc(SIT[l.situacao] || l.situacao) + "</span>"; }, true);
+lin("Peso total da estrutura (kg)", function (l) { return l.ok ? br(l.pesoTotal, 0) : "—"; }, true);
+lin("Taxa (kg/m² de planta)", function (l) { return l.kgm2 != null ? br(l.kgm2, 1) : "—"; }, true);
+GRUPOS.forEach(function (g) { lin("&nbsp;&nbsp;" + esc(g.rotulo) + " (kg)", function (l) { return l.ok ? br(l.grupos[g.id], 0) : "—"; }); });
+lin("Preço do orçamento da estrutura (R$)", function (l) {
+var o = l.orcamento || {}; if (o.total == null) return '<span title="' + esc(o.motivo || "") + '">—</span>';
+return "R$ " + br(o.total, 2) + (o.semPreco.length ? ' <b style="color:#b91c1c">+ ' + o.semPreco.length + " item(ns) sem preço</b>" : "") + (o.provisorios.length ? '<br><small style="color:#a16207">' + o.provisorios.length + " item(ns) PROVISÓRIO(S) — cotar com o fornecedor</small>" : "");
+}, true);
+lin("O que governa (pior razão)", function (l) { return l.criticos.length ? esc(l.criticos[0].governante || "") + " — " + br(l.criticos[0].razao, 2) : "—"; });
+h += "</tbody></table>";
+var notas = [];
+ls.forEach(function (l) { (l.orcamento && l.orcamento.provisorios || []).forEach(function (p) { var t = p.codigo + " " + p.descricao + " (" + p.motivo + ")"; if (notas.indexOf(t) < 0) notas.push(t); }); });
+h += '<p style="font:12px system-ui,sans-serif;color:#475569;margin-top:10px">Peso = comprimento de eixo × massa linear do perfil (sem ligações, chapas e parafusos). ' + esc(info.nota || "") + "</p>";
+if (notas.length) h += '<p style="font:12px system-ui,sans-serif;color:#a16207"><b>Itens provisórios (cotar com o fornecedor):</b> ' + notas.map(esc).join("; ") + "</p>";
+return h;
+}
+function documento(ls, info) {
+info = info || {};
+return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(info.titulo || "Comparativo das variantes") + '</title>' +
+'<style>body{margin:24px;background:#fff;color:#0f172a}h1{font:600 20px system-ui,sans-serif;color:#00406a}@media print{body{margin:10mm}}</style></head><body><h1>' + esc(info.titulo || "Comparativo das variantes") + "</h1>" +
+(info.subtitulo ? '<p style="font:13px system-ui,sans-serif;color:#475569">' + esc(info.subtitulo) + "</p>" : "") + html(ls, info) + "</body></html>";
+}
+function xlsx(ls, ExcelJS, info) {
+info = info || {};
+var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO"; wb.created = info.data ? new Date(info.data) : new Date(0);
+var ws = wb.addWorksheet("Comparativo", { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 } }), AZUL = "FF00406A";
+ws.getCell(1, 1).value = info.titulo || "Comparativo das variantes"; ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: AZUL } };
+var cab = ws.getRow(3); cab.getCell(1).value = "Item"; ls.forEach(function (l, i) { cab.getCell(i + 2).value = l.rotulo; });
+cab.font = { bold: true, color: { argb: "FFFFFFFF" } }; cab.eachCell(function (c) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: AZUL } }; });
+ws.getColumn(1).width = 38; ls.forEach(function (l, i) { ws.getColumn(i + 2).width = 22; });
+var linhas = [["Situação do cálculo", function (l) { return SIT[l.situacao] || l.situacao; }], ["Peso total (kg)", function (l) { return l.ok ? Math.round(l.pesoTotal) : null; }, "#,##0"], ["Taxa (kg/m²)", function (l) { return l.kgm2 != null ? Math.round(l.kgm2 * 10) / 10 : null; }, "#,##0.0"]]
+.concat(GRUPOS.map(function (g) { return ["  " + g.rotulo + " (kg)", function (l) { return l.ok ? Math.round(l.grupos[g.id]) : null; }, "#,##0"]; }))
+.concat([["Preço do orçamento da estrutura (R$)", function (l) { return l.orcamento && l.orcamento.total != null ? l.orcamento.total : null; }, 'R$ #,##0.00'],
+["Itens sem preço", function (l) { return l.orcamento ? l.orcamento.semPreco.length : null; }], ["Itens provisórios (cotar)", function (l) { return l.orcamento ? l.orcamento.provisorios.length : null; }]]);
+linhas.forEach(function (q, k) {
+var row = ws.getRow(4 + k); row.getCell(1).value = q[0];
+ls.forEach(function (l, i) { var c = row.getCell(i + 2); c.value = q[1](l); if (q[2]) c.numFmt = q[2]; });
+});
+var nota = ws.getRow(5 + linhas.length); nota.getCell(1).value = "Peso = comprimento de eixo × massa linear do perfil (sem ligações). Itens provisórios: preço público mais alto, cotar com o fornecedor.";
+return wb;
+}
+var MetalComparativo = { GRUPOS: GRUPOS, SIT: SIT, linha: linha, calcularVariante: calcularVariante, html: html, documento: documento, xlsx: xlsx };
+global.MetalComparativo = MetalComparativo;
+if (typeof module !== "undefined" && module.exports) module.exports = MetalComparativo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalporticosui.js ==== */
 try {
 (function (global) {
@@ -150663,6 +151458,7 @@ raiz.addEventListener("click", function (ev) {
 var c = ev.target && ev.target.closest, b1 = c ? ev.target.closest("[data-mpo-preset]") : null, b4 = c ? ev.target.closest("[data-mpo-preset4]") : null;
 if (b1) { var q = b1.getAttribute("data-mpo-preset").split(":"); self.usarPreset(q[0], q[1]); }
 if (b4) self.gerarPreset4(b4.getAttribute("data-mpo-preset4"));
+var bc = c ? ev.target.closest("[data-mpo-comparar]") : null; if (bc) self.comparar(bc.getAttribute("data-mpo-comparar"));
 });
 var tm = null;
 raiz.addEventListener("input", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) { clearTimeout(tm); tm = setTimeout(function () { self.previa(); }, 200); } });
@@ -150699,7 +151495,7 @@ h += "</label>";
 });
 var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
 if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
-' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button></div>' + h;
+' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button></div>' + h;
 if (el) el.innerHTML = h;
 },
 usarPreset: function (id, vid) { var d = this._dlg, M = MP(); if (!d || !M) return false; var p = M.presetPar(id, vid); if (!p) return false; d.par = M.normalizar(M.PRESETS[id].tipo, p); this.desenharCampos(); this.previa(); return true; },
@@ -150709,6 +151505,39 @@ try { UI.fecharModal(); } catch (e) {} this._dlg = null;
 vs.forEach(function (v) { var r = self.criar(v.tipo, v.par, { calcular: false }); out.push({ id: v.id, ok: !!(r && r.ok !== false) }); });
 toast("Pedido Gabriel: " + out.filter(function (x) { return x.ok; }).length + " de " + vs.length + " variantes criadas lado a lado (PD 8/6 m, com/sem solar).", "ok", 8000);
 return out;
+},
+_comp: {},
+comparar: function (id) {
+var M = MP(), C = global.MetalComparativo, self = this; if (!M || !C) { toast("O comparativo não carregou (js/metalcomparativo.js).", "erro"); return null; }
+var P = M.PRESETS[id], vs = M.presetVariantes(id), memo = this._comp[id] = this._comp[id] || {};
+var O = global.MetalOrc, opO = O && O.UI && O.UI.opcoes && O.UI.cfg ? O.UI.opcoes(O.UI.cfg()) : {};
+function quadro() { return vs.map(function (v) { return memo[v.id] ? memo[v.id].linha : { id: v.id, rotulo: v.rotulo, ok: false, situacao: "nao-calculou", grupos: {}, criticos: [], orcamento: { total: null, provisorios: [], semPreco: [], motivo: "calculando…" } }; }); }
+var t0c = Date.now(), nFila = 0;
+function tela(msg, kFeitas) {
+var h = '<div data-mpo="comp"><div data-mpo="comp-prog"></div><p class="muted" style="font-size:12px">' + esc(msg) + "</p>" + C.html(quadro(), {}) + "</div>";
+try { UI.fecharModal(); } catch (e) {}
+UI.modal("Comparativo — " + P.rotulo, h, [{ texto: "Baixar .xlsx", classe: "primary", onClick: function () { self.compXlsx(id); } }, { texto: "Baixar HTML (PDF pelo imprimir)", onClick: function () { self.compHtml(id); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+var elP = document.querySelector('[data-mpo="comp-prog"]');
+if (elP && UI.progresso && nFila) { var pg = UI.progresso(elP, { titulo: "Comparativo — " + nFila + " variante(s)", etapas: [{ id: "v", peso: 1 }], texto: msg }); pg.etapa("v", kFeitas / nFila, msg); if (kFeitas >= nFila) pg.fim(); }
+}
+var fila = vs.filter(function (v) { return !memo[v.id]; }), k = 0; nFila = fila.length;
+function passo() {
+if (k >= fila.length) { tela("Pronto: " + vs.length + " variantes. Peso = eixo × massa linear (sem ligações); preço = Orçamento da estrutura, itens provisórios marcados.", nFila); return; }
+var v = fila[k]; tela("Calculando " + (k + 1) + " de " + fila.length + ": " + v.rotulo + "… (cada variante leva cerca de 1 minuto)", k);
+setTimeout(function () { try { memo[v.id] = C.calcularVariante(id, v.id, { orcamento: opO }); } catch (e) { memo[v.id] = { linha: { id: v.id, rotulo: v.rotulo, ok: false, situacao: "nao-calculou", motivo: e && e.message, grupos: {}, criticos: [], orcamento: { total: null, provisorios: [], semPreco: [] } } }; } k++; setTimeout(passo, 30); }, 60);
+}
+passo();
+return true;
+},
+compLinhas: function (id) { var M = MP(), memo = this._comp[id] || {}; return M.presetVariantes(id).map(function (v) { return memo[v.id] && memo[v.id].linha; }).filter(Boolean); },
+compHtml: function (id) {
+var C = global.MetalComparativo, M = MP(), U = MU(), d = C.documento(this.compLinhas(id), { titulo: "Comparativo — " + M.PRESETS[id].rotulo, subtitulo: "Galpão 20 m × 30 m, 6 tesouras a cada 6 m — pé-direito 6 e 8 m, com e sem estrutura solar. Vento de Castanhal-PA (NBR 6123)." });
+if (U && U.baixar) U.baixar("comparativo-pedido-gabriel.html", d, "text/html"); return d;
+},
+compXlsx: function (id) {
+var C = global.MetalComparativo, M = MP(), U = MU(), ls = this.compLinhas(id), E = global.ExcelOrc;
+if (!E || !E.ensureExcelJS) { toast("O gerador de Excel não carregou.", "erro"); return; }
+E.ensureExcelJS(function () { var wb = C.xlsx(ls, global.ExcelJS, { titulo: "Comparativo — " + M.PRESETS[id].rotulo, data: Date.now() }); wb.xlsx.writeBuffer().then(function (buf) { if (U && U.baixar) U.baixar("comparativo-pedido-gabriel.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); }); });
 },
 ler: function () {
 var d = this._dlg; if (!d) return null;
@@ -150773,6 +151602,7 @@ status(tx); toast(tx, "ok", 9000);
 try { var PU = global.MetalProntasUI; if (PU && PU.enquadrar) { var fin = {}; g.pecas.forEach(function (c) { fin[c.id] = c; }); PU.enquadrar({ finais: fin }); } } catch (eE) {}
 if (op.calcular && global.MetalCalcLivreUI && MetalCalcLivreUI.preparar) {
 var pre = M.presetLivre(tipo, p, g, this.caixas());
+if (p.vento) { pre.vento = {}; Object.keys(p.vento).forEach(function (k) { pre.vento[k] = p.vento[k]; }); pre.vento.ativo = true; }
 MetalCalcLivreUI.preparar(pre);
 MetalCalcLivreUI.abrir(3);
 try { MetalCalcLivreUI.calcular(); } catch (eL) {}
@@ -192083,9 +192913,9 @@ var ABA_METALICA = [
 { nome: "Andaime", ids: ["met-andaime", "met-andaime-contorno", "met-andaime-pranchas", "met-andaime-ifc"] },
 { nome: "Andaime multidirecional", ids: ["met-andaime-multi"] },
 { nome: "Tanques", ids: ["met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular"] },
-{ nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-cype", "met-calc-normas"] },
-{ nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-relacao", "met-vista-portico", "met-executivo", "met-ifc", "met-pacote", "met-fontes"] },
-{ nome: "Orçamento e montagem", ids: ["met-orcamento", "met-montagem"] },
+{ nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-normas"] },
+{ nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-relacao", "met-etiquetas", "met-producao", "met-vista-portico", "met-executivo", "met-ifc", "met-pacote", "met-fontes"] },
+{ nome: "Orçamento e montagem", ids: ["met-orcamento", "met-orcfab", "met-montagem"] },
 { nome: "Catálogo", ids: ["met-catalogo-br", "met-catalogo"] }
 ];
 var ABA_MARCENARIA = [

@@ -12396,13 +12396,22 @@ return m;
 }
 function b2Plano(a, b, z) { return [a, z, b]; }
 var metGeo = { mapa: {}, rodada: 1, feitas: 0, ligado: true };
-function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); if (e.juntas) e.juntas.dispose(); }
+function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); if (e.juntas) e.juntas.dispose(); (e.longes || []).forEach(function (g) { g.dispose(); }); }
 var vedMats = {}, vedMatJ = null;
-function vedMat(v) {
-var k = (v && v.material === 'telha' ? 'telha:' + (v.textura || 'telha_metalica') : (v && v.material) || 'rufo');
+function vedMat(v, nerv) {
+var k0 = (v && v.material === 'telha' ? 'telha:' + (v.textura || 'telha_metalica') : (v && v.material) || 'rufo');
+var corP = v && /^#[0-9a-f]{6}$/i.test(String(v.cor || '')) ? String(v.cor).toLowerCase() : '';
+var k = nerv ? k0 + ':nerv:' + (v && v.face === 'cobertura' ? 'cob' : 'fech') + ':' + corP : k0;
 if (vedMats[k]) return vedMats[k];
-var COR = { 'telha:telha_metalica': [0.78, 0.81, 0.84], 'telha:telha_fibrocimento': [0.80, 0.80, 0.78], alvenaria: [0.74, 0.73, 0.70], concreto: [0.78, 0.78, 0.77], rufo: [0.70, 0.73, 0.76] }, c = COR[k] || COR.rufo;
-var mt = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), metalness: /telha:telha_metalica|rufo/.test(k) ? 0.35 : 0.02, roughness: /telha:telha_metalica|rufo/.test(k) ? 0.55 : 0.9, side: THREE.DoubleSide });
+var COR = { 'telha:telha_metalica': [0.70, 0.74, 0.78], 'telha:telha_fibrocimento': [0.80, 0.80, 0.78], alvenaria: [0.74, 0.73, 0.70], concreto: [0.78, 0.78, 0.77], rufo: [0.70, 0.73, 0.76] }, c = COR[k0] || COR.rufo;
+if (nerv) {
+if (corP) c = [parseInt(corP.slice(1, 3), 16) / 255, parseInt(corP.slice(3, 5), 16) / 255, parseInt(corP.slice(5, 7), 16) / 255];
+else c = v && v.face === 'cobertura' ? [0.63, 0.67, 0.70] : [0.76, 0.79, 0.81];
+var mN = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), vertexColors: true, metalness: corP ? 0.15 : 0.55, roughness: corP ? 0.5 : 0.42, side: THREE.DoubleSide });
+mN.userData.corLin = mN.color.clone(); mN.userData.rgba = [c[0], c[1], c[2], 1]; mN.userData.vedacao = k;
+vedMats[k] = mN; return mN;
+}
+var mt = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), metalness: /telha:telha_metalica|rufo/.test(k) ? 0.45 : 0.02, roughness: /telha:telha_metalica|rufo/.test(k) ? 0.45 : 0.9, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 });
 mt.userData.corLin = mt.color.clone(); mt.userData.rgba = [c[0], c[1], c[2], 1];
 var slug = v && v.textura;
 if (slug && window.BimTextura && BimTextura.existe && BimTextura.existe(slug) && BimTextura.BIB && BimTextura.BIB[slug]) { mt.userData.tex = { slug: slug, escala: BimTextura.BIB[slug].m, asp: BimTextura.BIB[slug].asp || 1, fonte: 'vedacao', classe: '', material: slug }; mt.userData.corIfc = [c[0], c[1], c[2]]; }
@@ -12427,17 +12436,33 @@ var chV = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY, vd.modulo || 0]), e
 if (!enV || enV.chave !== chV || !metGeo.ligado) {
 if (enV) metGeoDescartar(enV);
 enV = metGeo.mapa[c.id] = { chave: chV, geos: [] };
-BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gV = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gV.userData.metGeo = true; enV.geos.push(gV); metGeo.feitas++; } });
-var jV = window.AcoVedacao && AcoVedacao.juntas ? AcoVedacao.juntas(c) : [];
+var nV = null; try { nV = window.AcoVedacao && AcoVedacao.nervuras ? AcoVedacao.nervuras(c) : null; } catch (eN) { nV = null; }
+if (nV && nV.tris) {
+var geoDe = function (q) { var g0 = new THREE.BufferGeometry(); g0.setAttribute('position', new THREE.Float32BufferAttribute(q.pos, 3)); g0.setAttribute('color', new THREE.Float32BufferAttribute(q.cor, 3)); g0.computeVertexNormals(); g0.computeBoundingSphere(); g0.userData.metGeo = true; return g0; };
+enV.longes = []; enV.nervurada = true; enV.passo = nV.passo;
+nV.blocos.forEach(function (q) { var gN = geoDe(q); gN.userData.longe = q.longe.pos.length ? geoDe(q.longe) : null; enV.geos.push(gN); if (gN.userData.longe) enV.longes.push(gN.userData.longe); metGeo.feitas++; });
+} else BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gV = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gV.userData.metGeo = true; enV.geos.push(gV); metGeo.feitas++; } });
+var jV = !enV.nervurada && window.AcoVedacao && AcoVedacao.juntas ? AcoVedacao.juntas(c) : [];
 if (jV.length) {
 var pJ = []; jV.forEach(function (s) { pJ.push(s[0], s[1], s[2], s[3], s[4], s[5]); });
 var gJ = new THREE.BufferGeometry(); gJ.setAttribute('position', new THREE.Float32BufferAttribute(pJ, 3)); gJ.userData.metGeo = true; enV.juntas = gJ;
 }
 }
 enV.usado = metGeo.rodada;
+if (enV.nervurada) mV = vedMat(vd, true);
 enV.geos.forEach(function (gV, iV) {
 var mesh = new THREE.Mesh(gV, mV);
 if (vd.acimaSempre) mesh.userData.acimaSempre = true;
+if (enV.nervurada && gV.userData.longe) {
+var gPerto = gV, gLonge = gV.userData.longe, passoN = enV.passo, vC = new THREE.Vector3();
+mesh.userData.lodTelha = true;
+mesh.onBeforeRender = function (rnd, sc, cam) {
+var bs = gPerto.boundingSphere; if (!bs || !cam || !cam.isPerspectiveCamera) return;
+vC.copy(bs.center).applyMatrix4(mesh.matrixWorld); var d = Math.max(0.5, vC.distanceTo(cam.position) - bs.radius * 0.5);
+var hPx = rnd && rnd.domElement ? rnd.domElement.height : 1000, px = passoN * hPx / (2 * Math.tan(cam.fov * Math.PI / 360) * d);
+mesh.geometry = px < 6 ? gLonge : gPerto;
+};
+}
 mesh.userData.vedacao = vd.papel || 'vedacao';
 if (iV === 0 && enV.juntas) { var lsJ = new THREE.LineSegments(enV.juntas, vedMatJunta()); lsJ.raycast = function () {}; lsJ.userData.juntaTelha = true; mesh.add(lsJ); }
 addMesh(mesh, c.id, tV, mV);
