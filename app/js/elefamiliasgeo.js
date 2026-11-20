@@ -380,8 +380,38 @@
     }
   }
 
+  /* ============================================================ CAIXA DE PISO (alumínio fundido, boca para CIMA) + TAMPA
+   * p: { A (comprimento, eixo Z), B (largura, eixo X), C (profundidade), t (parede, modelagem), yc (a boca), mat, dn, rosca ("cega"|"furada"),
+   *      tampa ("sem"|"cega"|"unha"), tl (tampa, eixo Z), tw (tampa, eixo X), te (espessura da tampa), kind ("4x2"|"4x4") }
+   * Origem: no centro da caixa, na boca (Y = yc); o corpo desce (−Y). Os quatro pinos de parafuso nos cantos e os furos roscados (4x2: nas duas laterais
+   * MENORES, as de Z; 4x4: um em cada lateral) como no desenho da ficha Tramontina DT-020. */
+  function caixaPiso(c, p) {
+    var A = p.A, B = p.B, C = p.C, t = p.t, yc = p.yc, mat = p.mat, y0 = yc - C;
+    c.caixa(mat, 0, y0, 0, B, t, A);                                                /* o fundo */
+    c.caixa(mat, -(B / 2 - t / 2), y0, 0, t, C, A);                                 /* lateral -X */
+    c.caixa(mat, (B / 2 - t / 2), y0, 0, t, C, A);                                  /* lateral +X */
+    c.caixa(mat, 0, y0, -(A / 2 - t / 2), B - 2 * t, C, t);                         /* lateral -Z */
+    c.caixa(mat, 0, y0, (A / 2 - t / 2), B - 2 * t, C, t);                          /* lateral +Z */
+    var sx, sz, rp = 0.0045, ox = B / 2 - t - rp * 0.6, oz = A / 2 - t - rp * 0.6;
+    for (sx = -1; sx <= 1; sx += 2) for (sz = -1; sz <= 1; sz += 2) {
+      c.cil(mat, sx * ox, y0 + t, sz * oz, rp, C - t - 0.002, { seg: 12 });         /* pino de parafuso no canto */
+      disco(c, MAT.ESCURO, sx * ox, yc - 0.002 + 0.0003, sz * oz, 0.0018, 0.0006, "y", 10);
+    }
+    if (p.rosca === "furada") {
+      var r = Math.min(num(p.dn, 25) / 2 * MM + 0.0006, C / 2 - 0.004), ym = yc - C / 2;
+      [-1, 1].forEach(function (s) { disco(c, MAT.ESCURO, 0, ym, s * (A / 2) + s * 0.0003, r, 0.0006, "z", 18); });
+      if (p.kind === "4x4") [-1, 1].forEach(function (s) { disco(c, MAT.ESCURO, s * (B / 2) + s * 0.0003, ym, 0, r, 0.0006, "x", 18); });
+    }
+    if (p.tampa === "cega" || p.tampa === "unha") {
+      var te = Math.max(0.001, num(p.te, 0.005)), tl = Math.max(A, num(p.tl, 0.11)), tw = Math.max(B, num(p.tw, 0.11));
+      c.caixa(mat, 0, yc, 0, tw, te, tl);
+      [-1, 1].forEach(function (s) { disco(c, MAT.METAL, 0, yc + te + 0.0003, s * (tl / 2 - 0.007), 0.0028, 0.0006, "y", 12); });
+      if (p.tampa === "unha") box(c, MAT.ESCURO, 0, yc + te + 0.0001, 0, 0.0245, 0.0004, 0.0445);   /* janela do módulo 22 x 42 + folga (modelagem) */
+    }
+  }
+
   var EleFamiliasGeo = {
-    MAT: MAT, caixaRet: caixaRet, caixaOct: caixaOct, placa: placa, tampaOct: tampaOct, dispDin: dispDin, pente: pente, trilho: trilho, barraNT: barraNT,
+    MAT: MAT, caixaRet: caixaRet, caixaOct: caixaOct, caixaPiso: caixaPiso, placa: placa, tampaOct: tampaOct, dispDin: dispDin, pente: pente, trilho: trilho, barraNT: barraNT,
     quadro: quadro, texto: texto, larguraTexto: larguraTexto, FONTE: FONTE, P17: P17, ZD: ZD
   };
   global.EleFamiliasGeo = EleFamiliasGeo;

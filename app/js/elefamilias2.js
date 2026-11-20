@@ -344,7 +344,7 @@
     var ex = merge(dimsEq(cat), { Forma: forma, Largura_cm: cm });
     var v = valoresEq(cat, ex);
     if (forma === "depurador") { v.Altura = 0.15; v.Cotas_a_conferir += "; altura do depurador: sem-fonte-conferir (o catálogo L1 dá 600 mm para a coifa de parede; o depurador slim usual tem ≈ 150 mm)"; }
-    v.Altura_ponto_m = 2.0;
+    v.Altura_ponto_m = 2.1; // padrão RA 30/120/210 (20/11/2026)
     return T(id, nome, v, fonteDe(cat));
   }
   defEq({

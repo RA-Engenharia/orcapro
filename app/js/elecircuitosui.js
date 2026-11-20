@@ -138,7 +138,7 @@
     var A = analiseAtual(), P = global.ElePranchas; if (!A || !P) { status("O editor 3D não está aberto."); return; }
     if (!A.ok) { status(A.motivo); return; }
     if (!A.projetoGravado) { status("Rode \"Circuitos e quadro\" antes das pranchas (o projeto fica gravado no quadro)."); return; }
-    var c = ctxCarimbo(), r = P.gerar(A, c); if (!r.ok) { status(r.avisos.join(" ")); return r; }
+    var c = ctxCarimbo(); c.estado = estado(); c.avaliarFam = avaliar(); var r = P.gerar(A, c); if (!r.ok) { status(r.avisos.join(" ")); return r; }
     var dados = P.exportar(r, formato === "dxf" ? "dxf" : "pdf"), nome = "ELE " + (c.obra || "projeto") + (formato === "dxf" ? ".dxf" : ".pdf");
     var ok = dados && baixar(nome, dados, formato === "dxf" ? "application/dxf" : "application/pdf");
     status(ok ? "Pranchas elétricas: " + r.folhas.length + " folha(s) — " + nome + (r.avisos.length ? " · " + r.avisos.length + " aviso(s)" : "") : "Não consegui gerar o arquivo das pranchas.");
@@ -154,7 +154,7 @@
     var A = analiseAtual(); if (!A) return { ok: false, motivo: "O editor 3D não está aberto." };
     if (!A.ok) return { ok: false, motivo: A.motivo };
     if (!A.projetoGravado) return { ok: false, motivo: "Rode \"Circuitos e quadro\" antes das pranchas (o projeto fica gravado no quadro)." };
-    var c = ctxCarimbo(), r = P.gerar(A, c); if (!r.ok) return { ok: false, motivo: arr(r.avisos).join(" ") };
+    var c = ctxCarimbo(); c.estado = estado(); c.avaliarFam = avaliar(); var r = P.gerar(A, c); if (!r.ok) return { ok: false, motivo: arr(r.avisos).join(" ") };
     var obra = String((global.Gestao && global.Gestao._bimSel) || ""), exist = arr(BF.registros()).filter(function (x) { return x && x.origem === "ele"; })[0] || null;
     var reg = { nome: "Pranchas da elétrica", origem: "ele", formato: r.folhas[0] ? r.folhas[0].formato : "A1", orientacao: "paisagem", carimbo: { modelo: "RA" }, obraId: obra,
                 folhas: r.folhas.map(function (f, i) { return { id: "ele-" + f.id, conteudo: f.numero + " - " + f.titulo, escala: f.escala, blocos: [], imagemInteira: "elesvg:" + f.id, n: i + 1 }; }) };

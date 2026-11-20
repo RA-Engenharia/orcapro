@@ -304,6 +304,55 @@
   });
 
   /* =====================================================================
+   * 3b. CAIXA DE PISO (tomada de piso): caixa de alumínio fundido + tampa (cega ou unha para módulo) — Tramontina, ficha DT-020-Rev.02
+   * ===================================================================== */
+  function paramsPiso() {
+    return [
+      Pf("Comprimento", "comprimento", 0.095, "Dimensões", "Cota A da ficha Tramontina (95 mm): eixo Z da família"),
+      Pf("Largura", "comprimento", 0.065, "Dimensões", "Cota B da ficha Tramontina (65 mm na 4x2, 100 mm na 4x4): eixo X da família"),
+      Pf("Profundidade", "comprimento", 0.045, "Dimensões", "Cota C da ficha Tramontina (45 mm baixa, 65 mm alta)"),
+      Pf("Parede", "comprimento", 0.004, "Dimensões", "Espessura da parede da fundição (modelagem RA: a ficha NÃO publica) — sem-fonte-conferir"),
+      Pf("Rosca", "texto", "furada", "Elétrica", "furada (um furo roscado BSP 1/2″, 3/4″ ou 1″ por lateral: 4x2 nas duas laterais menores, 4x4 nas quatro) ou cega (sem furação)"),
+      Pf("Entrada_DN", "inteiro", 25, "Elétrica", "DN do eletroduto que entra pela rosca (20 = 1/2″ ou 3/4″ BSP, 25 = 3/4″, 32 = 1″)", "instancia"),
+      Pf("Tampa", "texto", "cega", "Elétrica", "sem (só a caixa) · cega · unha (janela para o módulo Liz/Giz/Lux2)", "instancia"),
+      Pf("Tampa_comp", "comprimento", 0.11, "Dimensões", "Comprimento da tampa (eixo Z): 110 mm — varejo Tramontina, a ficha não traz as cotas da tampa"),
+      Pf("Tampa_larg", "comprimento", 0.07, "Dimensões", "Largura da tampa (eixo X): 70 mm na 4x2, 110 mm na 4x4 — varejo"),
+      Pf("Tampa_esp", "comprimento", 0.005, "Dimensões", "Espessura da tampa (modelagem RA: o varejo mistura 5 e 25 mm) — sem-fonte-conferir"),
+      Pf("Altura_montagem", "comprimento", 0, "Restrições", "Do piso acabado à boca da caixa (0 = rente ao piso; a tampa fica 5 mm acima)", "instancia"),
+      Pf("Material", "material", "aço galvanizado estampado", "Materiais", "Alumínio fundido (o 3D usa o metal acinzentado mais próximo)"),
+      Pf("Circuito", "texto", "", "Elétrica", "Circuito de proteção no quadro (informativo)", "instancia")
+    ].concat(paramFonte());
+  }
+  function conectoresPiso() {
+    var y = "Altura_montagem - Profundidade/2";
+    return [con("el_a", "Eletroduto (lateral menor −Z)", "0", y, "-Comprimento/2", { x: 0, y: 0, z: -1 }),
+      con("el_b", "Eletroduto (lateral menor +Z)", "0", y, "Comprimento/2", { x: 0, y: 0, z: 1 }, true),
+      con("el_c", "Eletroduto (lateral −X, só 4x4)", "-Largura/2", y, "0", { x: -1, y: 0, z: 0 }, true),
+      con("el_d", "Eletroduto (lateral +X, só 4x4)", "Largura/2", y, "0", { x: 1, y: 0, z: 0 }, true)];
+  }
+  function tipoPiso(id, nome, cat, tampaCat) {
+    var v = vFonte([cat, tampaCat], null), base = { Comprimento: cotaM(cat, "comprimento_mm"), Largura: cotaM(cat, "largura_mm"), Profundidade: cotaM(cat, "profundidade_mm"),
+      Tampa_comp: cotaM(tampaCat, "comprimento_mm"), Tampa_larg: cotaM(tampaCat, "largura_mm"), Tampa_esp: cotaM(tampaCat, "espessura_mm") };
+    Object.keys(v).forEach(function (k) { base[k] = v[k]; });
+    base.Cotas_a_conferir = (base.Cotas_a_conferir ? base.Cotas_a_conferir + "; " : "") + "Parede: modelagem RA (a ficha não publica); a tampa 110 mm vem do varejo Tramontina";
+    if (base.Nivel_fonte === "primaria-lida") base.Nivel_fonte = "secundaria-lida";
+    return tipo(id, nome, base, [cat, tampaCat]);
+  }
+  var famPiso = def({
+    id: "ele-caixa-piso", nome: "Caixa de piso (tomada de piso)", mep: "", ids: ["cx_piso_4x2", "cx_piso_4x4_baixa", "cx_piso_4x4_alta", "tampa_piso_4x2", "tampa_piso_4x4"], conectores: conectoresPiso(),
+    descricao: "Caixa de piso de alumínio fundido Tramontina (ficha DT-020-Rev.02): 4x2 (95 x 65 x 45 mm), 4x4 baixa (95 x 100 x 45) e 4x4 alta (95 x 100 x 65), com quatro pinos de parafuso nos cantos, furo roscado BSP (4x2: nas duas laterais menores; 4x4: nas quatro) ou cega, e a tampa (cega ou unha para os módulos Liz/Giz/Lux2) por cima. Boca para CIMA: a origem fica no centro da caixa, na boca, e o corpo desce; Altura_montagem = distância do piso à boca (0 = rente). A tomada de piso é a caixa + a tampa unha + o módulo de tomada Tramontina (22 x 42 x 35 mm, ficha DT-019). Vale colocar à mão e mudar tipo, rosca, DN, tampa e altura. Cotas da caixa: ficha do fabricante; da tampa: varejo; parede e espessura da tampa: modelagem RA (sem-fonte-conferir). Sem composição SINAPI: orçar à parte.",
+    parametros: paramsPiso(),
+    tipos: [tipoPiso("4x2", "Caixa de piso 4x2 (95 × 65 × 45)", "cx_piso_4x2", "tampa_piso_4x2"), tipoPiso("4x4b", "Caixa de piso 4x4 baixa (95 × 100 × 45)", "cx_piso_4x4_baixa", "tampa_piso_4x4"),
+            tipoPiso("4x4a", "Caixa de piso 4x4 alta (95 × 100 × 65)", "cx_piso_4x4_alta", "tampa_piso_4x4")],
+    gerar: function (c, v) {
+      var tm = txt(v.Tampa), kind = num(v.Largura, 0.065) > 0.08 ? "4x4" : "4x2";
+      G.caixaPiso(c, { A: Math.max(0.05, num(v.Comprimento, 0.095)), B: Math.max(0.04, num(v.Largura, 0.065)), C: Math.max(0.03, num(v.Profundidade, 0.045)), t: Math.min(0.008, Math.max(0.0015, num(v.Parede, 0.004))),
+        yc: num(v.Altura_montagem, 0), mat: txt(v.Material) || G.MAT.GALV, dn: num(v.Entrada_DN, 25), rosca: /^cega/i.test(txt(v.Rosca)) ? "cega" : "furada", kind: kind,
+        tampa: /^cega/i.test(tm) ? "cega" : (/^unha/i.test(tm) ? "unha" : "sem"), tl: num(v.Tampa_comp, 0.11), tw: num(v.Tampa_larg, 0.07), te: num(v.Tampa_esp, 0.005) });
+    }
+  });
+
+  /* =====================================================================
    * 4. DISPOSITIVOS DIN: disjuntor, DR, DPS, pente, trilho, barramentos
    * ===================================================================== */
   function paramsDin(extra) {
@@ -657,7 +706,7 @@
     /* aplica o Material_caixa a uma instância: o tipo pvc/metal já traz as cotas */
     tiposDe: function (id) { var f = FM.obter(id); return f ? f.tipos : []; }
   };
-  void famCx42; void famCx44; void famOct; void famPl42; void famPl44; void famTampa; void famDisj; void famDr; void famDps; void famPente; void famTrilho; void famBN; void famBT; void famQuadro;
+  void famCx42; void famCx44; void famOct; void famPl42; void famPl44; void famTampa; void famPiso; void famDisj; void famDr; void famDps; void famPente; void famTrilho; void famBN; void famBT; void famQuadro;
   global.EleFamilias = EleFamilias;
   if (typeof module !== "undefined" && module.exports) module.exports = EleFamilias;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
