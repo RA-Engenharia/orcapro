@@ -77575,10 +77575,16 @@ AnaliticoBases.carregar("SEINFRA").then(function (ent) {
 var por = ent && ent.porCodigo;
 if (!por) return;
 var n = Licitacao.descricoesOficiais(orc, function (c) { return por[c] || null; }, "SEINFRA");
+try {
+if (Licitacao.corrigirEscrita) {
+var voc = self._licVoc || (self._licVoc = Licitacao.vocabulario(((ent.pacote && ent.pacote.dados) || []).map(function (x) { return x && x.descricao; })));
+n += Licitacao.corrigirEscrita(orc, voc);
+}
+} catch (eV) {}
 if (!n) return;
 Store.salvarOrcamento(Auth.empresaId(), orc);
 if (self.orcAtual === orc) self.render();
-UI.toast(n + " descrição(ões) lida(s) do PDF do órgão trocada(s) pela descrição oficial da SEINFRA (mesmo código).", "ok");
+UI.toast(n + " texto(s) lido(s) do PDF do órgão corrigido(s): descrição oficial da SEINFRA pelo código e palavras separadas/acentuadas.", "ok");
 }, function () {});
 },
 _licPegarBase: function (lic, cb) {

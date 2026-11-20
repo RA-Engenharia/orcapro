@@ -378,6 +378,109 @@
       return n;
     },
 
+    /* 20/11/2026 (Rogério, Morada Nova: "a escrita deve ficar correta"): texto do órgão lido por OCR com palavra colada,
+       espaço no lugar errado e sem acento ("ADMINISTRACAODAOBR A", "PAVIMENTACAOSISTEMAVIARIO"). Dicionário = palavras das
+       descrições oficiais da base (milhares de palavras de orçamento, com acento) + conectivos. Só mexe numa frase (palavras
+       separadas por espaço) que tenha palavra fora do dicionário, e só aceita quando TODAS as letras da frase ficam cobertas
+       por palavras do dicionário, nas mesmas letras e na mesma ordem (nada é inventado nem trocado). */
+    vocabulario: function (descricoes) {
+      var cont = {}, voc = {};
+      (descricoes || []).forEach(function (d) {
+        (String(d || "").toUpperCase().match(/[A-ZÀ-Ü]+/g) || []).forEach(function (w) {
+          var k = _normTxt(w); if (!k) return;
+          cont[k] = cont[k] || {}; cont[k][w] = (cont[k][w] || 0) + 1;
+        });
+      });
+      Object.keys(cont).forEach(function (k) {
+        var formas = cont[k], melhor = null;
+        Object.keys(formas).forEach(function (f) { if (!melhor || formas[f] > formas[melhor] || (formas[f] === formas[melhor] && f.length > melhor.length)) melhor = f; });
+        // palavra de 1–2 letras só entra se for conectivo de verdade (sigla de 2 letras do catálogo vira ruído)
+        if (k.length <= 2 && !/^(A|E|O|AS|OS|DA|DE|DO|EM|NA|NO|AO|OU)$/.test(k)) return;
+        voc[k] = { forma: melhor, n: Object.keys(formas).reduce(function (s2, f) { return s2 + formas[f]; }, 0) };
+      });
+      /* palavras de orçamento que a base pode não ter (mesma lista do leitor do CertamePRO, leitura_projeto_basico.py) */
+      "ABERTO ACABAMENTO ACESSIBILIDADE ACRÍLICA ACRÍLICO ADESIVA ADITIVO ADMINISTRATIVO ADMINISTRAÇÃO ADQUIRIDA ADQUIRIDO ADVERTÊNCIA AJUDANTE ALERTA ALTURA ALVENARIA AMPLIAÇÃO ANTICHAMA ANTICORROSIVO APARENTE APLICADA APLICAÇÃO APROXIMADO AREIA ARGAMASSA ARMADO ARRIMO ASFALTO ASSENTADO ASSENTAMENTO ATERRAMENTO ATÉ AUXÍLIO AVENIDA AÇO BANQUETA BANQUETAS BARRAMENTO BARREIRAS BASCULANTE BATATAIS BRAÇO BRILHANTE CABEÇA CABO CAIAÇÃO CAL CALCETEIRO CALÇADA CALÇADAS CAMINHONETE CAMINHÃO CAMPO CANTEIRAS CANTEIRO CANTEIROS CAPACIDADE CARBONO CARGA CARPINTEIRO CARREGADEIRA CARROCERIA CATEGORIA CAVA CAVALO CENTRAL CERÂMICO CHAPA CHAVE CIMENTO CIRCULAR COBERTURA COM COMANDO COMPACTADOR COMPENSADA COMPLEMENTARES COMPOSIÇÃO COMPOSIÇÕES COMPRESSOR COMPRESSÃO COMUM COMUNICAÇÃO CONCRETO CONFECÇÃO CONSTANTE CONSTRUÇÃO CONTENÇÃO CONTROLE CORRUGADO CORTADORA DAS DEMOLIÇÃO DEMOLIÇÕES DEMÃOS DESEMPOLADO DESEMPOLAMENTO DESMATAMENTO DESMOBILIZAÇÃO DIRECIONAL DISCOS DISJUNTOR DISTRIBUIÇÃO DIVERSAS DIVERSOS DOS DRENAGEM DUAS DUTO EDUCAÇÃO EIXOS ELETRICISTA ELETRODO ELETRODUTO ELEVADA ELEVADAS ELÉTRICA ELÉTRICO ENCARGOS ENCARREGADO ENERGIA ENFERMIDADE ENGENHEIRO ENSAIOS ENTERRADA ENTULHO EQUIPAMENTO EQUIPAMENTOS ESCAVAÇÃO ESGOTO ESMALTE ESQUADRIAS ESTABILIZAÇÃO ESTRUTURA ESTRUTURAL ESTRUTURAS EXECUÇÃO EXPURGO EXTERNAS FAIXA FAIXAS FERRO FERROSOS FINAL FIO FITA FLEXÍVEL FORMA FORNECEDOR FORNECIMENTO FOTOELÉTRICO FRETE FRIO FUNDAÇÃO FUNDAÇÕES FUNDO FURADO GALVANIZADA GALVANIZADO GASOLINA GERAL GRADE GRAMA GRANULOMÉTRICA GROSSA GUINDASTE GUINDAUTO HASTE HIDRATADA HIDROSSANITÁRIA HIDRÁULICA HIDRÁULICO HIDRÓFUGO IGUAL ILUMINAÇÃO INDENIZADAS INDENIZADO INDENIZAÇÃO INFRAESTRUTURA INSTALAÇÃO INSTALAÇÕES INTERTRAVADA INTERTRAVADO ISOLANTE JARDIM JARDINEIRO JARDINS JAZIDA JÚNIOR KOMBI LANÇAMENTO LASTRO LATERAIS LATERAL LED LEI LIMPEZA LOCAL LOMBO LONA LUMINÁRIA MADEIRA MANUAL MANUTENÇÃO MARCADOR MARTELETE MASSA MATERIAIS MATERIAL MATERNIDADE MECANIZADA MECÂNICO MEIO MENOR MESTRE METAIS MICROESFERA MISTA MISTURA MOBILIZAÇÃO MOBILIÁRIO MOLDADO MONOPOLAR MOTONIVELADORA MOTOR MOVIMENTAÇÃO MUDA MURO MÁXIMA MÉDIA NAS NIVELADOR NIVELADORA NOMINAL NOS NÃO OBRA OBRAS ORNAMENTAL PADRÃO PAISAGISMO PALMEIRA PARA PARALELEPÍPEDO PAREDE PAREDES PASSEIO PASSEIOS PATERNIDADE PAVIMENTAÇÃO PAVIMENTO PEAD PEDESTRE PEDESTRES PEDRA PEDREIRA PEDREIRO PENEIRADA PERFURADA PESO PINTOR PINTURA PISO PISOS PLACA PLACAS PLANA PLANTIO PLUVIAIS PLÁSTICA PNEUMÁTICO PNEUS PODOTÁTIL POLIDO PONTALETE PORTLAND POSTE POSTO PRANCHA PRAÇA PREGO PRELIMINAR PRELIMINARES PREPARO PRETA PRETO PROJETO PROJETOS PVC PÚBLICA QUADRO RAMPA REFLETIVA REFORMA REGULARIZAÇÃO REINCIDÊNCIA REJUNTAMENTO RELÉ RESCISÃO RESINA RESINADA RESISTÊNCIA RETIRADA RETIRADAS REVERSÍVEL REVESTIDO REVESTIMENTO REVESTIMENTOS REVITALIZAÇÃO RUA SAVEIRO SECA SEGURANÇA SELADOR SEM SERRALHEIRO SERVENTE SERVIÇO SERVIÇOS SIMPLES SINALIZAÇÃO SINTÉTICO SISTEMA SOBRE SOLDADOR SOLO STANDARD SUBSTITUIÇÃO SUPERCAL SUPERESTRUTURA SUPERFÍCIE TANQUE TECNOLÓGICO TEMPOS TEODOLITO TERRA TERRAPLENAGEM TEXTURA TIJOLINHO TIJOLO TINTA TIPO TOPOGRÁFICO TOPÓGRAFO TOSCA TRANSPORTE TRATOR TRAÇO TRIFÁSICO TRÂNSITO URBANAS URBANIZADA URBANIZAÇÃO URBANO USINADA UTILITÁRIO VALA VEGETAL VEÍCULO VIAS VIBRATÓRIA VIDRO VISUAL VIÁRIA VIÁRIO ÁGUA ÁGUAS ÁREA SUBLEITO VIÁRIO VIÁRIA VIÁRIOS URBANA URBANO MEIO-FIO".split(" ").forEach(function (w) { var k = _normTxt(w); if (k && !voc[k]) voc[k] = { forma: w, n: 5 }; });
+      ["DA", "DE", "DO", "DAS", "DOS", "EM", "NA", "NO", "E", "A", "O", "COM", "PARA", "SEM", "AO"].forEach(function (w) { if (!voc[w]) voc[w] = { forma: w, n: 1000 }; });
+      return voc;
+    },
+
+    corrigirTexto: function (t, voc) {
+      t = String(t == null ? "" : t);
+      if (!voc || !t || t !== t.toUpperCase()) return t;
+      function conhece(w) { var k = _normTxt(w); return !k || /\d/.test(w) || !!voc[k]; }
+      function segmentar(k) {
+        var n = k.length, best = new Array(n + 1); best[0] = { c: 0, w: [] };
+        for (var i = 0; i < n; i++) {
+          if (!best[i]) continue;
+          for (var j = i + 1; j <= Math.min(n, i + 24); j++) {
+            var v = voc[k.slice(i, j)]; if (!v) continue;
+            var c = best[i].c + 1 + (j - i <= 2 ? 0.6 : 0) - Math.min(0.3, Math.log(v.n + 1) / 40);
+            if (!best[j] || c < best[j].c) best[j] = { c: c, w: best[i].w.concat([v.forma]) };
+          }
+        }
+        return best[n] ? best[n].w : null;
+      }
+      // frases = sequências de palavras só de letras separadas por espaço
+      /* acento: só ACRESCENTA (palavra escrita sem nenhum acento → forma acentuada da base); acento já escrito nunca sai
+         ("LÁTEX", "CÉU" ficam) — a forma mais frequente da base às vezes é a sem acento */
+      function acentuar(w) {
+        if (w.length <= 2 || /[À-Ü]/.test(w)) return w;
+        // palavras que existem com e sem acento, com sentidos diferentes (revolver o solo × revólver; secretaria × secretária)
+        if (/^(CERA|REVOLVER|SECRETARIA|ESTA|ESTAO|SERIA|PUBLICO|PRATICA|PRATICO|DUVIDA|CAMARA|MEDICO|SABIA|VARIA|VARIO|INICIO|CRITICA|ARVORES?)$/.test(w)) return w;
+        var v = voc[_normTxt(w)];
+        return v && /[À-Ü]/.test(v.forma) && _normTxt(v.forma) === _normTxt(w) ? v.forma : w;
+      }
+      return t.replace(/[A-ZÀ-Ü]+(?: +[A-ZÀ-Ü]+)*/g, function (frase) {
+        var partes = frase.split(/( +)/), toks = [], i, j;   // toks = índices das palavras em `partes`
+        for (i = 0; i < partes.length; i += 2) toks.push(i);
+        var feito = {};
+        /* palavra colada/quebrada = desconhecida com 4+ letras (curta como "PÓ" não dispara nada). Remonta só a janela
+           em volta dela (até 2 palavras de cada lado), a menor que fica toda coberta pelo dicionário. */
+        for (var a = 0; a < toks.length; a++) {
+          var w = partes[toks[a]];
+          if (feito[a] || conhece(w) || _normTxt(w).length < 4) continue;
+          var janelas = [[0, 0], [-1, 0], [0, 1], [-1, 1], [-2, 0], [0, 2], [-2, 1], [-1, 2], [-2, 2]], achou = null;
+          for (j = 0; j < janelas.length && !achou; j++) {
+            var de = a + janelas[j][0], ate = a + janelas[j][1];
+            if (de < 0 || ate >= toks.length) continue;
+            var livre = true; for (i = de; i <= ate; i++) if (feito[i]) livre = false;
+            if (!livre) continue;
+            var junto = ""; for (i = de; i <= ate; i++) junto += _normTxt(partes[toks[i]]);
+            var seg = segmentar(junto);
+            if (seg) achou = { de: de, ate: ate, seg: seg };
+          }
+          if (!achou) continue;
+          /* artigo solto entre duas palavras ("PAVIMENTAÇÃO O SISTEMA") num título de orçamento é o "D" que o OCR perdeu
+             ("DO SISTEMA"): só dentro da janela remontada (que já estava colada/quebrada) */
+          var sg = achou.seg, ant = achou.de > 0 ? partes[toks[achou.de - 1]] : null;
+          for (var q = 0; q < sg.length - 1; q++) if (/^(O|A|OS|AS)$/.test(sg[q]) && (q > 0 || ant)) sg[q] = "D" + sg[q];
+          partes[toks[achou.de]] = sg.join(" ");
+          for (i = achou.de + 1; i <= achou.ate; i++) { partes[toks[i]] = ""; partes[toks[i] - 1] = ""; }
+          for (i = achou.de; i <= achou.ate; i++) feito[i] = true;
+        }
+        for (a = 0; a < toks.length; a++) if (!feito[a]) partes[toks[a]] = acentuar(partes[toks[a]]);
+        return partes.join("");
+      });
+    },
+
+    /* Aplica corrigirTexto nas etapas e nos itens do órgão (travadoOrgao) de um orçamento de licitação. Guarda o lido em
+       `descricaoOrgaoLida`/`nomeOrgaoLido`. Devolve quantos textos mudaram (idempotente). */
+    corrigirEscrita: function (orc, voc) {
+      if (!orc || !voc || !this.cfg(orc)) return 0;
+      var self = this, n = 0;
+      (orc.etapas || []).forEach(function (e) {
+        if (!e) return;
+        var nm = s(e.nome); var nv = self.corrigirTexto(nm, voc);
+        if (nv && nv !== nm) { if (!e.nomeOrgaoLido) e.nomeOrgaoLido = nm; e.nome = nv; n++; }
+        (e.itens || []).forEach(function (it) {
+          if (!it || !it.travadoOrgao) return;
+          var d = s(it.descricao), dv = self.corrigirTexto(d, voc);
+          if (dv && dv !== d) { if (!it.descricaoOrgaoLida) it.descricaoOrgaoLida = d; it.descricao = dv; n++; }
+        });
+      });
+      return n;
+    },
+
     aplicarPacote: function (orc, bloco) {
       if (!orc || !bloco || typeof bloco !== "object") return null;
       orc.config = (orc.config && typeof orc.config === "object") ? orc.config : {};
