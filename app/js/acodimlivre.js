@@ -642,6 +642,8 @@
     var c = C.obter(nome); if (!c) return [];
     var lista = D ? D.familia(nome) : [];
     if (c.forma === "frio") lista = C.listar(c.serie).map(function (n) { return C.obter(n); }).filter(function (x) { return x && x.tipoFrio === c.tipoFrio && x.massa > 0; }).sort(function (a, b) { return a.massa - b.massa; }).map(function (x) { return x.nome; });
+    /* 21/11: dupla cantoneira — só 2L com a MESMA folga (a chapa de nó entre as abas não muda de espessura no meio da treliça) */
+    if (c.forma === "2L") lista = C.listar(c.serie).map(function (n) { return C.obter(n); }).filter(function (x) { return x && Math.abs(num(x.e, 0) - num(c.e, 0)) < 1e-6 && x.massa > 0; }).sort(function (a, b) { return a.massa - b.massa; }).map(function (x) { return x.nome; });
     if (MC && MC.desenhavel) lista = lista.filter(function (n) { return MC.desenhavel(n); });
     if (lista.indexOf(c.nome) < 0) lista.push(c.nome);
     return lista;
@@ -716,6 +718,11 @@
         if (!esc || esc.nome === atual) return null;
         return { gk: gk, de: atual, para: esc.nome, motivo: q.e > 1 ? "resistência " + br(q.e, 2) : q.s > 1 ? "deslocamento " + br(q.s, 2) : "folga " + br(Math.max(q.e, q.s), 2) + " — mais leve" };
       };
+      /* 21/11 (memória): a análise (estações de esforço de cada barra em cada combinação) é ~95 % do resultado — 1,45 de
+         1,53 GB na tesoura leve com 588 nós. A rodada nova nascia com a anterior ainda viva (2 × 1,5 GB → o Node estourava com
+         3,6 GB). O otimizador só lê modelo, membros, servico e estabilidadeGlobal: antes de cada rodada a análise do resultado
+         corrente sai e, no fim, a vencedora é calculada de novo (uma rodada a mais) para chegar inteira às ligações e ao memorial. */
+      var aliviar = function (res) { if (res && res.analise) { res.analise = null; res._semAnalise = true; } };
       var aplicar = function (lista, rot) { lista.forEach(function (x) { conj[x.gk].forEach(function (p) { trocarPerfil(p, x.para); }); log.push("Rodada " + rot + ": " + conj[x.gk].length + " peça(s) " + x.gk.split("|")[0] + " " + x.de + " → " + x.para + " (" + x.motivo + ")"); }); };
       /* FASE 1 — até passar: SÓ sobe os grupos que falham (descer junto já desestabilizou a 2ª ordem num mezanino de
          teste: pilar e viga mais leves ao mesmo tempo que a secundária subia — 13/10/2026) */
@@ -723,7 +730,7 @@
         var sobe = Object.keys(conj).map(function (gk) { return estimar(gk, true); }).filter(Boolean);
         if (!sobe.length) { log.push("Nenhum perfil maior na família resolve o que falha — fica o último calculado."); break; }
         it++; aplicar(sobe, it + 1);
-        var rn = rodada(lido, entrada, op); hist.push({ perfis: perfisAtuais(lido), falhas: rn.falhas, peso: rn.peso });
+        aliviar(r); var rn = rodada(lido, entrada, op); hist.push({ perfis: perfisAtuais(lido), falhas: rn.falhas, peso: rn.peso });
         if (!rn.ok) { log.push("A rodada " + (it + 1) + " não fechou (" + (rn.motivo || "análise") + ") — volta à anterior."); restaurar(lido, r); break; }
         r = rn;
       }
@@ -732,7 +739,7 @@
         var desce = Object.keys(conj).map(function (gk) { return estimar(gk, false); }).filter(Boolean);
         if (!desce.length) break;
         it++; aplicar(desce, it + 1);
-        var rd = rodada(lido, entrada, op); hist.push({ perfis: perfisAtuais(lido), falhas: rd.falhas, peso: rd.peso });
+        aliviar(r); var rd = rodada(lido, entrada, op); hist.push({ perfis: perfisAtuais(lido), falhas: rd.falhas, peso: rd.peso });
         if (rd.ok && rd.aprovado) { r = rd; continue; }
         desce.forEach(function (x) { (proib[x.gk] = proib[x.gk] || {})[x.para] = true; });
         log.push("Rodada " + (it + 1) + ": a descida estimada não passou (" + (rd.ok ? rd.falhas + " falha(s)" : rd.motivo) + ") — volta; a descida conferida, grupo a grupo, segue.");
@@ -762,7 +769,7 @@
             var prox = cands[c].nome; tent++;
             if (cands[c].salto) saltoFeito[gk] = true;
             ps.forEach(function (p) { trocarPerfil(p, prox); });
-            var r2 = rodada(lido, entrada, op);
+            aliviar(r); var r2 = rodada(lido, entrada, op);
             if (r2.ok && r2.aprovado) { r = r2; aceitou = true; saltoFeito[gk] = false; log.push("Descida: " + ps.length + " peça(s) " + gk.split("|")[0] + " " + atual + " → " + prox + " passa (" + br(r2.peso, 0) + " kg)"); return; }
             (proibD[gk] = proibD[gk] || {})[prox] = true; ps.forEach(function (p) { trocarPerfil(p, atual); }); log.push("Descida: " + gk.split("|")[0] + " " + prox + " não passa — fica " + atual);
           }
@@ -773,6 +780,7 @@
         else limpou = false;
       }
       if (tent >= maxDesc || Date.now() - t0 >= tMax) log.push("A descida parou pelo limite de " + (tent >= maxDesc ? tent + " rodadas" : Math.round(tMax / 1000) + " s") + ": pode haver perfil mais leve — rode de novo a partir deste.");
+      if (r && r._semAnalise) { restaurar(lido, r); var rf = rodada(lido, entrada, op); if (rf.ok) r = rf; else log.push("A rodada final (para a análise completa) não fechou: " + (rf.motivo || "análise")); }
       if (r.ok) r.otimizacao = { iteracoes: it + tent, log: log, historico: hist.map(function (h) { return { falhas: h.falhas, peso: h.peso }; }) };
     }
     if (r.ok) {
@@ -829,6 +837,7 @@
       }
     }
     /* AUDITORIA A3 (20/11/2026): os nós SOLDADOS tubo-tubo verificados com os esforços deste cálculo (js/metalnostubo.js) — aqui, no fim do cálculo, para valer na tela (worker), no comparativo e nos testes */
+    var aprovBarras0 = !!(r && r.aprovado);   /* 21/11: o resultado SÓ das barras, antes dos nós (o bloco dos nós põe aprovado = false no incompleto) */
     var NT = dep("MetalNosTubo", "./metalnostubo.js");
     if (r && r.ok && r.modelo && NT && arr(r.modelo.membros).some(function (m) { return m.calc && m.calc.tuboSoldado; })) {
       var vn = NT.verificar(r); r.nosTubo = vn;
@@ -841,7 +850,20 @@
       r.naoVerificados = nvs;
       r.decisoes = arr(r.decisoes).concat([{ tema: "Nós soldados tubo-tubo (NBR 16239 / EN 1993-1-8 cap. 7)", decisao: vn.resumo, motivo: "esforço de cada barra = o maior |N| das combinações (envoltória); face do banzo: o pior dos dois lados; g com excentricidade zero; γa1 = 1,10 no lugar do γM5" }]);
       if (vn.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vn.reprovados; }
-      r.situacao = Env() ? Env().situacao({ ok: true, aprovado: r.barrasAprovadas !== false && !vn.reprovados }, r.naoVerificados) : r.situacao;
+      r.situacao = Env() ? Env().situacao({ ok: true, aprovado: aprovBarras0 && !vn.reprovados }, r.naoVerificados) : r.situacao;
+      if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false;
+    }
+    /* 21/11/2026: NÓS COM CHAPA das treliças em cantoneira (2L com chapa de nó; L simples soldada na aba do U) — js/metalchapano.js */
+    var CN = dep("MetalChapaNo", "./metalchapano.js");
+    if (r && r.ok && r.modelo && CN && arr(r.modelo.membros).some(function (m) { return m.calc && (m.calc.chapaNo || m.calc.soldaAba); })) {
+      var vc = CN.verificar(r); r.nosChapa = vc;
+      r.naoVerificados = arr(r.naoVerificados).map(function (x) {
+        if (x.tema !== "Ligações da tipologia" || !vc.n) return x;
+        return { tema: x.tema, motivo: x.motivo.replace(/nós com CHAPA das treliças em cantoneira \(verificados à parte\); ?/, "") };
+      });
+      r.decisoes = arr(r.decisoes).concat([{ tema: "Nós com chapa (treliça em cantoneira)", decisao: vc.resumo, motivo: vc.premissas + "; esforço de cada barra = envoltória das combinações últimas" }]);
+      if (vc.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vc.reprovados; }
+      if (Env()) r.situacao = Env().situacao({ ok: true, aprovado: aprovBarras0 && !(r.nosTubo && r.nosTubo.reprovados) && !vc.reprovados }, r.naoVerificados);
       if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false;
     }
     /* AUDITORIA A3 (20/11/2026): verificação obrigatória não feita (situação "incompleto") ⇒ NUNCA aprovado. Antes as barras
@@ -853,8 +875,8 @@
       r.naoVerificados = arr(r.naoVerificados).concat([{ tema: "Sanidade do deslocamento (L/50)", motivo: "deslocamento de " + br(sanA.dmax, 3) + " m no nó " + sanA.no + " > L/50 = " + br(sanA.limite, 3) + " m: estrutura muito flexível ou mal apoiada — resultado não aprovável" }]);
       r.aprovado = false; r.situacao = Env() ? Env().situacao({ ok: true, aprovado: false }, r.naoVerificados) : { id: "reprovado", texto: "Reprovado" };
     }
-    if (r.ok && r.situacao && r.situacao.id !== "aprovado") { r.barrasAprovadas = !!r.aprovado; r.aprovado = false; }
-    else if (r.ok) r.barrasAprovadas = !!r.aprovado;
+    if (r.ok && r.situacao && r.situacao.id !== "aprovado") { r.barrasAprovadas = aprovBarras0; r.aprovado = false; }
+    else if (r.ok) r.barrasAprovadas = aprovBarras0 && !!r.aprovado;
     r.tempoMs = Date.now() - t0;
     return r;
   }

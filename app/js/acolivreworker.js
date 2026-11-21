@@ -21,7 +21,7 @@
   var MOTORES = ["perfisaco.js", "bimarq.js", "bimedit.js", "bimprecisao.js", "metalnorma.js", "metalpeca.js", "metalcriar.js", "metalligacao.js",
                  "acomateriais.js", "acosecao.js", "acofsm.js", "acodim14762.js", "acoanalise.js", "acocargas.js", "acomodelo.js", "acodim8800.js",
                  "acoisopletas.js", "acovento.js", "acosecundarias.js", "acoligcalc.js", "acodimensionar.js", "acomodelolivre.js", "acofechamentos.js",
-                 "acoenvoltorio.js", "acodimlivre.js", "acoligcalc2.js", "metalnostubo.js"];   /* AUDITORIA A3: nós tubo-tubo */
+                 "acoenvoltorio.js", "acodimlivre.js", "acoligcalc2.js", "metalnostubo.js", "metalchapano.js"];   /* AUDITORIA A3: nós tubo-tubo */
   var OBRIGATORIOS = { "perfisaco.js": 1, "acomateriais.js": 1, "acosecao.js": 1, "acoanalise.js": 1, "acocargas.js": 1, "acodim8800.js": 1, "acomodelolivre.js": 1, "acodimlivre.js": 1 };
   function agora() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
   /* o aviso do motor vira mensagem no máximo a cada `ms` (e sempre na troca de fase) */

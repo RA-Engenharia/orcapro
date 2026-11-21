@@ -6759,6 +6759,36 @@
   };
   var FONTE = "AISC Shapes Database v15.0 via catálogo de tipos de referência (AISC 15.0, métrico)";
 
+  /* 21/11/2026 (Metálica, sistema da treliça CANTONEIRA): DUPLA CANTONEIRA costas com costas (2L), gerada da série AM-L
+     (ArcelorMittal, NBR 15980) com a folga e = espessura da chapa de nó entre as abas (1/4", 5/16", 3/8"). Nada inventado: cada
+     propriedade sai da linha da cantoneira simples por Steiner —
+       A = 2·A1; massa = 2·m1; Ix = 2·Ix1 (eixo x ⟂ ao de simetria: as duas cantoneiras com o centróide na mesma altura);
+       Iy = 2·[Iy1 + A1·(xc1 + e/2)²] (y = eixo de SIMETRIA, no meio da folga); yc = yc1 (da face de fora da aba horizontal);
+       centro de torção no eixo y, na linha média das abas horizontais: y0 = yc1 − t/2, x0 = 0; J = 2·J1; Cw = 0 (a favor);
+       rz1 = rz da cantoneira simples (espaçamento das chapas espaçadoras, NBR 8800 5.3.4.2).
+     Sem tabela de 2L publicada achada para conferir (21/11): o teste confere contra a conta de Steiner feita à mão. */
+  (function () {
+    var base = DADOS["AM-L"], src = null; SERIES.forEach(function (s) { if (s.id === "AM-L") src = s; });
+    if (!base || !src) return;
+    var ci = {}; src.cols.forEach(function (c, i) { ci[c] = i + 1; });
+    var FOLGAS = [[6.35, "6,35"], [8, "8"], [9.53, "9,53"]], rows = [];
+    base.forEach(function (l) {
+      if (l[ci.sistema] !== "pol" || !(l[ci.a] >= 38)) return;   /* abaixo de 1 1/2": não cabem os 4 filetes com folga */
+      var a = l[ci.a], b = l[ci.b], t = l[ci.t], A1 = l[ci.A], m1 = l[ci.massa], Ix1 = l[ci.Ix], Iy1 = l[ci.Iy], xc = l[ci.xc], yc = l[ci.yc], rz1 = l[ci.rz], J1 = l[ci.J];
+      if (!(A1 > 0 && Ix1 > 0 && Iy1 > 0 && xc > 0 && yc > 0 && rz1 > 0)) return;
+      FOLGAS.forEach(function (f) {
+        var e = f[0], A = 2 * A1, Ix = 2 * Ix1, Iy = 2 * (Iy1 + A1 * Math.pow(xc + e / 2, 2));
+        var nome = "2L " + String(l[0]).replace(/^L /, "").replace(/ ArcelorMittal$/, "") + " ArcelorMittal ch " + f[1];
+        rows.push([nome, a, b, t, e, A, 2 * m1, Ix, Iy, Ix / Math.max(1e-9, a - yc), Iy / (b + e / 2), Math.sqrt(Ix / A), Math.sqrt(Iy / A), rz1, xc, yc, 2 * (J1 || 0), 0, 0, yc - t / 2, l[0]]);
+      });
+    });
+    SERIES.push({ id: "AM-2L", rotulo: "2L — dupla cantoneira costas com costas (ArcelorMittal, folga = chapa de nó)", forma: "2L",
+                  cols: ["a", "b", "t", "e", "A", "massa", "Ix", "Iy", "Wx", "Wy", "rx", "ry", "rz1", "xc", "yc", "J", "Cw", "x0", "y0", "simples"],
+                  fonte: "gerada de AM-L (Steiner)", fabricante: "ArcelorMittal Brasil",
+                  fonteCompleta: "Dupla cantoneira gerada da cantoneira simples ArcelorMittal (NBR 15980) por Steiner — ver a linha “simples”; Cw = 0 (a favor da segurança)" });
+    DADOS["AM-2L"] = rows;
+  })();
+
   var indice = null;
   function serieDe(id) { for (var i = 0; i < SERIES.length; i++) if (SERIES[i].id === id) return SERIES[i]; return null; }
   function montarIndice() {
@@ -6814,6 +6844,7 @@
       var o = this.obter(nome); if (!o) return null;
       if (o.forma === "I" || o.forma === "U") { if (!(o.tf > 0)) return null; return { forma: o.forma, d: m(o.d), bf: m(o.bf), tw: m(o.tw), tf: m(o.tf), r: m(o.r), cat: o.nome }; }
       if (o.forma === "L") return { forma: "L", a: m(o.a), b: m(o.b), t: m(o.t), r: m(o.r), cat: o.nome };
+      if (o.forma === "2L") return { forma: "2L", a: m(o.a), b: m(o.b), t: m(o.t), e: m(o.e), cat: o.nome };
       if (o.forma === "tubo-ret") return { forma: "tubo-ret", b: m(o.b), h: m(o.h), t: m(o.t), ro: m(o.ro), ri: m(o.ri), cat: o.nome };
       if (o.forma === "tubo-circ") return { forma: "tubo-circ", D: m(o.D), t: m(o.t), cat: o.nome };
       if (o.forma === "circ") return { forma: "circ", d: m(o.d), cat: o.nome };

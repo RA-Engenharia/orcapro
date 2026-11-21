@@ -210,8 +210,22 @@
     var rot = p.cat ? String(p.cat) : (tipo === "Z90" || tipo === "Z" ? (D > 0 ? "Ze " : "Z ") : (tipo === "Cr" ? "Cartola " : tipo + " ")) + Math.round(bw * 1000) + " × " + Math.round(bf * 1000) + (D ? " × " + Math.round(D * 1000) : "") + " × " + String(Math.round(t * 10000) / 10).replace(".", ",");
     return { ok: true, forma: "frio", contorno: c, furos: [], area: Math.abs(A) / 2, perimetro: P, larg: mxx - mnx, alt: mxy - mny, rotulo: rot };
   }
+  /* DUPLA CANTONEIRA costas com costas (21/11/2026): as abas verticais em y (a haste do T, no plano da treliça) com a folga e da
+     chapa de nó entre elas, as abas horizontais em cima. Contorno único: as duas cantoneiras unidas por uma ponte de 0,5 mm no
+     topo da folga (área a mais e·0,5 mm, < 0,3 %) — o 3D e a prancha mostram a folga; o peso sai do catálogo */
+  function secao2L(p) {
+    var a = num(p.a, 0), b = num(p.b, a), t = num(p.t, 0), e = num(p.e, 0), d = 0.0005, h = e / 2;
+    if (!(a > t && b > t && t > 0 && e > 0)) return { ok: false, motivo: "Dupla cantoneira: a, b, t e folga incoerentes." };
+    var c = [[-h - b, 0], [h + b, 0], [h + b, -t], [h + t, -t], [h + t, -a], [h, -a], [h, -d], [-h, -d], [-h, -a], [-h - t, -a], [-h - t, -t], [-h - b, -t]];
+    c = c.map(function (q) { return [r6(q[0]), r6(q[1] + a / 2)]; });
+    var A = 0, P = 0;
+    for (var i = 0; i < c.length; i++) { var q = c[i], r = c[(i + 1) % c.length]; A += q[0] * r[1] - r[0] * q[1]; P += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
+    if (A < 0) c = c.slice().reverse();
+    return { ok: true, forma: "2L", contorno: c, furos: [], area: Math.abs(A) / 2, perimetro: P, larg: e + 2 * b, alt: a, rotulo: p.cat ? String(p.cat) : "2L" };
+  }
   function secaoDe(p) {
     if (p && p.forma === "frio") return secaoFrio(p);
+    if (p && p.forma === "2L") return secao2L(p);
     /* TELHA de aço (js/metalcatpecas.js): trapezoidal ou ondulada, a seção da ficha do fabricante */
     if (p && p.forma === "telha") { var CP = dep("BimMetalCatPecas", "./metalcatpecas.js"); return CP ? CP.secao(p) : { ok: false, motivo: "O motor das telhas (js/metalcatpecas.js) não carregou." }; }
     /* CHAPA DOBRADA (js/metalplanif.js): polilinha pela linha média + espessura + raio interno */

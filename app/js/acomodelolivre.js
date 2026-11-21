@@ -815,6 +815,7 @@
       }
       var balanco = condI.tipo === "livre" || condF.tipo === "livre";
       var fl = { Lx: Lfl(ty), Ly: Lfl(tz) }; fl.Lz = fl.Ly;
+      if (p.calc && p.calc.umaAba) fl.umaAba = true;   /* cantoneira simples ligada por uma aba: NBR 8800 5.3.4.4 (js/acodim8800.js) */
       var cima = dot(p.ey, UP) >= 0 ? "mais" : "menos", trav = { mais: [], menos: [] };
       if (p.papel === "pilar") { trav.mais = tMesa.slice(); trav.menos = tMesa.slice(); }
       else trav[cima] = tMesa.slice();

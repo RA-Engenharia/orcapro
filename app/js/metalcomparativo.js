@@ -58,7 +58,12 @@
       var cat = final[b.id] || b.cat, kg = dist(M.nos[b.a], M.nos[b.b]) * num(massa[cat], 0), g = grupoDe(b.grupo);
       o.grupos[g] += kg; o.pesoTotal += kg;
     });
+    /* 21/11: treliça em cantoneira — as chapas de nó e as espaçadoras (js/metalchapano.js) entram no peso (grupo próprio) */
+    o.grupos.chapas = 0;
+    if (r.nosChapa) { o.grupos.chapas = num(r.nosChapa.pesoChapas, 0) + num(r.nosChapa.pesoEspacadores, 0); o.pesoTotal += o.grupos.chapas; o.nosChapa = { n: r.nosChapa.n, reprovados: r.nosChapa.reprovados, pior: r.nosChapa.pior ? r.nosChapa.pior.razao : null }; }
+    if (r.nosTubo) o.nosTubo = { n: r.nosTubo.n, reprovados: r.nosTubo.reprovados, naoVerificados: r.nosTubo.naoVerificados, pior: r.nosTubo.pior ? r.nosTubo.pior.razao : null };
     var p = calc.gerado.par || v.par || {};
+    o.sistema = p.sistemaTrelica || "tubo";
     o.area = num(p.vao, 0) * num(p.comprimento, 0);
     o.kgm2 = o.area > 0 ? o.pesoTotal / o.area : null;
     o.naoVerificados = arr(calc.naoVerificados).map(function (x) { return x.tema; });
@@ -71,6 +76,10 @@
       o.orcamento = { total: num(orc.total, 0), provisorios: prov.map(function (l) { return { codigo: l.codigo, descricao: l.descricao, total: l.total, motivo: l.provisorio.motivo }; }), semPreco: sem.map(function (l) { return { codigo: l.codigo, descricao: l.descricao }; }), linhas: arr(orc.linhas).length };
       o.orcamento.completo = sem.length === 0;
     } else o.orcamento = { total: null, provisorios: [], semPreco: [], motivo: orc ? orc.erro || orc.motivo || "o orçamento não fechou" : "sem orçamento" };
+    /* chapas de nó e espaçadoras: não são peças do modelo (o Orçamento de fábrica não as vê) — o MATERIAL entra pelo insumo
+       PROP-9402 da própria base (chapa A36, R$/kg); a fabricação/solda delas fica fora e o quadro diz isso */
+    var Ob = MO(), ich = Ob && arr(Ob.INSUMOS).filter(function (x) { return x.codigo === "PROP-9402"; })[0];
+    if (o.grupos.chapas > 0 && ich && o.orcamento.total != null) { o.orcamento.chapas = { codigo: ich.codigo, kg: o.grupos.chapas, preco: ich.custoUnitario, total: o.grupos.chapas * ich.custoUnitario, nota: "só o material das chapas (PROP-9402); corte e solda das chapas fora" }; o.orcamento.totalComChapas = o.orcamento.total + o.orcamento.chapas.total; }
     return o;
   }
 
@@ -80,6 +89,9 @@
     var P = MP(); if (!P) return null;
     var vs = P.presetVariantes(id), v = vs.filter(function (x) { return x.id === vid; })[0]; if (!v) return null;
     var par = JSON.parse(JSON.stringify(v.par)); par.x0 = 0;
+    /* 21/11: op.sistema = "tubo" | "cantoneira" — o jogo de perfis do outro sistema (PRESETS[id].sistemas) por cima do preset */
+    var PS = P.PRESETS[id], alt = op.sistema && PS && PS.sistemas && PS.sistemas[op.sistema];
+    if (alt) { Object.keys(alt).forEach(function (k) { par[k] = JSON.parse(JSON.stringify(alt[k])); }); v = { id: v.id + "-" + op.sistema, rotulo: v.rotulo + " — " + (op.sistema === "cantoneira" ? "cantoneira" : "tubo"), tipo: v.tipo, par: par }; }
     var calc = P.calcular(v.tipo, par, { vento: par.vento, calc: op.calc || {} }), orc = null;
     var O = MO();
     if (calc && calc.ok && O && O.orcar) { try { orc = O.orcar({ caixas: calc.gerado.pecas }, op.orcamento || {}); } catch (e) { orc = { ok: false, erro: e && e.message }; } }
@@ -99,13 +111,17 @@
     h += "<thead><tr>" + th("") + ls.map(function (l) { return th(esc(l.rotulo)); }).join("") + "</tr></thead><tbody>";
     function lin(rot, f, forte) { h += '<tr><td style="padding:5px 8px;border-bottom:1px solid #dde5ee' + (forte ? ";font-weight:600" : "") + '">' + rot + "</td>" + ls.map(function (l) { return '<td style="padding:5px 8px;border-bottom:1px solid #dde5ee;text-align:right' + (forte ? ";font-weight:600" : "") + '">' + f(l) + "</td>"; }).join("") + "</tr>"; }
     lin("Situação do cálculo", function (l) { return '<span style="color:' + (l.situacao === "reprovado" || !l.ok ? "#b91c1c" : "#15803d") + '">' + esc(SIT[l.situacao] || l.situacao) + "</span>"; }, true);
+    lin("Sistema da treliça", function (l) { return l.sistema === "cantoneira" ? "Cantoneira 2L + chapa de nó" : "Tubo (nó soldado)"; });
+    lin("Nós (verificados / reprovados; pior)", function (l) { var q = l.nosChapa || l.nosTubo; return q ? q.n + " / " + q.reprovados + (q.pior != null ? "; " + br(q.pior, 2) : "") : "—"; });
     lin("Peso total da estrutura (kg)", function (l) { return l.ok ? br(l.pesoTotal, 0) : "—"; }, true);
     lin("Taxa (kg/m² de planta)", function (l) { return l.kgm2 != null ? br(l.kgm2, 1) : "—"; }, true);
     GRUPOS.forEach(function (g) { lin("&nbsp;&nbsp;" + esc(g.rotulo) + " (kg)", function (l) { return l.ok ? br(l.grupos[g.id], 0) : "—"; }); });
+    lin("&nbsp;&nbsp;Chapas de nó e espaçadoras (kg)", function (l) { return l.ok && l.grupos.chapas ? br(l.grupos.chapas, 0) + "*" : "—"; });
     lin("Preço do orçamento da estrutura (R$)", function (l) {
       var o = l.orcamento || {}; if (o.total == null) return '<span title="' + esc(o.motivo || "") + '">—</span>';
       return "R$ " + br(o.total, 2) + (o.semPreco.length ? ' <b style="color:#b91c1c">+ ' + o.semPreco.length + " item(ns) sem preço</b>" : "") + (o.provisorios.length ? '<br><small style="color:#a16207">' + o.provisorios.length + " item(ns) PROVISÓRIO(S) — cotar com o fornecedor</small>" : "");
     }, true);
+    lin("&nbsp;&nbsp;+ material das chapas de nó (R$)", function (l) { var c = l.orcamento && l.orcamento.chapas; return c ? "R$ " + br(c.total, 2) + '<br><small style="color:#a16207">' + br(c.kg, 0) + " kg × R$ " + br(c.preco, 2) + " (" + esc(c.codigo) + ", provisório); corte e solda fora</small>" : "—"; });
     lin("O que governa (pior razão)", function (l) { return l.criticos.length ? esc(l.criticos[0].governante || "") + " — " + br(l.criticos[0].razao, 2) : "—"; });
     h += "</tbody></table>";
     var notas = [];

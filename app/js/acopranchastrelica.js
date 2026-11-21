@@ -638,10 +638,10 @@
     /* topo da fundação (contexto) e a placa de cada banzo, tracejada (sem medida: A DIMENSIONAR) */
     var yF = rb.Y(-0.025);
     D.linha(rb.J[0] + 1, yF, rb.J[2] - 1, yF, "MET-CONTEXTO");
-    var tF = "TOPO DA FUNDAÇÃO / GRAUTE", wF = largT(tF, nota * 0.8), yTF = yF + Math.max(nota, (rb.J[3] - yF) / 2 + nota * 0.3);
-    D.hachura(rb.J[0] + 1, yF, rb.J[2] - rb.J[0] - 2, rb.J[3] - yF - 1, 1.6, "MET-HACHURA", [[rb.J[0] + 2, yTF - nota * 0.8, rb.J[0] + 4 + wF, yTF + 0.8]]);
+    var tF = "TOPO DA FUNDAÇÃO / GRAUTE", wF = largT(tF, nota * 0.8), yTF = yF + Math.max(nota, (rb.J[3] - yF) / 2 + nota * 0.3), xTF = Math.max(rb.J[0] + 3, (rb.J[0] + rb.J[2]) / 2 - wF / 2);   /* 21/11: centrado entre os pés dos banzos — o contorno da diagonal de base (2L) no pé do banzo de fora cortava o texto encostado à esquerda */
+    D.hachura(rb.J[0] + 1, yF, rb.J[2] - rb.J[0] - 2, rb.J[3] - yF - 1, 1.6, "MET-HACHURA", [[xTF - 1, yTF - nota * 0.8, xTF + 1 + wF, yTF + 0.8]]);
     [bf, bn].forEach(function (m) { if (!m) return; var w = larguraVista(m, [0, 0, 1]) / 1000 * rb.s, xc = rb.X(m.a[0]); D.poli([[xc - w / 2 - 4, rb.Y(0)], [xc + w / 2 + 4, rb.Y(0)], [xc + w / 2 + 4, yF], [xc - w / 2 - 4, yF]], "MET-PEND", true); });
-    D.texto(rb.J[0] + 3, yTF, tF, nota * 0.8, {});
+    D.texto(xTF, yTF, tF, nota * 0.8, {});
     /* 2 — nó típico da tesoura: o nó do banzo inferior mais perto de 1/4 do vão */
     var alvo = null;
     if (bi) {

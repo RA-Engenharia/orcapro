@@ -1025,7 +1025,7 @@
     }
     setTimeout(function () {
       var el = document.querySelector('[data-ml="progresso"]');
-      if (el && global.UI && UI.progresso) pg = UI.progresso(el, { titulo: otim ? "Calcular e otimizar" : "Calcular", etapas: etapasProg(otim), cancelar: cancelar, texto: "Montando o modelo" });
+      if (el && global.UI && UI.progresso) pg = UI.progresso(el, { titulo: otim ? "Calcular e otimizar" : "Calcular", etapas: etapasProg(otim), cancelar: cancelar, texto: "Montando o modelo", fundo: true });
       var podeW = typeof Worker === "function" && !(global.location && global.location.protocol === "file:");
       if (podeW) { try { w = new Worker("js/acolivreworker.js" + (global.ORCAPRO_VER ? "?v=" + global.ORCAPRO_VER : "")); } catch (eW) { w = null; } }
       if (!w) { if (pg) pg.texto("Calculando nesta tela (sem processo paralelo) — a tela fica parada até terminar"); naPagina(); return; }

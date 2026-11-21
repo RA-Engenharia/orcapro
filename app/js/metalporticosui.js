@@ -38,22 +38,28 @@
   ];
 
   /* ------------------------------------------------------------ campos [id, rótulo, tipo, opções] */
-  var S_PRINC = ["GERDAU", "W", "VS", "CVS", "CS"], S_TUBO = ["VMB-TQ", "VMB-TR", "VMB-TC", "HSSR"], S_TERCA = ["UE", "UFF", "GERDAU"], S_BARRA = ["BARRA-R"], S_L = ["L", "GERDAU-L"], S_LEVE_U = ["UFF", "GERDAU-U", "AM-U"], S_LEVE_L = ["AM-L", "GERDAU-L", "L"], S_LEVE_TUBO = ["TUPER-TQ", "TUPER-TR", "VMB-TQ"];
+  var S_PRINC = ["GERDAU", "W", "VS", "CVS", "CS"], S_TUBO = ["VMB-TQ", "VMB-TR", "VMB-TC", "HSSR"], S_TERCA = ["UE", "UFF", "GERDAU"], S_BARRA = ["BARRA-R"], S_L = ["L", "GERDAU-L"], S_LEVE_U = ["UFF", "GERDAU-U", "AM-U"], S_LEVE_L = ["AM-L", "GERDAU-L", "L"], S_LEVE_2L = ["AM-2L"], S_LEVE_TUBO = ["TUPER-TQ", "TUPER-TR", "VMB-TQ"];
   var SN = [["rotulada", "Rotulada"], ["engastada", "Engastada"]];
-  function campos(t) {
+  function campos(t, modo) {
     var c = [];
-    if (t !== "shed" && t !== "multivao") c.push(["vao", "Vão (m)", "num"]);
+    modo = modo === "espacamento" ? "espacamento" : "numero";
+    if (t !== "shed" && t !== "multivao") c.push(["vao", "Vão / largura (m)", "num"]);
+    c.push(["comprimento", "Comprimento do galpão (m)", "num"]);
     c.push(["peDireito", t === "trelica-paralelos" || t === "trelica-trapezoidal" || t === "tesoura" || t === "tesoura-leve" ? "Altura do banzo de cima no pilar (m)" : "Pé-direito — altura do beiral (m)", "num"]);
     if (t !== "shed") c.push(["inclinacao", "Inclinação do telhado (%)", "num"]);
-    c.push(["espacamento", "Espaçamento dos pórticos (m)", "num"], ["nPorticos", "Número de pórticos", "int"]);
+    c.push(["definirPor", "Definir por", "sel", [["numero", "Número de pórticos"], ["espacamento", "Espaçamento desejado"]]]);
+    /* 21/11/2026: por NÚMERO o espaçamento é só leitura (comprimento ÷ (N−1)); por ESPAÇAMENTO o número é só leitura (⌈comprimento ÷ s⌉ + 1) */
+    if (modo === "espacamento") c.push(["espacamentoDesejado", "Espaçamento desejado (m)", "num"], ["ajuste", "Sobra do comprimento", "sel", [["iguais", "Vãos todos iguais (nunca maiores que o desejado)"], ["pontas", "Manter o desejado e ajustar os vãos das pontas"]]], ["nPorticos", "Número de pórticos (calculado)", "int", null, "ro"]);
+    else c.push(["nPorticos", "Número de pórticos", "int"], ["espacamento", "Espaçamento dos pórticos (calculado, m)", "num", null, "ro"]);
     if (t !== "coluna-trelicada" && t !== "tesoura-leve") c.push(["base", "Base dos pilares", "sel", SN]);   /* coluna de 2 banzos: banzos rotulados, engaste pelo binário */
     c.push(["fechamento", "Fechamento (laterais e oitões)", "sel", [["fechado", "Fechado — telha trapezoidal"], ["aberto", "Aberto"]]]);
     c.push(["contraventamento", "Contraventamento (vãos das pontas)", "sel", [["X-barra", "X de barra redonda"], ["X-cantoneira", "X de cantoneira"], ["nenhum", "Nenhum"]]]);
     if (t === "trelica-paralelos") c.push(["aguas", "Águas", "sel", [["2", "Duas águas"], ["1", "Uma água"]]]);
     if (t === "tesoura-leve") {
+      c.push(["sistemaTrelica", "Sistema da treliça", "sel", [["tubo", "Tubo (nós soldados tubo-tubo)"], ["cantoneira", "Cantoneira (2L costas com costas e chapa de nó)"]]], ["chapaNo", "Chapa de nó / folga da 2L (mm)", "num"]);
       c.push(["forma", "Tesoura", "sel", [["paralelos", "Banzos paralelos (duas águas)"], ["trapezoidal", "Trapezoidal (banzo de baixo reto)"]]], ["padrao", "Alma", "sel", [["howe", "Montante em todo nó, diagonais descendo para o meio"], ["warren", "Warren (montante só nas terças: banzo de cima com painel dobrado)"]]],
-             ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/20)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
-             ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_U.concat(S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["montante", "Perfil dos montantes (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
+             ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/15)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
+             ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_2L.concat(S_LEVE_U, S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["montante", "Perfil dos montantes (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
              ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
     }
     else if (/^trelica|^tesoura/.test(t)) {
@@ -76,7 +82,7 @@
     c.push(["terca", t === "tesoura-leve" ? "Perfil das terças internas" : "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
     c.push(["tapamento", "Coluna de tapamento (oitão fechado)", "cat", S_TUBO.concat(S_PRINC)]);
     if (true) c.push(["barraCv", "Barra do X (contraventamento)", "cat", S_BARRA], ["cantoneiraCv", "Cantoneira do X (contraventamento)", "cat", S_L]);
-    c.push(["x0", "Origem X (m)", "num"], ["z0", "Origem Z (m)", "num"], ["cota", "Cota da base (m)", "num"]);
+    c.push(["x0", "Origem X (m, largura)", "num"], ["z0", "Origem Z (m, comprimento)", "num"], ["cota", "Cota da base (m)", "num"]);
     return c;
   }
   function usos() { var M = global.AcoModeloLivre; return M && M.USOS ? M.USOS.filter(function (u) { return !u.cobertura; }).map(function (u) { return [u.id, u.grupo + " — " + u.local + (u.q != null ? " (" + br(u.q, u.q < 1 ? 2 : 1) + " kN/m²)" : " (informar)")]; }) : [["industrial-adm", "Edificações industriais — salas administrativas (2,5 kN/m²)"]]; }
@@ -102,6 +108,9 @@
       ".mpo-lado{display:flex;flex-direction:column;gap:8px}.mpo-prev{border:1px solid var(--linha);border-radius:8px;background:var(--surface);padding:6px;color:var(--texto)}.mpo-prev svg{width:100%;height:auto;display:block}" +
       ".mpo-res{font-size:12px;color:var(--texto);margin:0}.mpo-motor{font-size:12px;margin:0;color:var(--texto)}.mpo-nv{font-size:11px;color:var(--amarelo);margin:0;padding-left:16px}" +
       ".mpo-av{font-size:11px;color:var(--texto-fraco);margin:0;padding-left:16px;max-height:110px;overflow:auto}.mpo-erro{font-size:12px;color:var(--vermelho);margin:0;min-height:1.2em}" +
+      ".mpo-ro{background:var(--surface-2,transparent);opacity:.8}.mpo-lado [hidden]{display:none!important}.mpo-pos{font-size:12px;color:var(--texto);display:flex;flex-direction:column;gap:5px}.mpo-pos p{margin:0}.mpo-pos button{font-size:11px;margin:0 4px 4px 0}.mpo-pos .mpo-pos-r{font-size:11px;color:var(--texto-fraco)}" +
+      ".mpo-ajuda{border:1px solid var(--aco);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--texto);max-height:64vh;overflow:auto}.mpo-ajuda-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.mpo-ajuda h4{margin:0 0 4px;font-size:13px}.mpo-ajuda-cab button{font-size:11px;white-space:nowrap}" +
+      ".mpo-ajuda-svg svg{width:100%;height:auto;display:block}.mpo-ajuda-val{font-size:12px;margin:4px 0}.mpo-ajuda dl{margin:6px 0 0;font-size:12px}.mpo-ajuda dt{font-weight:700;margin-top:6px;color:var(--aco)}.mpo-ajuda dd{margin:2px 0 0;line-height:1.35}" +
       "@media (max-width:980px){.mpo-dlg{grid-template-columns:1fr}.mpo-tipos{max-height:none;flex-direction:row;flex-wrap:wrap}.mpo-tipo{width:220px}.mpo-campos{max-height:none}}";
     document.head.appendChild(s);
   }
@@ -142,10 +151,10 @@
       var par = alvo && alvo.info && alvo.info.par ? clone(alvo.info.par) : null;
       tipo = (alvo && alvo.info && alvo.info.tipo) || tipo || (this._ultimo && this._ultimo.tipo) || "alma-cheia-2";
       if (!par) par = this._ultimoPar && this._ultimoPar[tipo] ? clone(this._ultimoPar[tipo]) : M.padrao(tipo);
-      this._dlg = { tipo: tipo, par: M.normalizar(tipo, par), alvo: alvo };
+      this._dlg = { tipo: tipo, par: this.semear(tipo, par), alvo: alvo };
       var self = this, h = '<div class="mpo-dlg" data-modal-largo data-mpo="dlg"><div class="mpo-tipos" role="list" data-mpo="tipos">' + this.htmlTipos(tipo) + '</div><div class="mpo-campos" data-mpo="campos"></div>' +
-        '<div class="mpo-lado"><div class="mpo-prev" data-mpo="previa"></div><p class="mpo-motor" data-mpo="motor"></p><ul class="mpo-nv" data-mpo="nv"></ul><p class="mpo-res" data-mpo="resumo"></p><p class="mpo-erro" data-mpo="erro" role="alert"></p><ul class="mpo-av" data-mpo="avisos"></ul>' +
-        '<p class="muted" style="font-size:11px;margin:0">Os perfis são de <b>partida</b>: o cálculo confere todos e mostra o que não passa (e acha o mais leve, se pedido).</p></div></div>';
+        '<div class="mpo-lado"><div data-mpo="lado-resumo" class="mpo-lado"><div class="mpo-prev" data-mpo="previa"></div><div class="mpo-pos" data-mpo="posic"></div><p class="mpo-motor" data-mpo="motor"></p><ul class="mpo-nv" data-mpo="nv"></ul><p class="mpo-res" data-mpo="resumo"></p><p class="mpo-erro" data-mpo="erro" role="alert"></p><ul class="mpo-av" data-mpo="avisos"></ul>' +
+        '<p class="muted" style="font-size:11px;margin:0">Os perfis são de <b>partida</b>: o cálculo confere todos e mostra o que não passa (e acha o mais leve, se pedido).</p></div><div data-mpo="ajuda" class="mpo-ajuda-box" hidden></div></div></div>';
       var bts = [];
       if (alvo) bts.push({ texto: "Atualizar no lugar", classe: "primary", onClick: function () { self._confirmar(false, true); } });
       bts.push({ texto: "Criar e calcular", classe: alvo ? "" : "primary", onClick: function () { self._confirmar(true, !!alvo); } });
@@ -161,6 +170,16 @@
           if (b4) self.gerarPreset4(b4.getAttribute("data-mpo-preset4"));
           var bc = c ? ev.target.closest("[data-mpo-comparar]") : null; if (bc) self.comparar(bc.getAttribute("data-mpo-comparar"));
         });
+        /* 21/11/2026: posições dos pórticos (sugestões, pontas) e AJUDA por campo (cartão no painel da direita ao focar/clicar) */
+        raiz.addEventListener("click", function (ev) {
+          var c = ev.target && ev.target.closest, bp = c ? ev.target.closest("[data-mpo-pos]") : null, bv = c ? ev.target.closest("[data-mpo-voltar]") : null, bf = c ? ev.target.closest('[data-mpo="campos"] [data-mpo-c]') : null;
+          if (bp) self.aplicarPosicao(bp.getAttribute("data-mpo-pos"));
+          else if (bv) self.ajuda(null);
+          else if (bf) self.ajuda(bf.getAttribute("data-mpo-c"));
+        });
+        raiz.addEventListener("focusin", function (ev) { var f = ev.target && ev.target.closest ? ev.target.closest('[data-mpo="campos"] [data-mpo-c]') : null; if (f) self.ajuda(f.getAttribute("data-mpo-c")); });
+        raiz.addEventListener("focusout", function (ev) { var f = ev.target && ev.target.closest ? ev.target.closest('[data-mpo="campos"] [data-mpo-c]') : null; if (f) setTimeout(function () { var a = document.activeElement; if (!(a && a.closest && a.closest('[data-mpo="campos"] [data-mpo-c]'))) self.ajuda(null); }, 0); });
+        raiz.addEventListener("change", function (ev) { var f = ev.target && ev.target.getAttribute ? ev.target.getAttribute("data-mpo-c") : null; if (f === "definirPor") self.trocarModoPosicao(); });
         var tm = null;
         raiz.addEventListener("input", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) { clearTimeout(tm); tm = setTimeout(function () { self.previa(); }, 200); } });
         raiz.addEventListener("change", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) self.previa(); });
@@ -179,25 +198,25 @@
     trocarTipo: function (t) {
       var M = MP(), d = this._dlg; if (!M || !d || !M.TIPOS[t] || t === d.tipo) return;
       this._ultimoPar = this._ultimoPar || {}; this._ultimoPar[d.tipo] = this.ler();
-      d.tipo = t; d.par = M.normalizar(t, this._ultimoPar[t] || M.padrao(t));
+      d.tipo = t; d.par = this.semear(t, this._ultimoPar[t] || M.padrao(t));
       var tp = d.raiz && d.raiz.querySelector('[data-mpo="tipos"]'); if (tp) Array.prototype.forEach.call(tp.querySelectorAll("[data-mpo-tipo]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-mpo-tipo") === t)); });
       this.desenharCampos(); this.previa();
     },
     desenharCampos: function () {
       var d = this._dlg; if (!d || !d.raiz) return;
       var el = d.raiz.querySelector('[data-mpo="campos"]'), p = d.par, h = "";
-      campos(d.tipo).forEach(function (c) {
+      campos(d.tipo, p.definirPor).forEach(function (c) {
         var id = c[0], v = p[id];
         h += "<label><span>" + esc(c[1]) + "</span>";
         if (c[2] === "sel") h += '<select data-mpo-c="' + id + '">' + c[3].map(function (op) { return '<option value="' + esc(op[0]) + '"' + (String(op[0]) === String(v) ? " selected" : "") + ">" + esc(op[1]) + "</option>"; }).join("") + "</select>";
         else if (c[2] === "cat") h += '<input data-mpo-c="' + id + '" list="mpo-dl-' + id + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false"><datalist id="mpo-dl-' + id + '">' + datalist(c[3]).map(function (n) { return '<option value="' + esc(n) + '">'; }).join("") + "</datalist>";
-        else h += '<input data-mpo-c="' + id + '" inputmode="decimal" value="' + esc(v === "" || v == null ? "" : br(v, c[2] === "int" ? 0 : 3)) + '">';
+        else h += '<input data-mpo-c="' + id + '" inputmode="decimal"' + (c[4] === "ro" ? ' readonly class="mpo-ro" title="Calculado pelo sistema"' : "") + ' value="' + esc(v === "" || v == null ? "" : br(v, c[2] === "int" ? 0 : 3)) + '">';
         h += "</label>";
       });
       /* pré-configuração "Pedido Gabriel" (tesoura leve): uma variante no formulário, ou as 4 lado a lado no modelo */
       var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
       if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
-        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#b3261e;color:#fff;font-weight:700">EM REVISÃO — o cálculo atual reprova; use Calcular e corrigir / não fabricar</span></div>' + h;
+        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#b3261e;color:#fff;font-weight:700">EM REVISÃO — barras e nós passam nas 4 variantes; faltam as placas de base e as ligações rotuladas (não dimensionadas): não fabricar</span></div>' + h;
       if (el) el.innerHTML = h;
     },
     /* a variante no formulário */
@@ -246,10 +265,45 @@
       if (!E || !E.ensureExcelJS) { toast("O gerador de Excel não carregou.", "erro"); return; }
       E.ensureExcelJS(function () { var wb = C.xlsx(ls, global.ExcelJS, { titulo: "Comparativo — " + M.PRESETS[id].rotulo, data: Date.now() }); wb.xlsx.writeBuffer().then(function (buf) { if (U && U.baixar) U.baixar("comparativo-pedido-gabriel.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); }); });
     },
+    /* os parâmetros de partida da tela: sempre com o comprimento e o "definir por" (padrão: número de pórticos) */
+    semear: function (tipo, par) {
+      var M = MP(), n1 = M.normalizar(tipo, par), q = clone(n1);
+      if (q.definirPor !== "espacamento") q.definirPor = "numero";
+      if (q.ajuste !== "pontas") q.ajuste = "iguais";
+      return M.normalizar(tipo, q);
+    },
+    trocarModoPosicao: function () {
+      var d = this._dlg, M = MP(); if (!d || !M) return;
+      var p = this.ler();
+      if (p.definirPor === "espacamento" && !(num(p.espacamentoDesejado, 0) > 0)) p.espacamentoDesejado = d.par.espacamento || p.espacamento;
+      d.par = M.normalizar(d.tipo, p); this.desenharCampos(); this.previa();
+      var sm = d.raiz && d.raiz.querySelector('[data-mpo-c="definirPor"]'); if (sm) sm.focus();
+    },
+    /* "esp:5" (usar esse espaçamento, vãos iguais) · "pontas" · "iguais" */
+    aplicarPosicao: function (acao) {
+      var d = this._dlg, M = MP(); if (!d || !M) return;
+      var p = this.ler(), q = String(acao).split(":");
+      p.definirPor = "espacamento";
+      if (q[0] === "esp") { p.espacamentoDesejado = num(q[1], p.espacamentoDesejado); p.ajuste = "iguais"; }
+      else if (q[0] === "pontas") p.ajuste = "pontas";
+      else p.ajuste = "iguais";
+      d.par = M.normalizar(d.tipo, p); this.desenharCampos(); this.previa();
+    },
+    /* AJUDA POR CAMPO (js/metalporticosajuda.js): id = o campo; null volta ao resumo */
+    ajuda: function (id) {
+      var d = this._dlg; if (!d || !d.raiz) return false;
+      var A = global.MetalPorticosAjuda, box = d.raiz.querySelector('[data-mpo="ajuda"]'), res = d.raiz.querySelector('[data-mpo="lado-resumo"]'); if (!box || !res) return false;
+      if (!id || !A) { box.hidden = true; box.innerHTML = ""; res.hidden = false; return true; }
+      var el = d.raiz.querySelector('[data-mpo-c="' + id + '"]'), rot = id, sm = d.raiz.querySelector('[data-mpo-c="definirPor"]');
+      campos(d.tipo, sm ? sm.value : d.par.definirPor).forEach(function (c) { if (c[0] === id) rot = c[1]; });
+      var val = el ? (el.tagName === "SELECT" ? (el.options[el.selectedIndex] ? el.options[el.selectedIndex].text : "") : el.value) : "";
+      box.innerHTML = A.cartao(id, { rotulo: rot, valor: val }); box.hidden = false; res.hidden = true; return true;
+    },
     ler: function () {
       var d = this._dlg; if (!d) return null;
       var p = clone(d.par), raiz = d.raiz; if (!raiz) return p;
-      campos(d.tipo).forEach(function (c) {
+      var sm = raiz.querySelector('[data-mpo-c="definirPor"]');
+      campos(d.tipo, sm ? sm.value : p.definirPor).forEach(function (c) {
         var el = raiz.querySelector('[data-mpo-c="' + c[0] + '"]'); if (!el) return;
         if (c[2] === "sel" || c[2] === "cat") p[c[0]] = String(el.value).trim();
         else { var s = String(el.value).trim(); if (s === "" && /^(rodaMax|rodaMin|rodaTransv|forcaLong|qInformado)$/.test(c[0])) p[c[0]] = ""; else { var v = num(s, NaN); if (isFinite(v)) p[c[0]] = v; } }
@@ -261,7 +315,12 @@
       var d = this._dlg, M = MP(); if (!d || !M || !d.raiz || !d.raiz.isConnected) return null;
       var p = this.ler(), T = M.TIPOS[d.tipo], el = function (s) { return d.raiz.querySelector('[data-mpo="' + s + '"]'); };
       var e = M.validar(d.tipo, p), m = e ? null : M.modelo(d.tipo, p);
-      el("previa").innerHTML = M.esquema(d.tipo, p, { w: 320, h: 170 });
+      el("previa").innerHTML = M.esquema(d.tipo, p, { w: 320, h: 170 }) + (e ? "" : M.esquemaPlanta(d.tipo, p, { w: 320, h: 78 }));
+      var pnP = e ? null : M.normalizar(d.tipo, p);
+      el("posic").innerHTML = pnP ? this.htmlPosicoes(pnP, T) : "";
+      /* 21/11/2026: os campos "calculado" (Nº de pórticos no modo espaçamento; espaçamento no modo número) acompanham a conta —
+         antes ficavam com o valor do preset (6) enquanto o texto dizia 9 pórticos */
+      if (pnP) ["nPorticos", "espacamento"].forEach(function (k) { var f = d.raiz.querySelector('[data-mpo="campos"] input.mpo-ro[data-mpo-c="' + k + '"]'); if (f && pnP[k] != null) f.value = br(pnP[k], k === "nPorticos" ? 0 : 3); });
       el("motor").innerHTML = "<b>Cálculo:</b> " + (T.motor === "galpao" ? "motor do galpão (pórtico, terças, travessas, vento da NBR 6123, ligações e placas de base) — abre o Cálculo do galpão" : "estrutura desenhada (todas as barras, envoltório e vento da NBR 6123) — abre o Cálculo da estrutura desenhada");
       var nv = (T.naoVerifica || []).slice();
       if (d.tipo === "multivao" && p.cobertura !== "geminada") nv = [];
@@ -272,6 +331,24 @@
       el("avisos").innerHTML = m && m.ok ? m.avisos.concat(m.decisoes).slice(0, 5).map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") : "";
       d.parLido = p;
       return m;
+    },
+    /* o texto das posições: a conta do espaçamento, os divisores exatos e a opção de ajustar as pontas */
+    htmlPosicoes: function (pn, T) {
+      var M = MP(), r = pn && pn.posicoesInfo; if (!r) return "";
+      var h = "<p><b>Pórticos:</b> " + esc(r.explicacao) + "</p>";
+      if (pn.definirPor === "espacamento") {
+        var s = num(pn.espacamentoDesejado, pn.espacamento), semSobra = Math.abs(pn.comprimento / s - Math.round(pn.comprimento / s)) < 1e-9;
+        (r.sugestoes || []).forEach(function (x) { h += '<button type="button" data-mpo-pos="esp:' + x.v + '">Usar ' + br(x.v, 2) + " (" + x.m + " vãos)</button>"; });
+        if (!semSobra && T && T.motor !== "galpao") {
+          var pp = M.posicoesPorticos(pn.comprimento, { modo: "espacamento", s: s, ajuste: "pontas" });
+          if (pp.ok && pp.pontas) {
+            if (pn.ajuste === "pontas") h += '<button type="button" data-mpo-pos="iguais">Voltar a vãos todos iguais</button>';
+            else h += '<button type="button" data-mpo-pos="pontas">Manter ' + br(s, 2) + " e ajustar os vãos das pontas</button>";
+            h += '<p class="mpo-pos-r">' + pp.pontas.internos + " vãos de " + br(s, 2) + " + 2 vãos de pontas de " + br(pp.pontas.ponta, 3) + " m (" + pp.n + " pórticos)" + (pp.pontas.juntou ? " — ponta menor que metade do espaçamento, juntada ao vão vizinho" : "") + ".</p>";
+          }
+        } else if (!semSobra && T && T.motor === "galpao") h += '<p class="mpo-pos-r">Neste tipo o motor do galpão só faz vãos iguais.</p>';
+      }
+      return h;
     },
     _confirmar: function (calcular, atualizar) {
       var d = this._dlg, M = MP(); if (!d || !M) return false;

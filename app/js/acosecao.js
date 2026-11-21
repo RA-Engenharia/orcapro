@@ -347,6 +347,9 @@
     if (forma === "I") g = perfilI(cat.d, cat.bf, cat.tw, cat.tf, num(cat.r, 0));
     else if (forma === "U") g = perfilU(cat.d, cat.bf, cat.tw, cat.tf, num(cat.r, 0));
     else if (forma === "L") g = cantoneira(num(cat.a, cat.d), num(cat.b, cat.bf), cat.t);
+    else if (forma === "2L") {   /* dupla cantoneira (js/perfisaco.js AM-2L): as propriedades vêm todas da linha (Steiner da simples) */
+      g = { forma: "2L", a: cat.a, b: cat.b, t: cat.t, e: cat.e, A: cat.A, Ix: cat.Ix, Iy: cat.Iy, Wx: cat.Wx, Wy: cat.Wy, rx: cat.rx, ry: cat.ry, rz1: cat.rz1, xc: cat.xc, yc: cat.yc, J: cat.J, Cw: 0, x0: 0, y0: cat.y0, massa: cat.massa, simples: cat.simples };
+    }
     else if (forma === "tubo-ret") g = tuboRet(cat.h, cat.b, num(cat.t, cat.tn), num(cat.ro, 2 * num(cat.t, cat.tn)));
     else if (forma === "tubo-circ") g = tuboCirc(cat.D, num(cat.t, cat.tn));
     else if (forma === "circ") g = barraRedonda(cat.d);
@@ -359,6 +362,7 @@
     if (fin(cat.massa) && cat.massa > 0) { o.massa = cat.massa; origem.massa = "catálogo"; }
     if (!(fin(cat.rx) && cat.rx > 0) && o.A > 0) o.rx = Math.sqrt(o.Ix / o.A);
     if (!(fin(cat.ry) && cat.ry > 0) && o.A > 0) o.ry = Math.sqrt(o.Iy / o.A);
+    if (forma === "2L") { o.Cw = 0; o.x0 = 0; o.y0 = num(cat.y0, 0); origem.Cw = "adotado 0 (a favor)"; }
     if (forma === "I" && !(fin(cat.Cw) && cat.Cw > 0)) { o.Cw = o.Iy * sq(o.d - o.tf) / 4; origem.Cw = "geometria (Iy·h0²/4, Iy do catálogo)"; }
     o.r0 = Math.sqrt(o.rx * o.rx + o.ry * o.ry + sq(num(o.x0, 0)) + sq(num(o.y0, 0)));
     o.origem = origem; o.forma = forma; o.nome = cat.nome || cat.designacao || "";

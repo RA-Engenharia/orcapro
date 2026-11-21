@@ -83,7 +83,7 @@
       var htwU = (s.d - 2 * s.tf) / s.tw; lim = 1.49 * Math.sqrt(E / fy);
       if (htwU > lim) { var beU = bef(s.d - 2 * s.tf, s.tw, E, sigma || fy, 0.34); Qa = (s.A - (s.d - 2 * s.tf - beU) * s.tw) / s.A; }
       passos.push({ rotulo: "Alma (AA, grupo 2): h/tw", valor: br(htwU, 2), extra: "limite " + br(lim, 2) + " → Qa = " + br(Qa, 3) });
-    } else if (f === "L") {
+    } else if (f === "L" || f === "2L") {
       var t = s.t, bL = Math.max(num(s.a, 0), num(s.b, 0)), btL = bL / t, gL = Qs_AL(btL, fy, E, 3); Qs = gL.Qs;
       passos.push({ rotulo: "Aba da cantoneira (AL, grupo 3): b/t", valor: br(btL, 2), extra: "limite " + br(gL.lim, 2) + " → Qs = " + br(Qs, 3) });
     } else if (f === "tubo-ret") {
@@ -142,7 +142,7 @@
     } else if (s.forma === "U") {
       o.push({ nome: "mesas (AL)", b: s.bf, t: s.tf, lim: 0.56 * r, c1: 0.22, c2: 1.49, n: 2 });
       o.push({ nome: "alma (AA)", b: s.d - 2 * s.tf, t: s.tw, lim: 1.49 * r, c1: 0.18, c2: 1.31, n: 1 });
-    } else if (s.forma === "L") {
+    } else if (s.forma === "L" || s.forma === "2L") {
       o.push({ nome: "aba maior (AL)", b: Math.max(num(s.a, 0), num(s.b, 0)), t: s.t, lim: 0.45 * r, c1: 0.22, c2: 1.49, n: 1 });
       o.push({ nome: "aba menor (AL)", b: Math.min(num(s.a, 0), num(s.b, 0)), t: s.t, lim: 0.45 * r, c1: 0.22, c2: 1.49, n: 1 });
     } else if (s.forma === "tubo-ret") {
@@ -187,13 +187,33 @@
     if (edicao === "2008") return compressao2008(s, aco, E, G, fl);
     var g = gamas(), fy = aco.fy, Lx = fl.Lx * 1000, Ly = fl.Ly * 1000, Lz = num(fl.Lz, fl.Ly) * 1000, passos = [], avisos = [];
     var e = Ne(s, E, G, Lx, Ly, Lz);
+    /* 21/11/2026 — NBR 8800:2008, 5.3.4.4 (cantoneira SIMPLES ligada por UMA aba, barra de treliça plana com as barras da alma do
+       mesmo lado da chapa/banzo): esbeltez equivalente com rx1 = raio em torno do eixo geométrico PARALELO à aba ligada
+         L/rx1 ≤ 80: K·L/r = 72 + 0,75·L/rx1;   L/rx1 > 80: K·L/r = 32 + 1,25·L/rx1 (≤ 200)
+       e Ne = π²·E·A/(K·L/r)², sem flexo-torção (a regra já cobre a excentricidade da ligação). L = o comprimento entre nós (máx Lx, Ly). */
+    var eqL = null;
+    if (s.forma === "L" && fl.umaAba) {
+      var Lmx = Math.max(Lx, Ly), rx1 = num(s.rx, Math.sqrt(s.Ix / s.A)), l1 = Lmx / rx1, keq = l1 <= 80 ? 72 + 0.75 * l1 : 32 + 1.25 * l1;
+      eqL = { l1: l1, keq: keq };
+      e = { Ne: PI * PI * E * s.A / (keq * keq), Nex: null, Ney: null, Nez: null, modo: "esbeltez equivalente 5.3.4.4" };
+      passos.push({ rotulo: "Cantoneira simples ligada por uma aba (NBR 8800, 5.3.4.4)", formula: l1 <= 80 ? "K·L/r = 72 + 0,75·L/rx1" : "K·L/r = 32 + 1,25·L/rx1", valor: br(keq, 1), extra: "L/rx1 = " + br(Lmx, 0) + "/" + br(rx1, 2) + " = " + br(l1, 1) + (keq > 200 ? " — ⚠ acima de 200" : "") });
+    }
     var l0 = Math.sqrt(s.A * fy / e.Ne), chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0);
     var frio = conformadoFrio(s, aco) && s.forma === "tubo-ret", gC = frio ? 1.20 : g.a1;
     var ae = frio ? areaEfetiva14762(s, chi * fy, E) : areaEfetiva(s, fy, E, chi);
     var NRd = chi * ae.Aef * fy / gC;
     if (frio) avisos.push("Tubo com costura conformado a frio (" + (aco.id || "NBR 8261") + "): compressão pela NBR 14762:2010, 9.7.2 (largura efetiva 9.2.2, γ = 1,20).");
     var esb = Math.max(Lx / num(s.rx, Math.sqrt(s.Ix / s.A)), Ly / num(s.ry, Math.sqrt(s.Iy / s.A)));
-    if (s.forma === "L" && s.rz) esb = Math.max(esb, Math.min(Lx, Ly) / s.rz);
+    if (s.forma === "L" && s.rz && !eqL) esb = Math.max(esb, Math.min(Lx, Ly) / s.rz);
+    if (eqL) esb = Math.max(eqL.keq, Math.max(Lx, Ly) / num(s.rz, 1e9));
+    var esp = null;
+    if (s.forma === "2L" && num(s.rz1, 0) > 0) {
+      /* NBR 8800, 5.3.4.2: barra composta por cantoneiras com chapas espaçadoras — a esbeltez de UMA cantoneira entre chapas
+         (ℓ/rz1) não pode passar de 1/2 da maior esbeltez da barra composta. Daí o espaçamento máximo e o número de chapas */
+      var lmax = 0.5 * esb * s.rz1, Lb2 = Math.max(Lx, Ly), nEsp = Math.max(0, Math.ceil(Lb2 / lmax - 1e-9) - 1);
+      esp = { lmax: lmax, n: nEsp, L: Lb2 };
+      passos.push({ rotulo: "Chapas espaçadoras (NBR 8800, 5.3.4.2)", formula: "ℓ/rz1 ≤ ½·λ da barra → ℓ ≤ ½·" + br(esb, 0) + "·" + br(s.rz1, 1), valor: nEsp + " chapa(s) espaçadora(s) (ℓ ≤ " + br(lmax, 0) + " mm em " + br(Lb2, 0) + " mm)" });
+    }
     passos.push({ rotulo: "Comprimentos de flambagem (K = 1: análise de 2ª ordem com imperfeições)", valor: "Lx = " + br(Lx / 1000, 2) + " m; Ly = " + br(Ly / 1000, 2) + " m; Lz = " + br(Lz / 1000, 2) + " m" });
     passos.push({ rotulo: "Força de flambagem elástica Ne (Anexo E) — modo " + e.modo, formula: "Nex = π²·E·Ix/Lx²; Ney = π²·E·Iy/Ly²" + (e.Nez != null ? "; Nez = [π²·E·Cw/Lz² + G·J]/r0²" : ""), valor: br(e.Ne / 1000, 1) + " kN", extra: "Nex = " + br(e.Nex / 1000, 1) + "; Ney = " + br(e.Ney / 1000, 1) + (e.Nez != null ? "; Nez = " + br(e.Nez / 1000, 1) : "") + " kN" });
     passos.push({ rotulo: "Índice de esbeltez reduzido (NBR 8800:2024: sem o fator Q)", formula: "λ0 = √(Ag·fy/Ne)", valor: br(l0, 3) });
@@ -203,7 +223,7 @@
     passos.push({ rotulo: "Força axial resistente de cálculo" + (frio ? " (NBR 14762:2010, 9.7.2)" : ""), formula: frio ? "Nc,Rd = χ·Aef·fy/γ, γ = 1,20" : "Nc,Rd = χ·Aef·fy/γa1", valor: br(NRd / 1000, 1) + " kN" });
     passos.push({ rotulo: "Índice de esbeltez KL/r (recomendado ≤ 200 — 5.3.7.1 da 2024)", valor: br(esb, 0), extra: esb > 200 ? "⚠ acima de 200" : "ok" });
     if (esb > 200) avisos.push("Esbeltez " + br(esb, 0) + " > 200 na compressão (NBR 8800).");
-    return { NRd: NRd / 1000, passos: passos, avisos: avisos, chi: chi, Q: ae.Aef / s.A, Aef: ae.Aef, esbeltez: esb, Ne: e.Ne / 1000 };
+    return { NRd: NRd / 1000, passos: passos, avisos: avisos, chi: chi, Q: ae.Aef / s.A, Aef: ae.Aef, esbeltez: esb, Ne: e.Ne / 1000, espacadores: esp, eqL: eqL };
   }
 
   /* compressão pela NBR 8800:2008 (fator Q do Anexo F) — mantida para conferir os exemplos publicados (quase todos de 2008) */
@@ -362,7 +382,7 @@
       var Dt = s.D / s.t, fcr = Math.min(0.60 * fy, 0.78 * E / Math.pow(Dt, 1.5)), V = 0.5 * fcr * s.A / g.a1;
       return { VRd: V / 1000, passos: [{ rotulo: "Cortante do tubo circular (5.4.3.5)", formula: "VRd = 0,5·fcr·Ag/γa1", valor: br(V / 1000, 1) + " kN" }] };
     }
-    if (s.forma === "circ" || s.forma === "L") { var Vb = 0.6 * fy * s.A * 0.5 / g.a1; return { VRd: Vb / 1000, passos: [{ rotulo: "Cortante (seção maciça/aba — 0,6·fy·A/2/γa1, a favor da segurança)", valor: br(Vb / 1000, 1) + " kN" }] }; }
+    if (s.forma === "circ" || s.forma === "L" || s.forma === "2L") { var Vb = 0.6 * fy * s.A * 0.5 / g.a1; return { VRd: Vb / 1000, passos: [{ rotulo: "Cortante (seção maciça/aba — 0,6·fy·A/2/γa1, a favor da segurança)", valor: br(Vb / 1000, 1) + " kN" }] }; }
     if (eixo === "y") { /* cortante no plano das mesas */
       if (s.forma === "tubo-ret") { Aw = 2 * s.b * s.t; lam = num(s.bPlana, s.b - 3 * s.t) / s.t; }
       else { Aw = 2 * s.bf * s.tf; lam = s.forma === "U" ? s.bf / s.tf : s.bf / (2 * s.tf); kv = 1.2; }

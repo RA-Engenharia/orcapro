@@ -100,7 +100,7 @@
     pecas.forEach(function (p) { [p.A, p.B].forEach(function (q) { xs.push(q[0]); ys.push(q[1]); zs.push(q[2]); }); });
     function mn(a) { return Math.min.apply(null, a); } function mx(a) { return Math.max.apply(null, a); }
     var par = M.par || {}, nP = num(par.nPorticos, 0), esp = num(par.espacamento, 0);
-    var zP = []; for (var i = 0; i < nP; i++) zP.push(num(par.z0, 0) + i * esp);
+    var zP = []; for (var i = 0; i < nP; i++) zP.push(num(par.z0, 0) + (Array.isArray(par.posicoes) && par.posicoes.length === nP ? num(par.posicoes[i], 0) : i * esp));
     var vao0 = num(par.vao, mx(xs) - mn(xs)), ex0 = num(par.x0, 0);
     return { M: M, par: par, pecas: pecas, ex0: ex0, ex1: ex0 + vao0, x0: mn(xs), x1: mx(xs), y0: mn(ys), y1: mx(ys), z0: mn(zs), z1: mx(zs), zP: zP, vao: num(par.vao, mx(xs) - mn(xs)), pe: num(par.peDireito, 0) };
   }
@@ -674,7 +674,7 @@
       "Aço dos perfis formados a frio: " + txt(p.acoFrio || "-") + "; tubos sem costura: " + txt(p.acoTubo || "-") + "; tubos com costura (Tuper): " + txt(p.acoTuboCostura || "NBR 8261 Gr A") + " — comprar pela NBR 8261 com certificado de usina (sem a norma o escoamento não é garantido)" + "; cantoneiras e barras: " + txt(p.acoBarra || "-") + "; chapas: ASTM A36.",
       "Solda: eletrodo E70XX (AWS A5.1) ou arame ER70S-6 (AWS A5.18); simbologia AWS A2.4.",
       "Parafusos de ligação (quando houver): ASTM A325; chumbadores ASTM F1554 Gr.36.",
-      "Desenhos gerados do modelo da estrutura (" + txt((c.tipo && c.tipo.rotulo) || c.d.M.tipo) + "): vão " + br(c.d.vao, 2) + " m, " + p.nPorticos + " pórticos a cada " + br(p.espacamento, 2) + " m, pé-direito " + br(c.d.pe, 2) + " m.",
+      "Desenhos gerados do modelo da estrutura (" + txt((c.tipo && c.tipo.rotulo) || c.d.M.tipo) + "): vão " + br(c.d.vao, 2) + " m, " + p.nPorticos + " pórticos " + (p.posicoes && p.posicoesInfo && !p.posicoesInfo.uniforme ? "em vãos de " + br(p.espacamentoMin, 2) + " a " + br(p.espacamento, 2) + " m" : "a cada " + br(p.espacamento, 2) + " m") + ", pé-direito " + br(c.d.pe, 2) + " m.",
       "Conferir as medidas na obra antes de fabricar."
     ] };
     var b2 = { titulo: "LIGAÇÕES", itens: [

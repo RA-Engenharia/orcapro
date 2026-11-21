@@ -175,7 +175,7 @@
       else if (!DUAS_AGUAS[t]) avisos.push("Vedação: a tipologia " + t + " (telhado múltiplo/geminado) ainda não desenha as telhas — lance pelo Telhado.");
       else {
         var B = num(p.vao, 0), H = num(p.peDireito, 0), i = num(p.inclinacao, 0) / 100, th = Math.atan(i), co = Math.cos(th);
-        var X0 = num(p.x0, 0), Z0 = num(p.z0, 0), B0 = num(p.cota, 0), Lt = (num(p.nPorticos, 2) - 1) * num(p.espacamento, 6);
+        var X0 = num(p.x0, 0), Z0 = num(p.z0, 0), B0 = num(p.cota, 0), Lt = p.posicoes ? num(p.posicoes[p.posicoes.length - 1], 0) : (num(p.nPorticos, 2) - 1) * num(p.espacamento, 6);
         var yLin = function (xl) { return B0 + H + i * Math.min(xl, B - xl); };
         var dT = 0, xmin = 1e9, xmax = -1e9, zmin = 1e9, zmax = -1e9;
         g.pecas.concat(novas).forEach(function (c) {

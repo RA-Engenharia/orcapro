@@ -74,6 +74,9 @@
     op = op || {};
     var doc = typeof document !== "undefined" ? document : null, el = typeof alvo === "string" && doc ? doc.querySelector(alvo) : alvo;
     garantirCss(doc);
+    /* 21/11/2026: fundo decorativo de estrutura metálica atrás do cartão (js/fundometal.js) — op.fundo: true (o .ml-palco ou o pai do cartão) ou o elemento/seletor */
+    var fundo = null;
+    if (op.fundo && el && global.FundoMetal && doc) { try { var hosp = op.fundo === true ? (el.closest && (el.closest(".ml-palco") || el.closest("[data-fundo-metal-host]"))) || el.parentNode : (typeof op.fundo === "string" ? doc.querySelector(op.fundo) : op.fundo); if (hosp) fundo = global.FundoMetal.montar(hosp, {}); } catch (eF) { fundo = null; } }
     var ind = !!op.indeterminado || !(op.etapas && op.etapas.length), est = estimador(ind ? [{ id: "_", peso: 1 }] : op.etapas, {}), ult = 0, timer = null, vivo = true, intervalo = num(op.intervaloMs, 250);
     if (op.texto) est.etapa(ind ? "_" : op.etapas[0].id, 0, op.texto);
     function desenhar() {
@@ -91,8 +94,8 @@
       etapa: function (id, frac, txt) { est.etapa(ind ? "_" : id, frac, txt); agendar(); return P; },
       texto: function (t) { est.etapa(ind ? "_" : (est.estado().etapa || op.etapas[0].id), 0, t); agendar(); return P; },
       estado: function () { return est.estado(); },
-      fim: function () { vivo = false; clearInterval(relogio); est.concluir(); if (timer) clearTimeout(timer); desenhar(); return P; },
-      erro: function (msg) { vivo = false; clearInterval(relogio); if (timer) clearTimeout(timer); if (el) el.innerHTML = '<div class="prog prog-erro" role="alert">' + esc(msg) + "</div>"; return P; }
+      fim: function () { if (fundo) { fundo.remover(); fundo = null; } vivo = false; clearInterval(relogio); est.concluir(); if (timer) clearTimeout(timer); desenhar(); return P; },
+      erro: function (msg) { if (fundo) { fundo.remover(); fundo = null; } vivo = false; clearInterval(relogio); if (timer) clearTimeout(timer); if (el) el.innerHTML = '<div class="prog prog-erro" role="alert">' + esc(msg) + "</div>"; return P; }
     };
     return P;
   }
