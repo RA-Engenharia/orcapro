@@ -506,7 +506,7 @@
     function confereLig(ligId, L1, m, lado, onde) {
       var ch = ligId + "|" + m.id + "|" + lado; if (ligVistas[ch]) return; ligVistas[ch] = 1;
       var nomeL = (L1 && L1.tipologia) || "ligação " + ligId, es = L1 && L1.entrada && arr(L1.entrada.esforcos);
-      if (!es || !es.length) { ligDesat.push({ lig: String(ligId), tipologia: (L1 && L1.tipologia) || null, peca: m.peca, membro: m.id, lado: lado, semEsforco: true, texto: nomeL + " (" + onde + " de " + m.id + "): esforços da ligação não gravados — redimensione para conferir" }); return; }
+      if (!es || !es.length) { ligDesat.push({ lig: String(ligId), ligDim: (L1 && L1.ligDim) || null, tipologia: (L1 && L1.tipologia) || null, peca: m.peca, membro: m.id, lado: lado, semEsforco: true, texto: nomeL + " (" + onde + " de " + m.id + "): esforços da ligação não gravados — redimensione para conferir" }); return; }
       var g = { M: 0, V: 0, N: 0 }, a = { M: 0, V: 0, N: 0, comb: null }, viu = false;
       es.forEach(function (q) { g.M = Math.max(g.M, Math.abs(num(q.M, 0))); g.V = Math.max(g.V, Math.abs(num(q.V, Math.sqrt(Math.pow(num(q.Vx, 0), 2) + Math.pow(num(q.Vz, 0), 2))))); g.N = Math.max(g.N, Math.abs(num(q.N, 0))); });
       elu.forEach(function (cb) {
@@ -520,7 +520,7 @@
       if (passa(a.M, g.M)) o.push("M " + br(g.M, 2) + " → " + br(a.M, 2) + " kN·m");
       if (passa(a.V, g.V)) o.push("V " + br(g.V, 2) + " → " + br(a.V, 2) + " kN");
       if (passa(a.N, g.N)) o.push("N " + br(g.N, 2) + " → " + br(a.N, 2) + " kN");
-      if (o.length) ligDesat.push({ lig: String(ligId), tipologia: L1.tipologia || null, peca: m.peca, membro: m.id, lado: lado, gravado: g, atual: a, texto: nomeL + " (" + onde + " de " + m.id + ", " + m.secao.nome + "): " + o.join("; ") });
+      if (o.length) ligDesat.push({ lig: String(ligId), ligDim: L1.ligDim || null, tipologia: L1.tipologia || null, peca: m.peca, membro: m.id, lado: lado, gravado: g, atual: a, texto: nomeL + " (" + onde + " de " + m.id + ", " + m.secao.nome + "): " + o.join("; ") });
     }
     if (OPC.ligDesatualizada) {
       var LG = (G.lido && G.lido.ligacoes) || {};
@@ -865,6 +865,43 @@
       if (vc.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vc.reprovados; }
       if (Env()) r.situacao = Env().situacao({ ok: true, aprovado: aprovBarras0 && !(r.nosTubo && r.nosTubo.reprovados) && !vc.reprovados }, r.naoVerificados);
       if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false;
+    }
+    /* 21/11/2026: DIMENSIONAMENTO DAS LIGAÇÕES (js/metalligdim.js) — parafusos por ligação, placas de base + chumbadores, pontas
+       rotuladas, mão-francesa soldada e alma do U sob a chapa de nó, com a envoltória ELU de cada barra. O que ficou dimensionado
+       sai do "Ligações da tipologia"; tudo dimensionado → o tema some (e a situação pode virar "aprovado") */
+    var LD = dep("MetalLigDim", "./metalligdim.js");
+    if (r && r.ok && r.modelo && LD && arr(r.modelo.membros).some(function (m) { return m.calc && m.calc.grupoTip; })) {
+      var m0 = arr(r.modelo.membros).filter(function (m) { return m.calc && m.calc.grupoTip; })[0].calc, mf0 = arr(r.modelo.membros).filter(function (m) { return m.calc && m.calc.grupoTip === "maoFrancesa"; })[0];
+      var vl = LD.verificar(r, { ligacao: m0.ligGeral, fck: m0.fckFundacao, ligMaoFrancesa: mf0 && mf0.calc.ligacao });
+      r.ligDim = vl;
+      /* R10 (21/11/2026): a ligação da biblioteca de pórticos com a assinatura do que o dimensionamento pôs no modelo (L1.ligDim, de
+         js/metalporticosacab.js) é conferida contra o que ESTE cálculo pede (vl.modelo): o modelo atende → sai das "desatualizadas"
+         (o esforço é o desta análise, verificado agora pelo js/metalligdim.js); não atende → fica, com o que falta. Sem a
+         assinatura (antes de "Atualizar … no modelo"), fica como estava. Antes: a tela ficava INCOMPLETA com o Node "aprovado". */
+      if (arr(r.ligacoesDesatualizadas).length) {
+        var diam = function (id) { var x = String(id || ""), m = /^M(\d+)/.exec(x); if (m) return +m[1]; var c = arr(LD.CHUMB).filter(function (q) { return q.id === x; })[0]; return c ? c.d : 0; };
+        var atende = function (sg) {
+          if (!sg) return null;
+          if (sg.tipo === "placa") { var q = vl.modelo.placas[sg.chave]; if (!q) return null; return num(sg.t, 0) >= num(q.t, 0) - 1e-9 && diam(sg.parafuso) >= diam(q.parafuso) - 1e-9 && num(sg.nChumb, 0) >= num(q.nChumb, 0) && num(sg.ancoragem, 0) >= num(q.ancoragem, 0) - 1e-9 ? true : "placa " + br(num(q.t, 0) * 1000, 1) + " mm, " + q.nChumb + " × " + q.parafuso + ", ancoragem " + br(num(q.ancoragem, 0) * 1000, 0) + " mm"; }
+          if (sg.tipo === "clip") { var falta = null; arr(sg.barras).forEach(function (b) { var q = vl.modelo.porBarra[b]; if (!q) { falta = falta || "sem dimensionamento da terça " + b; return; } if (!(diam(sg.parafuso) >= diam(q.id) - 1e-9 && num(sg.n, 0) >= num(q.n, 0))) falta = q.n + " × " + q.id; }); return falta || true; }
+          return null;
+        };
+        var fica = [], ok0 = 0;
+        arr(r.ligacoesDesatualizadas).forEach(function (q) { var a = atende(q.ligDim); if (a === true) { ok0++; return; } if (typeof a === "string") q.texto += " — o cálculo de agora pede " + a + ": \"Atualizar parafusos, placas e chumbadores no modelo\""; fica.push(q); });
+        if (ok0) {
+          r.ligacoesDesatualizadas = fica;
+          var temaL = "Ligações desatualizadas (esforço gravado menor que o desta análise)";
+          r.naoVerificados = arr(r.naoVerificados).filter(function (x) { return x.tema !== temaL; });
+          if (fica.length) r.naoVerificados.push({ tema: temaL, motivo: fica.length + " ligação(ões) — redimensionar com este cálculo: " + fica.map(function (q) { return q.texto; }).join("; ") });
+          r.decisoes = arr(r.decisoes).concat([{ tema: "Ligações do modelo × dimensionamento de agora", decisao: ok0 + " ligação(ões) da biblioteca conferida(s) com os esforços desta análise: o que está no modelo atende ao que o cálculo pede (js/metalligdim.js)", motivo: "a ligação posta por \"Atualizar … no modelo\" grava o que foi posto; o cálculo de agora redimensiona com a envoltória ELU e compara" }]);
+        }
+      }
+      var cob = { base: vl.cobertos.base, rotuladas: vl.cobertos.rotuladas, tubo: vl.cobertos.tubo };
+      r.naoVerificados = arr(r.naoVerificados).map(function (x) { if (x.tema !== "Ligações da tipologia") return x; var mt = LD.tirarDoMotivo(x.motivo, cob); return mt ? { tema: x.tema, motivo: mt } : null; }).filter(Boolean);
+      r.decisoes = arr(r.decisoes).concat([{ tema: "Ligações dimensionadas (NBR 8800:2008)", decisao: vl.resumo, motivo: vl.premissas }]);
+      if (vl.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vl.reprovados; }
+      if (Env()) r.situacao = Env().situacao({ ok: true, aprovado: aprovBarras0 && !(r.nosTubo && r.nosTubo.reprovados) && !(r.nosChapa && r.nosChapa.reprovados) && !vl.reprovados }, r.naoVerificados);
+      if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false; else if (r.situacao) r.aprovado = true;
     }
     /* AUDITORIA A3 (20/11/2026): verificação obrigatória não feita (situação "incompleto") ⇒ NUNCA aprovado. Antes as barras
        passavam, a situação era "incompleto" e mesmo assim r.aprovado = true (o preset dizia que os perfis "passaram").

@@ -31571,7 +31571,25 @@ function partida(db, borda) {
 var b = bordaMin(db, borda), e = espMin(db);
 return { borda: Math.ceil(b.e / 5) * 5, passo: Math.ceil(e.pref / 5) * 5 };
 }
+var LIGDIM = {
+cisalRosca: { v: 0.40, item: "6.3.3.2", texto: "Fv,Rd = 0,40·Ab·fub/γa2 por plano de corte, rosca no plano (0,50 fora do plano)" },
+cisalFora: { v: 0.50, item: "6.3.3.2", texto: "Fv,Rd = 0,50·Ab·fub/γa2 por plano de corte, rosca fora do plano" },
+tracao: { v: 0.75, item: "6.3.3.1", texto: "Ft,Rd = 0,75·Ab·fub/γa2" },
+interacao: { item: "6.3.3.4", texto: "(Ft,Sd/Ft,Rd)² + (Fv,Sd/Fv,Rd)² ≤ 1,0" },
+contato1: { v: 1.2, item: "6.3.3.3", texto: "Fc,Rd = 1,2·lf·t·fu/γa2 (rasgamento entre furos ou furo-borda)" },
+contato2: { v: 2.4, item: "6.3.3.3", texto: "Fc,Rd ≤ 2,4·db·t·fu/γa2 (pressão de contato), furo-padrão, deformação no furo considerada" },
+bloco: { item: "6.5.6", texto: "Fr,Rd = (0,60·fu·Anv + Cts·fu·Ant)/γa2 ≤ (0,60·fy·Agv + Cts·fu·Ant)/γa2" },
+liquida: { item: "5.2.3 e 5.2.5", texto: "Nt,Rd = Ae·fu/γa2, Ae = Ct·An; An com furo + 2,0 mm (5.2.4.1); Ct = 1 − ec/lc (cantoneira/perfil parafusado; 0,60 ≤ Ct ≤ 0,90)" },
+furoLiq: { v: 2.0, item: "5.2.4.1", texto: "diâmetro do furo nas áreas líquidas = furo-padrão + 2,0 mm" },
+solda: { item: "6.2.5 / Tabela 8", texto: "filete: Fw,Rd = 0,60·Aw·fw/γw2 (Aw = 0,707·dw·Lw); metal-base 0,60·AMB·fy/γa1" },
+soldaMin: { item: "Tabela 10", texto: "perna mínima do filete pela parte menos espessa" },
+soldaComp: { item: "6.2.6.2", texto: "comprimento efetivo do filete ≥ 4·dw e ≥ 40 mm" },
+concreto: { item: "6.6.1", texto: "σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck/γc (pressão de contato na área carregada), γc = γn = 1,4" },
+gamas: { item: "Tabela 3 e 6.2.5", texto: "γa1 = 1,10; γa2 = 1,35; γw2 = 1,35" }
+};
+function itemLig(k) { var x = LIGDIM[k]; return x ? FONTE_8800 + ", " + x.item + " (conferir no texto)" : FONTE_8800; }
 var BimMetalNorma = {
+LIGDIM: LIGDIM, itemLig: itemLig,
 FONTE_8800: FONTE_8800, PARTIDA: PARTIDA, PARAFUSOS: PARAFUSOS, CLASSES: CLASSES, TAB14: TAB14, TAB10: TAB10, RHO_ACO: 7850,
 AJUSTES: AJUSTES,
 parafuso: parafuso, furo: furo, bordaMin: bordaMin, bordaMax: bordaMax, espMin: espMin, espMax: espMax,
@@ -42013,7 +42031,29 @@ if (t === "trelica-paralelos") p.aguas = num(p.aguas, 2) === 1 ? 1 : 2;
 if (p.padrao != null) p.padrao = PADROES[p.padrao] ? p.padrao : "pratt";
 if (t === "misula") { p.degraus = Math.max(2, Math.min(6, Math.round(num(p.degraus, 3)))); }
 if (!p.posicoes) p.comprimento = r6((p.nPorticos - 1) * p.espacamento);
+paredeParaSolda(p);
 return p;
+}
+var T_PAREDE_SOLDA = 3, GRUPOS_PONTA_SOLDADA = ["escora", "escoraColuna", "tapamento", "pilarInterno"];
+function candidatosParede(p, k, o, A) {
+var esc = k === "escora" || k === "escoraColuna", rMin = esc ? num(p.espacamento, 6) * 1000 / 200 : 0;
+return A.listar(o.serie).map(function (nm) { return A.obter(nm); }).filter(function (c) {
+if (!c || c.forma !== o.forma || !(c.t >= T_PAREDE_SOLDA - 1e-9) || !(c.A > 0)) return false;
+if (esc) return Math.sqrt(Math.min(c.Ix, c.Iy) / c.A) >= rMin - 1e-6;
+return c.A >= o.A - 1e-6 && c.Ix >= o.Ix - 1e-6 && c.Iy >= o.Iy - 1e-6;
+}).sort(function (a, b) { return a.A - b.A || a.h - b.h; }).map(function (c) { return c.nome; });
+}
+function paredeParaSolda(p) {
+var A = Aco(); p.trocasParede = [];
+if (!p.trocarParedeSolda) return;
+if (!A || !A.obter || !A.listar) return;
+GRUPOS_PONTA_SOLDADA.forEach(function (k) {
+var o = p[k] ? A.obter(p[k]) : null;
+if (!o || !/^tubo/.test(o.forma || "") || !(o.t > 0) || o.t >= T_PAREDE_SOLDA - 1e-9) return;
+var cs = candidatosParede(p, k, o, A); if (!cs.length) return;
+p.trocasParede.push({ grupo: k, de: o.nome, para: cs[0], candidatos: cs.slice(0, 4) });
+p[k] = cs[0];
+});
 }
 function motorDe(t) { return TIPOS[t] ? TIPOS[t].motor : null; }
 function catOk(nome) { var C = MC(); return !!(C && nome && C.perfilCat(nome)); }
@@ -42565,7 +42605,7 @@ var p = normalizar(t, par), T = TIPOS[t], Q = quadro(t, p), esp = p.espacamento,
 var nos = {}, barras = [], cont = {}, avisos = [], dec = Q.dec.slice(), nomeT = T.rotulo;
 function W(x, y, z) { return [r6(p.x0 + x), r6(p.cota + y), r6(p.z0 + z)]; }
 function no(id, x, y, z) { nos[id] = W(x, y, z); return id; }
-function barra(o) { o.id = "b" + (barras.length + 1); o.calc = o.calc || {}; o.calc.tipologia = nomeT; if (t !== "mezanino") o.calc.umPavimento = true; barras.push(o); cont[o.grupo] = (cont[o.grupo] || 0) + 1; return o; }
+function barra(o) { o.id = "b" + (barras.length + 1); o.calc = o.calc ? clone(o.calc) : {}; o.calc.tipologia = nomeT; o.calc.grupoTip = o.grupo; o.calc.barraId = o.id; if (o.coluna) o.calc.coluna = o.coluna; o.calc.ligGeral = p.ligacao === "parafusada" || p.ligacao === "soldada" ? p.ligacao : "padrao"; if (p.fckFundacao > 0) o.calc.fckFundacao = +p.fckFundacao; if (t !== "mezanino") o.calc.umPavimento = true; barras.push(o); cont[o.grupo] = (cont[o.grupo] || 0) + 1; return o; }
 var zs = []; for (var k = 0; k < nP; k++) zs.push(p.posicoes ? r6(p.posicoes[k]) : r6(k * esp));
 function vk(i) { return r6(zs[Math.min(nP - 1, i + 1)] - zs[Math.max(0, i)]); }
 zs.forEach(function (z, k) {
@@ -42848,10 +42888,10 @@ var g = { ok: true, motor: "livre", tipo: t, par: p, op: { op: "lote", id: Strin
 areas: areas, pontuais: pontuais, contagem: M.contagem, resumo: M.resumo, avisos: M.avisos, decisoes: M.decisoes, naoVerificados: M.naoVerificados, modelo: M };
 var PA = opG.semAcabamento ? null : dep("MetalPorticosAcab", "./metalporticosacab.js");
 if (PA) {
-var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
+var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha", "ligDim"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
 var ac = PA.completar(t, p, g, novoId, acO);
 var MPf = ac.ok && opG.ligacoes !== false ? dep("MetalParafusos", "./metalparafusos.js") : null, fx = null;
-if (MPf) { g.acab = ac; fx = MPf.completar(t, p, g, novoId, {}); }
+if (MPf) { g.acab = ac; fx = MPf.completar(t, p, g, novoId, { ligDim: opG.ligDim || null }); }
 if (ac.ok) { g.acab = ac; ac.ops.forEach(function (o) { ops.push(o); }); if (ac.resumo) g.resumo = g.resumo + " Acabamento: " + ac.resumo + "."; g.avisos = arr(g.avisos).concat(ac.avisos); }
 if (fx && fx.ok) { g.fixacao = fx; fx.ops.forEach(function (o) { ops.push(o); }); g.avisos = arr(g.avisos).concat(fx.avisos); }
 }
@@ -42911,6 +42951,8 @@ g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }); if (!g.ok) r
 ent = entradaLivre(t, p, g, op); r2 = DL.calcular(ent, op.calc || {});
 }
 if (trocasCor.length && r2 && r2.ok) r2.decisoes = arr(r2.decisoes).concat([{ tema: "Correntes — bitola pela força do cálculo", decisao: "corrente de terça " + trocasCor.join("; "), motivo: "a reação do eixo fraco das terças (vento local do cpe médio, NBR 6123:2023 6.1.2) acumulada na linha passou da resistência da barra redonda (NBR 8800 5.2 e 6.3.3.1): a menor bitola do catálogo com área ≥ a necessária; a diagonal de ancoragem pela regra A ≥ A da linha/(n·cos β)" }]);
+if (p.trocasParede && p.trocasParede.length && r2 && r2.ok) r2.decisoes = arr(r2.decisoes).concat([{ tema: "Ligações — parede do tubo para a solda", decisao: p.trocasParede.map(function (x) { return x.grupo + ": " + x.de + " → " + x.para + (x.para !== x.candidatos[0] ? " (o mais leve, " + x.candidatos[0] + ", reprovava a estrutura)" : ""); }).join("; "),
+motivo: "a chapa de ligação da ponta rotulada é soldada na parede do tubo: filete mínimo 3 mm (ABNT NBR 8800:2008, Tabela 10) e a perna não passa da parede (6.2.6.2) — o tubo mais leve da mesma série com t ≥ 3 mm (escora: r ≥ L/200; pilar: A, Ix, Iy ≥ os do original) ; calculado com ele" }]);
 if (r2 && r2.ok && p.fechamento === "fechado") r2.decisoes = arr(r2.decisoes).concat([p.semAberturasDominantes
 ? { tema: "Vento — aberturas dominantes", decisao: "ATENÇÃO: declarado SEM aberturas dominantes (cpi −0,3 ou 0, NBR 6123:2023 6.3.2.1-b)", motivo: "o engenheiro declarou que portas e portões ficam fechados e são dimensionados para o vento. Se algum portão, porta de enrolar ou janela grande puder ficar aberto num temporal, esta declaração está ERRADA: desmarque e calcule de novo (a sucção na cobertura sobe cerca de 1,8×)" }
 : { tema: "Vento — aberturas dominantes", decisao: "portão aberto suposto em cada face fechada (NBR 6123:2023 6.3.2.1-c): cpi +0,8 com o portão a barlavento, Ce da face a sotavento, Ce do local / −0,9 na face paralela; envoltória com o 6.3.2.1-b (−0,3/0)", motivo: "galpão tem portão e ele pode estar aberto num temporal; o cálculo leva ao modelo o menor e o maior cpi de cada direção (a pressão é linear em cpi). Só se tira isso declarando \"sem aberturas dominantes\"" }]);
@@ -42953,7 +42995,7 @@ var PRESETS = {
 "pedido-gabriel": {
 rotulo: "Pedido Gabriel — galpão 20 × 30 m (Alumetal)", tipo: "tesoura-leve",
 base: { vao: 20, comprimento: 30, definirPor: "numero", nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
-sistemaTrelica: "cantoneira", chapaNo: 8,
+sistemaTrelica: "cantoneira", chapaNo: 8, fckFundacao: 25,
 banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",
 montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
 travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 2,66", tercaBorda: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 300 x 100 x 4,25",
@@ -43017,6 +43059,10 @@ if (typeof novoId !== "function") return { ok: false, motivo: "Sem gerador de id
 var Mod = g.modelo, nos = Mod.nos, gid = g.porticoId, porId = {};
 g.pecas.forEach(function (c) { porId[c.id] = c; });
 var cx = function (b) { return b ? porId[g.mapa[b.id]] : null; };
+var LD = op.ligDim || null;
+function parPlaca(k, base) { var q = LD && LD.placas && LD.placas[k]; if (!q) return base; base.t = q.t; base.parafuso = q.parafuso; base.ancoragem = q.ancoragem; return base; }
+function sigPlaca(k, par) { var q = LD && LD.placas && LD.placas[k]; return q ? { tipo: "placa", chave: k, t: par.t, parafuso: par.parafuso, nChumb: q.nChumb, ancoragem: par.ancoragem } : null; }
+function maiorClip(a, b) { var x = [a, b].map(function (t) { return t && LD && LD.porBarra ? LD.porBarra[t.id] : null; }).filter(Boolean); if (!x.length) return null; x.sort(function (u, v) { var du = parseFloat(String(u.id).replace(/^M/, "")) || 0, dv = parseFloat(String(v.id).replace(/^M/, "")) || 0; return dv - du || v.n - u.n; }); return x[0]; }
 var acab = op.acab === null ? null : clone(op.acab || ACAB_PADRAO);
 if (acab) g.pecas.forEach(function (c) { if (!c.acab) c.acab = clone(acab); });
 if (op.ligacoes !== false) {
@@ -43025,7 +43071,7 @@ if (!Lg) avisos.push("Ligações: o motor das ligações (js/metalligacao.js) n�
 else {
 var atual = {}; g.pecas.forEach(function (c) { atual[c.id] = c; });
 var cur = function (c) { return c && atual[c.id] ? atual[c.id] : c; };
-var aplicar = function (tipo, sel, par) {
+var aplicar = function (tipo, sel, par, sigLD) {
 var pr = clone(par || {}); if (pr.terca2) pr.terca2 = cur(par.terca2); pr.lig = String(novoId());
 var r; try { r = Lg.aplicar(tipo, sel.map(cur), pr); } catch (eL) { r = { ok: false, motivo: String(eL && eL.message || eL) }; }
 ligs.push({ tipo: tipo, ok: !!r.ok, motivo: r.ok ? "" : r.motivo });
@@ -43034,7 +43080,7 @@ var lote = Lg.ops(r, novoId);
 lote.ops.forEach(function (o) {
 if (o.op === "criar" && o.caixa) {
 if (atual[o.id]) { o.caixa.id = o.id; atual[o.id] = clone(o.caixa); }
-else { o.caixa.id = o.id; o.caixa.portico = gid; var h0 = sel[0] && cur(sel[0]); if (h0 && h0.elemMetal) { o.caixa.elemMetal = clone(h0.elemMetal); o.caixa.elemMetal.anexo = true; o.caixa.elemMetal.slot = "lig:" + tipo; delete o.caixa.elemMetal.mud; } if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
+else { o.caixa.id = o.id; o.caixa.portico = gid; if (sigLD) o.caixa.ligInfo = { nome: "Ligação dimensionada no cálculo (NBR 8800:2008)", ligDim: clone(sigLD) }; var h0 = sel[0] && cur(sel[0]); if (h0 && h0.elemMetal) { o.caixa.elemMetal = clone(h0.elemMetal); o.caixa.elemMetal.anexo = true; o.caixa.elemMetal.slot = "lig:" + tipo; delete o.caixa.elemMetal.mud; } if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
 }
 if (o.op === "metalFuros" && atual[o.id]) { var q = atual[o.id]; q.metalFuros = arr(q.metalFuros).filter(function (f) { return f.lig !== o.lig; }).concat(o.furos.map(function (f) { var h = clone(f); h.lig = o.lig; return h; })); }
 ops.push(o);
@@ -43048,9 +43094,9 @@ Mod.barras.forEach(function (b) {
 if (b.ferr !== "pilar") return;
 var a = nos[b.a], z = nos[b.b]; if (!a || !z || Math.abs(a[1] - cota) > 1e-6) return;
 if (b.coluna) { if (!porCol[b.coluna]) { porCol[b.coluna] = []; ordCol.push(b.coluna); } porCol[b.coluna].push(b); return; }
-aplicar("placaBase", [cx(b)], { nChumb: 4 });
+var pp0 = parPlaca("b:" + b.id, { nChumb: 4 }); aplicar("placaBase", [cx(b)], pp0, sigPlaca("b:" + b.id, pp0));
 });
-ordCol.forEach(function (k) { var bs = porCol[k]; if (bs.length < 2) { aplicar("placaBase", [cx(bs[0])], { nChumb: 4 }); return; } if (aplicar("placaBaseColuna", bs.map(cx), {})) { cont.placaBase = (cont.placaBase || 0) + 1; cont.placaBaseColuna -= 1; } });
+ordCol.forEach(function (k) { var bs = porCol[k]; if (bs.length < 2) { var pp1 = parPlaca(k, { nChumb: 4 }); aplicar("placaBase", [cx(bs[0])], pp1, sigPlaca(k, pp1)); return; } if (aplicar("placaBaseColuna", bs.map(cx), parPlaca(k, {}), sigPlaca(k, parPlaca(k, {})))) { cont.placaBase = (cont.placaBase || 0) + 1; cont.placaBaseColuna -= 1; } });
 var porK = {}, linhaDe = function (nm) { var m = /^t(\d+):(\d+)'?$/.exec(nm); return m ? { k: +m[1], j: +m[2] } : null; };
 var vigasK = {}, semClip = 0;
 Mod.barras.forEach(function (b) {
@@ -43072,7 +43118,9 @@ if (d < dMin) { dMin = d; melhor = v; sM = s; LM = Math.sqrt(L2); }
 });
 if (!melhor || dMin > 0.5) return;
 if (sM * LM < 0.10 || (1 - sM) * LM < 0.10) { semClip++; return; }
-aplicar("clipTerca", [cx(t1), cx(melhor)], { terca2: t2 ? cx(t2) : null, parafuso: "M12", parafusos: 2 });
+var dc = maiorClip(t1, t2);
+aplicar("clipTerca", [cx(t1), cx(melhor)], { terca2: t2 ? cx(t2) : null, parafuso: dc ? dc.id : "M12", parafusos: dc ? dc.n : 2, cat: dc && dc.clip ? dc.clip : undefined },
+dc ? { tipo: "clip", barras: [t1.id].concat(t2 ? [t2.id] : []), n: dc.n, parafuso: dc.id, clip: dc.clip || null } : null);
 });
 });
 var apoios = Mod.barras.filter(function (b) { return b.grupo !== "contravento" && b.grupo !== "corrente" && b.grupo !== "maoFrancesa" && b.ferr !== "diagonal"; });
@@ -43161,6 +43209,7 @@ function BM() { return dep("BimMetal", "./metalpeca.js"); }
 function N() { return dep("BimMetalNorma", "./metalnorma.js"); }
 function arr(v) { return Array.isArray(v) ? v : []; }
 function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
@@ -43257,14 +43306,17 @@ var pc = parafuso({ origem: mundo(c, add(O, mul(ez, m.t))), eixo: ez, aperto: 0.
 if (pc.erro) { out.avisos.push("Porca da barra: " + pc.erro); return; }
 criar(pc, host || c, "lig:porcaBarra"); out.contagem.porcaBarra++;
 });
-if (modo === "parafusada") noTrelica2L(g, Mod, nos, cx, Nn, criar, out);
+var LD = op.ligDim || null; out.dimensionado = !!LD;
+if (modo === "parafusada") noTrelica2L(g, Mod, nos, cx, Nn, criar, out, LD);
 else if (p.sistemaTrelica === "cantoneira") out.soldas.push({ ligacao: "Nós da treliça em 2L (chapa de nó soldada entre as abas)", marca: "TS", cordao: "filete longitudinal, 4 por barra (js/metalchapano.js — dimensionado no cálculo)", comprimento: null, fonte: "NBR 8800:2008 6.2.5 (verificação do nó com chapa)" });
 var mfs = Mod.barras.filter(function (b) { return b.grupo === "maoFrancesa"; });
 if (mfs.length) {
 var ligMF = p.ligMaoFrancesa === "soldada" || modo === "soldada" ? "soldada" : "parafusada";
-if (ligMF === "parafusada") mfs.forEach(function (b) { var c = cx(b); if (c) maoFrancesa(c, Nn, criar, out); });
+mfs.forEach(function (b) { var c = cx(b), dq = LD && LD.porBarra ? LD.porBarra[b.id] : null; if (c && (ligMF === "parafusada" || (dq && dq.terca))) maoFrancesa(c, Nn, criar, out, dq); });
+if (ligMF === "soldada" && mfs.some(function (b) { var dq = LD && LD.porBarra ? LD.porBarra[b.id] : null; return dq && dq.terca; })) out.avisos.push("Mão-francesa: a terça tem parede menor que o filete mínimo (3 mm) — a ligação soldada não cabe; a chapa foi parafusada na alma da terça (cálculo).");
 else out.soldas.push({ ligacao: "Mão-francesa soldada (as duas pontas)", marca: "MF", cordao: "filete na aba, 2 lados por ponta", comprimento: null, fonte: "a dimensionar — a ligação não é verificada pelo motor" });
 }
+if (LD && arr(LD.enrijecedores).length) enrijecedoresU(g, Mod, cx, M, criar, out, LD.enrijecedores);
 var maior = 0; g.pecas.forEach(function (c) { if (c.metal && c.metal.kind === "perfil" && num(c.metal.L, 0) > maior) maior = num(c.metal.L, 0); });
 if (maior > 12.0001) out.pendencias.push("Há barra de " + r1(maior) + " m (acima de 12 m): a emenda dela NÃO foi gerada — detalhar à mão.");
 var nP = out.pecas.filter(function (c) { return c.metal.kind === "parafuso" && !c.metal.soPorca; }).length;
@@ -43272,6 +43324,28 @@ out.resumo = "Ligação " + modo + ": " + out.contagem.noTrelica + " nós de tre
 out.contagem.porcaBarra + " pontas de barra redonda com porca e contraporca, " + out.parafusos.clipTerca + " parafusos de clip, " + out.parafusos.chumbador + " chumbadores (2 porcas cada)";
 out.novosParafusos = nP;
 return out;
+}
+function enrijecedoresU(g, Mod, cx, M, criar, out, lista) {
+var porB = {}; Mod.barras.forEach(function (b) { porB[b.id] = b; });
+out.contagem.enrijecedor = 0; out.enrijecedores = [];
+lista.forEach(function (e) {
+var host = e.barraId ? cx(porB[e.barraId]) : null, mb = host ? M.membro(host) : null;
+if (!mb || !e.P || !mb.perfil || mb.perfil.forma !== "frio") { out.avisos.push("Enrijecedor do nó " + e.no + ": a coluna (" + (e.barraId || "?") + ") não foi achada no modelo — não desenhado."); return; }
+var pf = mb.perfil, tU = num(pf.t, 0.003), bw = num(pf.bw, 0.1), bf = num(pf.bf, 0.05), te = num(e.t, 0.0063), xN = dot(sub(V3(e.P), mb.Pref), mb.X);
+[-1, 1].forEach(function (sg) {
+var x = Math.max(te / 2, Math.min(mb.L + num(mb.xOff, 0) - te / 2, xN + sg * num(e.Lg, 0.1) / 2));
+var O = add(add(add(mb.Pref, mul(mb.X, x + te / 2)), mul(mb.A, -bf / 2 + tU)), mul(mb.B, -bw / 2 + tU));
+var c = M.chapa({ origem: O, ex: mb.A, ey: mb.B, t: te, ret: { L: bf - tU, B: bw - 2 * tU }, papel: "Enrijecedor da alma do U", aco: "ASTM A36", lig: "enr:" + e.no, soldadaEm: host.id,
+nome: "Enrijecedor " + r1(te * 1000) + " mm — nó " + e.no,
+solda: { tipo: "filete", perna: num(e.soldaAlma && e.soldaAlma.dw, 3), lados: "ambos", comprimento: Math.round((2 * num(e.soldaAlma && e.soldaAlma.Lw, (bw - 2 * tU) * 1000) + 4 * num(e.soldaAbas && e.soldaAbas.Lw, (bf - tU) * 1000))) / 1000, campo: false } });
+if (c.erro) { out.avisos.push("Enrijecedor do nó " + e.no + ": " + c.erro); return; }
+c.metal.enrijecedor = { no: e.no, soldaAlma: e.soldaAlma || null, soldaAbas: e.soldaAbas || null };
+criar(c, host, "lig:enrijecedor");
+out.contagem.enrijecedor++;
+});
+out.enrijecedores.push({ no: e.no, t: te, n: 2 });
+});
+if (out.contagem.enrijecedor) out.soldas.push({ ligacao: "Enrijecedores da alma do U (par por nó com chapa)", marca: "EN", cordao: "filete nos 2 lados na alma (bw − 2t) e nas 2 abas (bf − t)", comprimento: null, fonte: "js/metalligdim.js — dimensionado no cálculo (NBR 8800:2008 6.2.5)" });
 }
 function nomeBarra(dbmm) {
 var Nn = N(), best = null, dd = 1e9; Nn.PARAFUSOS.forEach(function (q) { var d = Math.abs(q.d - dbmm); if (d < dd) { dd = d; best = q.id; } });
@@ -43282,7 +43356,7 @@ var G = barraGeo(c); if (!G) return false;
 var s = dot(sub(P, G.P0), G.X); if (s < -0.2 || s > G.L + 0.2) return false;
 return len(sub(P, add(G.P0, mul(G.X, Math.max(0, Math.min(G.L, s)))))) < 0.3;
 }
-function noTrelica2L(g, Mod, nos, cx, Nn, criar, out) {
+function noTrelica2L(g, Mod, nos, cx, Nn, criar, out, LD) {
 var ALMA = { diagonal: 1, montante: 1 }, BANZO = { banzoSup: 1, banzoInf: 1 }, porNo = {}, ordem = [];
 var geoC = {};
 function geo(b) { if (geoC[b.id] !== undefined) return geoC[b.id]; var c = cx(b), G = c && c.metal && c.metal.perfil && c.metal.perfil.forma === "2L" ? barraGeo(c) : null; geoC[b.id] = G; return G; }
@@ -43303,14 +43377,16 @@ if (bars.length < 2) return;
 var nP = bars[0].G.A, ref = bars.filter(function (q) { return BANZO[q.b.grupo]; })[0] || bars[0], hBanzo = ref.G.perfil ? num(ref.G.perfil.b, 0.05) : 0.05;
 var bolts = [];
 bars.forEach(function (q) {
-var G = q.G, L2 = geo2L(G), P2 = Nn.parafuso(bitola2L(L2.b)), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
+var dq = LD && LD.porBarra ? LD.porBarra[q.b.id] : null;
+q.nP = dq ? Math.max(2, dq.n) : N_POR_BARRA; q.classe = dq ? dq.classe : "8.8";
+var G = q.G, L2 = geo2L(G), P2 = Nn.parafuso(dq ? dq.id : bitola2L(L2.b)), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
 var gg = gage(L2.b, L2.t, P2); if (gg.aviso) out.avisos.push("Nó " + nm + ": " + gg.aviso);
 var bLoc = L2.heel + L2.sg * gg.g, xs = [];
 var sNo = dot(sub(P, G.P0), G.X);
 if (q.cont) { for (var k = 0; k < N_POR_BARRA; k++) xs.push(sNo + (k - (N_POR_BARRA - 1) / 2) * passo); }
 else {
 var dir = sNo < G.L / 2 ? 1 : -1, sinT = Math.max(0.4, len(cross(G.X, ref.G.X))), x1 = q.b === ref.b ? bS : (hBanzo / 2 + FOLGA_C0 + bS) / sinT;
-for (var j = 0; j < N_POR_BARRA; j++) xs.push(sNo + dir * (x1 + j * passo));
+for (var j = 0; j < q.nP; j++) xs.push(sNo + dir * (x1 + j * passo));
 }
 q.pts = xs.map(function (x) { return { x: x, Pc: ptBarra(G, x, 0, bLoc) }; });
 q.P2 = P2; q.L2 = L2; q.passo = passo;
@@ -43344,39 +43420,56 @@ ch.metal.ligMont = ligM; criar(ch, hostC, "lig:noTrelica");
 bars.forEach(function (q) {
 var pega = { itens: [{ peca: "aba da 2L", t: q.L2.t }, { peca: "chapa de nó", t: e }, { peca: "aba da 2L", t: q.L2.t }], total: 2 * q.L2.t + e };
 q.pts.forEach(function (a) {
-var b0 = parafuso({ origem: add(a.Pc, mul(nP, -(e / 2 + q.L2.t))), eixo: nP, aperto: pega.total }, q.P2, "8.8", ligM, pega);
+var b0 = parafuso({ origem: add(a.Pc, mul(nP, -(e / 2 + q.L2.t))), eixo: nP, aperto: pega.total }, q.P2, q.classe || "8.8", ligM, pega);
 if (b0.erro) { out.avisos.push("Nó " + nm + ": " + b0.erro); return; }
 criar(b0, cx(q.b), "lig:noTrelica"); out.parafusos.noTrelica++;
 });
 });
 out.contagem.noTrelica++;
 });
-if (out.contagem.noTrelica) out.pendencias.push("Nós da treliça parafusados: " + N_POR_BARRA + " parafusos por barra e a chapa de nó da folga da 2L — " + PARTIDA + " (o cálculo do nó com chapa, js/metalchapano.js, verifica a solda; a ligação parafusada do nó tem de ser dimensionada).");
+if (out.contagem.noTrelica && !LD) out.pendencias.push("Nós da treliça parafusados: " + N_POR_BARRA + " parafusos por barra e a chapa de nó da folga da 2L — " + PARTIDA + " (o cálculo do nó com chapa, js/metalchapano.js, verifica a solda; a ligação parafusada do nó tem de ser dimensionada).");
 }
-function maoFrancesa(c, Nn, criar, out) {
+function maoFrancesa(c, Nn, criar, out, dq) {
 var M = BM(), mb = M.membro(c); if (!mb || !mb.perfil || mb.perfil.forma !== "L") return;
 var fs = M.faces(mb.perfil), fv = fs.filter(function (f) { return f.n === "a"; })[0]; if (!fv) return;
-var P2 = Nn.parafuso("M12"), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
+var nPF = dq ? Math.max(2, dq.n) : N_POR_BARRA, P2 = Nn.parafuso(dq ? dq.id : "M12"), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
 var tL = fv.t, larg = fv.larg, gg = gage(larg, tL, P2), bLoc = fv.y0 + gg.g;
 var aFora = fv.meio - tL / 2, tC = T_CHAPA_MF;
 [0, 1].forEach(function (ponta) {
 var xs = [], x1 = 0.06 + bS;
-for (var k = 0; k < N_POR_BARRA; k++) xs.push(ponta ? mb.xOff + mb.L - x1 - k * passo : mb.xOff + x1 + k * passo);
+for (var k = 0; k < nPF; k++) xs.push(ponta ? mb.xOff + mb.L - x1 - k * passo : mb.xOff + x1 + k * passo);
 var xa = Math.min.apply(null, xs) - bS, xb = Math.max.apply(null, xs) + bS;
 if (ponta) xb = mb.xOff + mb.L; else xa = mb.xOff;
+var naTerca = !!(dq && dq.terca) && ((ponta === 1) === (mb.X[1] >= 0)), xsT = [], PT = naTerca ? Nn.parafuso(dq.terca.id || "M12") : null;
+if (naTerca) {
+var pT = Nn.partida(PT.d, "laminada").passo / 1000, bT = Nn.bordaMin(PT.d, "serra").e / 1000, nT = Math.max(2, num(dq.terca.n, 2));
+var x0T = ponta ? mb.xOff + mb.L + bT : mb.xOff - bT;
+for (var kT = 0; kT < nT; kT++) xsT.push(ponta ? x0T + kT * pT : x0T - kT * pT);
+if (ponta) xb = Math.max.apply(null, xsT) + bT; else xa = Math.min.apply(null, xsT) - bT;
+}
 var O = M.membroPonto(mb, xa, aFora - tC, fv.y0);
 var ch = M.chapa({ origem: O, ex: mb.X, ey: mb.B, t: tC, ret: { L: xb - xa, B: larg }, papel: "Chapa da mão-francesa", aco: "ASTM A36",
 furos: xs.map(function (x) { return { u: x - xa, v: bLoc - fv.y0, db: P2.d, tipo: "padrao" }; }) });
 if (ch.erro) { out.avisos.push("Mão-francesa: " + ch.erro); return; }
 var ez = cross(mb.X, mb.B); if (dot(ez, mb.A) < 0) { ch = M.chapa({ origem: M.membroPonto(mb, xa, aFora, fv.y0), ex: mb.X, ey: mb.B, t: tC, ret: { L: xb - xa, B: larg }, papel: "Chapa da mão-francesa", aco: "ASTM A36", furos: xs.map(function (x) { return { u: x - xa, v: bLoc - fv.y0, db: P2.d, tipo: "padrao" }; }) }); }
-var ligM = "mf:" + c.id + ":" + ponta; ch.metal.ligMont = ligM; ch.metal.solda = { tipo: "filete", perna: Nn.soldaMin(tC * 1000).perna, lados: "ambos", comprimento: Math.round(larg * 1000) / 1000, campo: false };
+var ligM = "mf:" + c.id + ":" + ponta; ch.metal.ligMont = ligM;
+if (naTerca) { ch.metal.papel = "Chapa da mão-francesa (parafusada na terça)"; ch.metal.furos = (ch.metal.furos || []).concat(xsT.map(function (x) { return { u: r6(x - xa), v: r6(larg / 2), db: PT.d, d: Nn.furo(PT.d, "padrao").d, l: Nn.furo(PT.d, "padrao").d, tipo: "padrao" }; })); }
+else ch.metal.solda = { tipo: "filete", perna: Nn.soldaMin(tC * 1000).perna, lados: "ambos", comprimento: Math.round(larg * 1000) / 1000, campo: false };
 criar(ch, c, "lig:maoFrancesa");
 var pega = { itens: [{ peca: "chapa da mão-francesa", t: tC }, { peca: "aba da cantoneira", t: tL }], total: tC + tL };
 xs.forEach(function (x) {
-var b0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, bLoc), eixo: mb.A, aperto: pega.total }, P2, "8.8", ligM, pega);
+var b0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, bLoc), eixo: mb.A, aperto: pega.total }, P2, dq ? dq.classe : "8.8", ligM, pega);
 if (b0.erro) { out.avisos.push("Mão-francesa: " + b0.erro); return; }
 criar(b0, c, "lig:maoFrancesa"); out.parafusos.maoFrancesa++;
 });
+if (naTerca) {
+var pegaT = { itens: [{ peca: "chapa da mão-francesa", t: tC }, { peca: "alma da terça", t: num(dq.terca.t, 2.66) / 1000 }], total: tC + num(dq.terca.t, 2.66) / 1000 };
+xsT.forEach(function (x) {
+var bT0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, fv.y0 + larg / 2), eixo: mb.A, aperto: pegaT.total }, PT, dq.terca.classe || "8.8", ligM + ":terca", pegaT);
+if (bT0.erro) { out.avisos.push("Mão-francesa (terça): " + bT0.erro); return; }
+criar(bT0, c, "lig:maoFrancesa"); out.parafusos.maoFrancesa++; out.parafusos.mfTerca = (out.parafusos.mfTerca || 0) + 1;
+});
+}
 out.contagem.maoFrancesa++;
 });
 }
@@ -59744,6 +59837,430 @@ return out;
 var MetalChapaNo = { verificar: verificar, ligaBarra: ligaBarra, dwMin: dwMin, FW: FW, GW2: GW2, CH: CH, C0: C0, LW_MAX: LW_MAX };
 global.MetalChapaNo = MetalChapaNo;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalChapaNo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/metalligdim.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function N() { return dep("BimMetalNorma", "./metalnorma.js"); }
+function LC() { return dep("AcoLigCalc", "./acoligcalc.js"); }
+function Mat() { return dep("AcoMateriais", "./acomateriais.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function sq(v) { return v * v; }
+function br(v, c) { if (v == null || !isFinite(v)) return "—"; c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+function cima5(v) { return Math.ceil(v / 5 - 1e-9) * 5; }
+function cima10(v) { return Math.ceil(v / 10 - 1e-9) * 10; }
+function Ab(d) { return Math.PI * d * d / 4; }
+function G() { var M = Mat(); return M ? M.GAMA : { a1: 1.10, a2: 1.35, w1: 1.25, w2: 1.35, c: 1.4, n: 1.4 }; }
+function K(k) { var L = N() && N().LIGDIM; return L && L[k] ? L[k].v : null; }
+function IT(k) { var Nn = N(); return Nn && Nn.itemLig ? Nn.itemLig(k) : "ABNT NBR 8800:2008 (conferir no texto)"; }
+var FW = 485;
+var N_MAX = 4;
+var T_GUSSET = 8;
+var T_CHAPA_MF = 6.35;
+var CHAPA = { fy: 250, fu: 400, id: "ASTM A36" };
+var CLASSES = [{ id: "8.8", nome: "ISO 4016 classe 8.8", fub: 800 }, { id: "10.9", nome: "ISO 4016 classe 10.9", fub: 1000 }];
+var DIAMS = ["M12", "M16", "M20", "M24"];
+var PLACAS = [12.5, 16, 19, 22.4, 25, 31.5, 37.5, 44.5, 50];
+var CHUMB = [{ id: "5/8\"", d: 15.875 }, { id: "3/4\"", d: 19.05 }, { id: "7/8\"", d: 22.225 }, { id: "1\"", d: 25.4 }, { id: "1.1/8\"", d: 28.575 }, { id: "1.1/4\"", d: 31.75 }];
+var FCK_PADRAO = 25, FONTE_FCK = "fck 25 MPa da fundação — decisão do Rogério (21/11/2026, Pedido Gabriel)";
+function passo(rotulo, formula, valor, extra) { return { rotulo: rotulo, formula: formula || "", valor: valor, extra: extra || "" }; }
+function verif(nome, item, passos, res, sol, unid) { return { nome: nome, item: item, passos: passos || [], resistencia: res, solicitante: sol, unidade: unid == null ? "kN" : unid, razao: res > 0 ? sol / res : (sol > 0 ? Infinity : 0) }; }
+function fecha(vs) { var rz = 0, gov = null; vs.forEach(function (v) { if (v.razao > rz) { rz = v.razao; gov = v.nome; } }); return { razao: rz, governante: gov, ok: rz <= 1 + 1e-9 }; }
+function FvRd(d, fub, planos) { return planos * K("cisalRosca") * Ab(d) * fub / G().a2 / 1000; }
+function FtRd(d, fub) { return K("tracao") * Ab(d) * fub / G().a2 / 1000; }
+function FcRd(d, t, fu, lf) { return Math.min(K("contato1") * lf * t * fu, K("contato2") * d * t * fu) / G().a2 / 1000; }
+function Esm14762(d, t, fu) { return Math.min(3, 0.183 * t + 1.53) * d * t * fu / 1.55 / 1000; }
+function dwMin(t) { return t <= 6.35 ? 3 : t <= 12.5 ? 5 : t <= 19 ? 6 : 8; }
+function soldaMm(dw, fyBase, tBase) { var g = G(); return Math.min(0.6 * FW * 0.707 * dw / g.w2, 0.6 * fyBase * Math.min(dw, tBase) / g.a1) / 1000; }
+function sigmaC(fck, A2A1) { var g = G(), r = Math.min(2, Math.sqrt(Math.max(1, num(A2A1, 1)))); return Math.min(fck * r / (g.c * g.n), fck / g.c); }
+function combsELU(r) { var C = (r.analise && r.analise.combinacoes) || {}; return Object.keys(C).filter(function (k) { return !/^caso_/.test(k) && !/ELS|serv|freq|qp|rara/i.test(k) && C[k] && C[k].barras; }); }
+function pontas(r, m, k) {
+var cb = r.analise.combinacoes[k], sg = arr(m.segs), b0 = cb.barras[sg[0]], b1 = cb.barras[sg[sg.length - 1]];
+var ea = b0 && !b0.inativa ? arr(b0.estacoes)[0] : null, eb = b1 && !b1.inativa ? arr(b1.estacoes)[arr(b1.estacoes).length - 1] : null;
+return { a: ea, b: eb };
+}
+function env(r, m) {
+var o = { Nt: 0, Nc: 0, Vy: 0, Vz: 0, V: 0, combN: "", combV: "" };
+combsELU(r).forEach(function (k) {
+var cb = r.analise.combinacoes[k];
+arr(m.segs).forEach(function (s) { var b = cb.barras[s]; if (!b || b.inativa) return; arr(b.estacoes).forEach(function (e) { var n = num(e.N, 0); if (n > o.Nt) { o.Nt = n; o.combN = k; } if (-n > o.Nc) { o.Nc = -n; o.combN = k; } }); });
+var p = pontas(r, m, k);
+[p.a, p.b].forEach(function (e) { if (!e) return; var vy = Math.abs(num(e.Vy, 0)), vz = Math.abs(num(e.Vz, 0)); if (vy > o.Vy) o.Vy = vy; if (vz > o.Vz) o.Vz = vz; var v = Math.sqrt(vy * vy + vz * vz); if (v > o.V) { o.V = v; o.combV = k; } });
+});
+o.N = Math.max(o.Nt, o.Nc);
+return o;
+}
+function sec(m) { return (m.secao && m.secao.mm) || {}; }
+function grupoDe(m) { return (m.calc && m.calc.grupoTip) || ""; }
+function aco(m) { return { fy: num(m.aco && m.aco.fy, 250), fu: num(m.aco && m.aco.fu, 400) }; }
+function parafusada(o) {
+var Nn = N(), g = G(), dias = arr(o.diametros).length ? o.diametros : DIAMS, cls = arr(o.classes).length ? o.classes : CLASSES, nMax = num(o.nMax, N_MAX);
+var Nd = Math.abs(num(o.N, 0)), Nt = Math.max(0, num(o.Nt, 0)), ult = null, tentou = [];
+for (var i = 0; i < dias.length; i++) {
+var P = Nn.parafuso(dias[i]); if (!P) continue;
+var d = P.d, dh = Nn.furo(d, "padrao").d, dhL = dh + K("furoLiq"), e = cima5(Nn.bordaMin(d, "laminada").e), s = cima5(3 * d), gg = null;
+if (o.aba) {
+var gMin = o.aba.t + P.arr.d2 / 2 + 1, gMax = o.aba.b - Nn.bordaMin(d, "laminada").e;
+if (gMax < gMin - 1e-9) { tentou.push(P.id + ": não cabe na aba de " + br(o.aba.b, 1) + " mm"); continue; }
+gg = (gMin + gMax) / 2;
+}
+for (var c = 0; c < cls.length; c++) {
+for (var n = 2; n <= nMax; n++) {
+var vs = [], fv = FvRd(d, cls[c].fub, o.planos), lc = (n - 1) * s;
+vs.push(verif("Parafusos ao cisalhamento (" + n + " × " + P.id + " " + cls[c].id + ", " + o.planos + " plano" + (o.planos > 1 ? "s" : "") + " de corte)", IT("cisalRosca") + " — rosca no plano",
+[passo("Fv,Rd por parafuso", o.planos + "·0,40·Ab·fub/γa2 = " + o.planos + "·0,40·" + br(Ab(d), 1) + "·" + cls[c].fub + "/" + br(g.a2, 2), br(fv, 2) + " kN"),
+passo("Resistente do grupo", n + "·Fv,Rd", br(n * fv, 2) + " kN"), passo("Solicitante", "maior |N| (envoltória ELU)" + (o.combN ? " — " + o.combN : ""), br(Nd, 2) + " kN")], n * fv, Nd));
+arr(o.partes).forEach(function (pt) {
+var lfE = e - dh / 2, lfI = s - dh, fc = (FcRd(d, pt.t, pt.fu, lfE) + (n - 1) * FcRd(d, pt.t, pt.fu, lfI)) * num(pt.conta, 1);
+if (pt.fino) {
+var esm = Esm14762(d, pt.t, pt.fu), rE = Math.min(esm, 1.2 * lfE * pt.t * pt.fu / g.a2 / 1000), rI = Math.min(esm, 1.2 * lfI * pt.t * pt.fu / g.a2 / 1000);
+fc = (rE + (n - 1) * rI) * num(pt.conta, 1);
+vs.push(verif("Esmagamento / rasgamento na " + pt.papel + " (t = " + br(pt.t, 2) + " mm × " + num(pt.conta, 1) + ")", "ABNT NBR 14762:2010, ligações parafusadas — esmagamento Fc,Rd = αe·d·t·fu/γ (αe = 0,183t + 1,53 ≤ 3,0; γ = 1,55; conferir o item) e " + IT("contato1") + " no rasgamento",
+[passo("Esmagamento por parafuso e parede", "(0,183·" + br(pt.t, 2) + " + 1,53)·" + d + "·" + br(pt.t, 2) + "·" + pt.fu + "/1,55", br(esm, 2) + " kN"),
+passo("Rasgamento", "1,2·(e − dh/2)·t·fu/γa2 (ponta) e 1,2·(s − dh)·t·fu/γa2", br(1.2 * lfE * pt.t * pt.fu / g.a2 / 1000, 2) + " / " + br(1.2 * lfI * pt.t * pt.fu / g.a2 / 1000, 2) + " kN"),
+passo("Resistente", "Σ mín(esmagamento; rasgamento) × " + num(pt.conta, 1) + " paredes", br(fc, 2) + " kN")], fc, Nd));
+return;
+}
+vs.push(verif("Pressão de contato / rasgamento em " + pt.papel + " (t = " + br(pt.t, 2) + " mm" + (pt.conta > 1 ? " × " + pt.conta : "") + ")", IT("contato1"),
+[passo("Furo e distâncias", "dh = db + 1,5; borda e = " + e + " mm (Tabela 14, 6.3.11); passo s = 3·db = " + s + " mm (6.3.9)", "dh = " + br(dh, 1) + " mm"),
+passo("Parafuso da ponta", "mín(1,2·(e − dh/2)·t·fu; 2,4·db·t·fu)/γa2", br(FcRd(d, pt.t, pt.fu, lfE), 2) + " kN"),
+passo("Demais", "mín(1,2·(s − dh)·t·fu; 2,4·db·t·fu)/γa2", br(FcRd(d, pt.t, pt.fu, lfI), 2) + " kN"), passo("Resistente", "soma" + (pt.conta > 1 ? " × " + pt.conta : ""), br(fc, 2) + " kN")], fc, Nd));
+if (Nt > 0) {
+var lt = pt.ltFn ? pt.ltFn(d, gg) : num(pt.lt, e), t = pt.t, cn = num(pt.conta, 1), lv = e + lc;
+var Agv = lv * t * cn, Anv = (lv - (n - 0.5) * dhL) * t * cn, Ant = Math.max(0, lt - 0.5 * dhL) * t * cn;
+var R1 = (0.6 * pt.fu * Anv + pt.fu * Ant) / g.a2 / 1000, R2 = (0.6 * pt.fy * Agv + pt.fu * Ant) / g.a2 / 1000;
+vs.push(verif("Colapso por rasgamento (bloco) em " + pt.papel, IT("bloco") + ", Cts = 1,0",
+[passo("Áreas", "Agv = (e + (n−1)·s)·t; Anv = Agv − (n − 0,5)·(dh + 2)·t; Ant = (lt − 0,5·(dh + 2))·t", "Agv " + br(Agv, 0) + "; Anv " + br(Anv, 0) + "; Ant " + br(Ant, 0) + " mm²", "lt = " + br(lt, 1) + " mm"),
+passo("Fr,Rd", "mín[(0,6·fu·Anv + fu·Ant); (0,6·fy·Agv + fu·Ant)]/γa2", br(Math.min(R1, R2), 2) + " kN")], Math.min(R1, R2), Nt));
+}
+});
+if (o.perfil && Nt > 0) {
+var pf = o.perfil, An = pf.A - num(pf.abas, 1) * dhL * pf.t, Ct = Math.max(0.6, Math.min(0.9, 1 - num(pf.xc, 0) / Math.max(lc, 1))), Rl = Ct * An * pf.fu / g.a2 / 1000;
+vs.push(verif("Ruptura da seção líquida da barra (Ct = " + br(Ct, 2) + ")", IT("liquida"),
+[passo("An", "Ag − " + num(pf.abas, 1) + "·(dh + 2)·t", br(An, 0) + " mm²"), passo("Ct", "1 − ec/lc = 1 − " + br(pf.xc, 1) + "/" + br(lc, 0) + " (0,60 ≤ Ct ≤ 0,90)", br(Ct, 3)),
+passo("Nt,Rd", "Ct·An·fu/γa2", br(Rl, 2) + " kN"), passo("Nt,Sd", "maior tração (envoltória ELU)", br(Nt, 2) + " kN")], Rl, Nt));
+}
+var fe = fecha(vs);
+ult = { ok: fe.ok, razao: fe.razao, governante: fe.governante, n: n, id: P.id, d: d, classe: cls[c].id, classeNome: cls[c].nome, fub: cls[c].fub, passo: s, borda: e, gage: gg, verificacoes: vs };
+if (fe.ok) return ult;
+}
+}
+}
+if (!ult) return { ok: false, razao: Infinity, governante: "nenhum diâmetro do catálogo cabe: " + tentou.join("; "), n: 2, verificacoes: [] };
+ult.sugestao = "Nem " + N_MAX + " parafusos " + ult.id + " " + ult.classe + " passam: perfil/chapa mais espessos ou duas linhas de parafusos (detalhar à mão).";
+return ult;
+}
+function placaColuna(o) {
+var g = G(), mts = arr(o.montantes), nM = mts.length, fck = num(o.fck, FCK_PADRAO), ch = o.chumbador || {}, fyC = num(ch.fy, 250), fuC = num(ch.fu, 400), Nn = N();
+var bal = 75, sig = sigmaC(fck, 1), ult = null, esf = arr(o.esforcos);
+var m0 = mts[0] || { bw: 100, bf: 50, t: 3, fy: 250 }, B1 = m0.bw + 2 * bal, L1 = m0.bf + 2 * bal, A1 = B1 * L1;
+var Nc = 0, Nt = 0, V = 0, cN = "", cT = "", cV = "", inter = 0, cI = "";
+esf.forEach(function (s) { arr(s.N).forEach(function (n) { if (-n > Nc) { Nc = -n; cN = s.comb; } if (n > Nt) { Nt = n; cT = s.comb; } }); var v = Math.sqrt(sq(num(s.Vx, 0)) + sq(num(s.Vz, 0))); if (v > V) { V = v; cV = s.comb; } });
+for (var ci = 0; ci < CHUMB.length; ci++) {
+var cb = CHUMB[ci], d = cb.d, ft = FtRd(d, fuC), fv = FvRd(d, fuC, 1), Pn = Nn.parafuso(cb.id), folga = (Pn ? Pn.arr.d2 / 2 : 1.2 * d) + 5;
+inter = 0; cI = "";
+esf.forEach(function (s) { var tmax = Math.max(0, Math.max.apply(null, arr(s.N).concat([0]))), v = Math.sqrt(sq(num(s.Vx, 0)) + sq(num(s.Vz, 0))) / Math.max(1, nM / 2), it = sq(tmax / ft) + sq(v / fv); if (it > inter) { inter = it; cI = s.comb; } });
+var Vch = V / Math.max(1, nM / 2);
+for (var ti = 0; ti < PLACAS.length; ti++) {
+var tp = PLACAS[ti], fyP = CHAPA.fy, vs = [];
+var mm = (B1 - 0.95 * m0.bw) / 2, nn = (L1 - 0.8 * m0.bf) / 2, l = Math.max(mm, nn), sNc = Nc * 1000 / A1, MRd = tp * tp * fyP / 4 / g.a1 / 1000;
+var Mc = sNc * l * l / 2 / 1000, x = folga, beff = 2 * x, Mt = Nt * 1000 * x / beff / 1000;
+vs.push(verif("Pressão no concreto sob o montante (fck " + br(fck, 0) + " MPa)", IT("concreto"),
+[passo("Área de influência do montante", "(bw + 2·75)·(bf + 2·75) = " + br(B1, 0) + " × " + br(L1, 0), br(A1, 0) + " mm²", "a placa entre os montantes não conta (a favor)"),
+passo("σc,Rd", "fck·√(A2/A1)/(γc·γn) ≤ fck/γc, A2/A1 = 1 (sem o bloco de fundação no modelo)", br(sig, 2) + " MPa", FONTE_FCK),
+passo("σc,Sd", "Nc/A1" + (cN ? " — " + cN : ""), br(sNc, 2) + " MPa", "Nc = " + br(Nc, 2) + " kN")], sig, sNc, "MPa"));
+vs.push(verif("Placa à flexão (t = " + br(tp, 1) + " mm)", "AISC Design Guide 1 (2ª ed.) — momento plástico t²·fy/4 por unidade de largura; γa1 da " + IT("gamas"),
+[passo("Balanço na compressão", "l = máx[(B − 0,95·bw)/2; (L − 0,8·bf)/2]", br(l, 1) + " mm"), passo("Compressão", "σ·l²/2", br(Mc, 3) + " kN·m/m"),
+passo("Arrancamento", "T·x/beff, x = " + br(x, 1) + " mm (chumbador → face do montante), beff = 2·x (45°)", br(Mt, 3) + " kN·m/m", cT ? "T = " + br(Nt, 2) + " kN — " + cT : ""),
+passo("Resistente", "t²·fy/(4·γa1)", br(MRd, 3) + " kN·m/m")], MRd, Math.max(Mc, Mt), "kN·m/m"));
+vs.push(verif("Chumbador à tração (" + nM + " × " + cb.id + ", um por montante)", IT("tracao"),
+[passo("Ft,Rd", "0,75·Ab·fu/γa2 = 0,75·" + br(Ab(d), 0) + "·" + fuC + "/" + br(g.a2, 2), br(ft, 2) + " kN"), passo("Ft,Sd", "a maior tração de um montante" + (cT ? " — " + cT : ""), br(Nt, 2) + " kN")], ft, Nt));
+vs.push(verif("Chumbadores ao cisalhamento (atrito não considerado)", IT("cisalRosca") + " — furo alargado: a cortante em metade dos chumbadores",
+[passo("Fv,Rd", "0,40·Ab·fu/γa2", br(fv, 2) + " kN"), passo("Fv,Sd por chumbador", "V/(n/2)" + (cV ? " — " + cV : ""), br(Vch, 2) + " kN", "V = " + br(V, 2) + " kN")], fv, Vch));
+vs.push(verif("Tração + cisalhamento no chumbador", IT("interacao"), [passo("(Ft/Ft,Rd)² + (Fv/Fv,Rd)²", "na mesma combinação" + (cI ? " — " + cI : ""), br(inter, 3))], 1, inter, ""));
+var tw = num(m0.t, 3), dw = Math.max(3, Math.min(dwMin(Math.min(tw, tp)), Math.floor(tw))), per = 2 * (m0.bw + m0.bf), cap = soldaMm(dw, Math.min(num(m0.fy, 250), fyP), tw) * per;
+vs.push(verif("Solda do montante na placa (filete " + dw + " mm no contorno, " + br(per, 0) + " mm)", IT("solda") + "; " + IT("soldaMin"),
+[passo("Resistente", "mín(0,60·0,707·dw·fw/γw2; 0,60·fy·t/γa1)·L", br(cap, 2) + " kN"), passo("Solicitante", "a maior tração de um montante (a compressão é por contato)", br(Nt, 2) + " kN")], cap, Nt));
+var fe = fecha(vs);
+var fctd = 0.7 * 0.3 * Math.pow(fck, 2 / 3) / 1.4, fyd = fyC / 1.15, lb = Math.max(d / 4 * fyd / fctd, 25 * d), rzA = Math.min(1, Nt * 1000 / Math.max(1, Ab(d) * fyd)), lbn = Math.max(0.7 * lb * rzA, 0.3 * lb, 10 * d, 100), anc = Math.max(300, Math.ceil(lbn / 50) * 50);
+var va = verif("Ancoragem por aderência do chumbador com gancho", "ABNT NBR 6118:2014, 9.3.2.1 e 9.4.2.4/9.4.2.5 (barra lisa η1 = 1,0, gancho α = 0,7)",
+[passo("fctd = fbd", "0,7·0,3·fck^(2/3)/1,4 (η1 = η2 = η3 = 1)", br(fctd, 3) + " MPa"), passo("lb", "φ/4·fyd/fbd ≥ 25φ", br(lb, 0) + " mm"), passo("lb,nec", "0,7·lb·Ft,Sd/(Ab·fyd) ≥ máx(0,3·lb; 10φ; 100)", br(lbn, 0) + " mm"), passo("Adotado", "≥ 300 mm, múltiplo de 50", br(anc, 0) + " mm")], anc, lbn, "mm");
+vs.push(va);
+ult = { ok: fe.ok, razao: fe.razao, governante: fe.governante, t: tp, chumbador: cb.id, d: d, nChumb: nM, ancoragem: anc, lb: Math.round(lb), soldaDw: dw, verificacoes: vs,
+forcas: { Nc: Nc, Nt: Nt, V: V } };
+if (fe.ok) return ult;
+}
+}
+ult.sugestao = "Nem o chumbador " + CHUMB[CHUMB.length - 1].id + " com a placa de " + PLACAS[PLACAS.length - 1] + " mm passa: aço F1554 Gr.55, mais chumbadores por montante ou bloco maior (A2/A1).";
+return ult;
+}
+function soldaL(o) {
+var g = G(), L = o.L, tA = num(o.tApoio, L.t), dw = Math.max(3, Math.min(dwMin(Math.min(L.t, tA)), Math.floor(Math.min(L.t, tA)))), Nd = Math.abs(num(o.N, 0)), Nt = Math.max(0, num(o.Nt, 0));
+var porMm = 2 * Math.min(soldaMm(dw, o.aco.fy, L.t), soldaMm(dw, num(o.fyApoio, 250), tA)), Lw = Math.max(40, 4 * dw, cima10(Nd / porMm));
+function Ct(lw) { return Math.max(0.6, Math.min(0.9, 1 - L.xc / lw)); }
+while (Nt > 0 && Ct(Lw) * L.A * o.aco.fu / g.a2 / 1000 < Nt && Lw < 300) Lw += 10;
+var vs = [verif("Cordão: 2 filetes de " + dw + " mm × " + Lw + " mm (calcanhar e ponta da aba)", IT("solda") + "; " + IT("soldaMin") + "; " + IT("soldaComp"),
+[passo("Por mm (2 filetes)", "2·mín(0,60·0,707·dw·fw/γw2; 0,60·fy·t/γa1) na aba e no apoio", br(porMm * 1000, 0) + " N/mm"), passo("Lw", "≥ máx(4·dw; 40 mm; N/(resist. por mm)), múltiplo de 10", Lw + " mm")], porMm * Lw, Nd)];
+if (Nt > 0) vs.push(verif("Ruptura da seção líquida (Ct = 1 − ec/Lw = " + br(Ct(Lw), 2) + ")", IT("liquida"), [passo("Nt,Rd", "Ct·Ag·fu/γa2", br(Ct(Lw) * L.A * o.aco.fu / g.a2 / 1000, 2) + " kN")], Ct(Lw) * L.A * o.aco.fu / g.a2 / 1000, Nt));
+var fe = fecha(vs);
+return { ok: fe.ok, razao: fe.razao, governante: fe.governante, dw: dw, Lw: Lw, verificacoes: vs };
+}
+function soldaChapa(R, Lch, tCh, tP, fyP, nF, fixo) {
+var dw = Math.max(3, Math.min(dwMin(Math.min(tCh, tP)), Math.floor(Math.min(tCh, tP)))), porMm = Math.min(nF * soldaMm(dw, fyP, tP), 2 * 0.6 * CHAPA.fy * tCh / G().a1 / 1000), Lw = fixo ? Lch : Math.max(Lch, 40, 4 * dw, cima10(R / porMm));
+var vP = verif("Perna do filete ≤ espessura da peça (dw = " + dw + " mm; t = " + br(tP, 2) + " mm)", IT("soldaMin") + " — filete mínimo 3 mm numa parede mais fina fura a peça: critério do projeto (pedido do Rogério, 21/11/2026); parede fina é da NBR 14762",
+[passo("Filete mínimo", "Tabela 10 pela parte menos espessa", dw + " mm"), passo("Espessura da peça", "parede/alma soldada", br(tP, 2) + " mm")], tP, dw, "mm");
+if (dw <= tP + 1e-9) vP.razao = 0;
+return { dw: dw, Lw: Lw, vPerna: vP, v: verif("Solda da chapa de ligação na peça (" + nF + " filetes de " + dw + " mm × " + Lw + " mm)", IT("solda") + "; " + IT("soldaComp"),
+[passo("Por mm", nF + "·mín(0,60·0,707·dw·fw/γw2; 0,60·fy·t/γa1) ≤ 2·0,60·fy·tch/γa1 (chapa)", br(porMm * 1000, 0) + " N/mm"), passo("Lw", "≥ comprimento da chapa (" + br(Lch, 0) + " mm) e R/(por mm)", Lw + " mm")], porMm * Lw, R) };
+}
+function almaU(o) {
+var g = G(), B = num(o.U.bw, 100), t = num(o.U.t, 3), tp = num(o.tp, 8), fy = num(o.fy, 250), beta = Math.min(0.99, tp / B), Uu = Math.min(1, Math.max(0, num(o.Nc, 0) * 1000 / (num(o.U.A, 1) * fy)));
+var Qf = o.Nc > 0 ? Math.max(0, 1 - 0.3 * Uu * (1 + Uu)) : 1, Rn = fy * t * t / (1 - beta) * (2 * o.Lg / B + 4 * Math.sqrt(1 - beta)) * Qf / 1000, Rd = Rn / g.a1;
+return verif("Flexão da alma do " + (o.nome || "U") + " sob a chapa de nó (força ⊥ à alma)", "AISC 360-16, Tabela K1.2 (placa longitudinal — plastificação da face) e K1.3 (Qf), ANALOGIA: a NBR 8800 não trata; Rd = Rn/γa1",
+[passo("Rn", "fy·t²/(1 − tp/B)·[2·Lg/B + 4·√(1 − tp/B)]·Qf", br(Rn, 2) + " kN", "B = " + br(B, 0) + " mm (alma), t = " + br(t, 2) + " mm, Lg = " + br(o.Lg, 0) + " mm, tp = " + br(tp, 1) + " mm"),
+passo("Qf", o.Nc > 0 ? "1 − 0,3·U·(1 + U), U = Nc/(A·fy) = " + br(Uu, 3) : "U tracionado: 1,0", br(Qf, 3)), passo("Rd", "Rn/γa1", br(Rd, 2) + " kN"), passo("Solicitante", "Σ|N|·sen θ das barras da chapa", br(o.F, 2) + " kN")], Rd, o.F);
+}
+var T_ENR = [6.3, 8, 9.5, 12.5, 16, 19, 22.4, 25];
+function enrijecedores(o) {
+var g = G(), bw = num(o.U.bw, 100), tU = num(o.U.t, 3), h = num(o.U.bf, 50) - tU, F = Math.abs(num(o.F, 0)), ult = null;
+for (var i = 0; i < T_ENR.length; i++) {
+var te = T_ENR[i], M = F / 2 * bw / 4 / 1000, MRd = te * h * h / 4 * CHAPA.fy / g.a1 / 1e6, VRd = 0.6 * CHAPA.fy * h * te / g.a1 / 1000;
+var Lw1 = bw - 2 * tU, dw1 = Math.max(3, Math.min(dwMin(Math.min(te, tU)), Math.floor(Math.min(te, tU)))), w1 = 2 * soldaMm(dw1, num(o.fy, 250), tU) * Lw1;
+var dw2 = Math.max(3, Math.min(dwMin(Math.min(te, tU)), Math.floor(Math.min(te, tU)))), w2 = 2 * soldaMm(dw2, num(o.fy, 250), tU) * h;
+var vs = [verif("Enrijecedor à flexão no plano (" + br(te, 1) + " × " + br(h, 0) + " mm, vão " + br(bw, 0) + " mm)", "modelo do projetista: viga biapoiada nas abas, F⊥/2 no meio; momento plástico t·h²/4·fy/γa1 (" + IT("gamas") + ")",
+[passo("M", "(F⊥/2)·bw/4", br(M, 3) + " kN·m"), passo("MRd", "t·h²/4·fy/γa1", br(MRd, 3) + " kN·m")], MRd, M, "kN·m"),
+verif("Enrijecedor ao cisalhamento", "ABNT NBR 8800:2008, 5.4.3.1.1 (Vpl = 0,60·Aw·fy; conferir no texto)", [passo("VRd", "0,60·fy·h·t/γa1", br(VRd, 2) + " kN"), passo("VSd", "F⊥/4 (cada apoio)", br(F / 4, 2) + " kN")], VRd, F / 4),
+verif("Solda enrijecedor → alma do U (2 × " + dw1 + " mm × " + br(Lw1, 0) + " mm)", IT("solda"), [passo("Resistente", "2·(bw − 2·t)·mín(0,60·0,707·dw·fw/γw2; 0,60·fy·t/γa1), metal-base = alma", br(w1, 2) + " kN")], w1, F / 2),
+verif("Solda enrijecedor → aba do U (2 × " + dw2 + " mm × " + br(h, 0) + " mm)", IT("solda"), [passo("Resistente", "2·h·mín(…)", br(w2, 2) + " kN")], w2, F / 4)];
+var fe = fecha(vs);
+ult = { ok: fe.ok, razao: fe.razao, governante: fe.governante, t: te, h: h, comprimento: bw - 2 * tU, soldaAlma: { dw: dw1, Lw: Lw1 }, soldaAbas: { dw: dw2, Lw: h }, verificacoes: vs };
+if (fe.ok) return ult;
+}
+return ult;
+}
+function verificar(r, op) {
+op = op || {};
+var out = { ligacoes: [], n: 0, reprovados: 0, pior: null, cobertos: { base: false, rotuladas: false, tubo: false }, naoDim: [], modelo: { porBarra: {}, placas: {} }, pendencias: [], resumo: "",
+premissas: "esforços = envoltória das combinações últimas de cada barra; coeficientes da NBR 8800:2008 do js/metalnorma.js LIGDIM (conferir no texto); " + FONTE_FCK };
+if (!r || !r.ok || !r.modelo || !r.analise || !r.analise.combinacoes) { out.resumo = "sem cálculo"; return out; }
+var LCc = LC(), opc = LCc && LCc.opcoes, edAnt = opc ? opc.edicao : null; if (opc) opc.edicao = "2008";
+try { verificar0(r, op, out, LCc); } finally { if (opc) opc.edicao = edAnt; }
+out.ligacoes.forEach(function (l) { out.n++; if (!l.ok) out.reprovados++; if (!out.pior || l.razao > out.pior.razao) out.pior = l; });
+var cont = {}; out.ligacoes.forEach(function (l) { cont[l.tipo] = (cont[l.tipo] || 0) + 1; });
+out.resumo = out.n + " ligação(ões) dimensionada(s) pela NBR 8800:2008 (" + Object.keys(cont).map(function (k) { return cont[k] + " " + (ROT[k] || k); }).join(", ") + "): " + out.reprovados + " reprovada(s)" +
+(out.pior ? "; pior razão " + br(out.pior.razao, 3) + " (" + out.pior.nome + ": " + out.pior.governante + ")" : "") + (out.naoDim.length ? "; NÃO dimensionado: " + out.naoDim.join("; ") : "");
+return out;
+}
+var ROT = { parafusada: "pontas parafusadas", clip: "clips de terça", barra: "pontas de barra redonda", placaColuna: "placas de coluna treliçada", placaBase: "placas de base", soldaMF: "mãos-francesas soldadas", almaU: "almas de U sob chapa de nó" };
+function verificar0(r, op, out, LCc) {
+var M = arr(r.modelo.membros), fck = num(op.fck, FCK_PADRAO), modo = op.ligacao === "parafusada" || op.ligacao === "soldada" ? op.ligacao : "padrao";
+var ys = []; M.forEach(function (m) { if (m.a && m.b) ys.push(Math.min(m.a[1], m.b[1])); }); var cota = ys.length ? Math.min.apply(null, ys) : 0;
+var porId = {}; M.forEach(function (m) { porId[m.id] = m; });
+function add(l) { out.ligacoes.push(l); return l; }
+var ROTUL = { escora: 1, escoraColuna: 1, tapamento: 1, pilarInterno: 1, viga: 0 }, faltou = {}, colunas = {}, ordCol = [];
+M.forEach(function (m) {
+var gr = grupoDe(m), s = sec(m), a = aco(m), E;
+if (!gr) return;
+var pe = m.a && m.b ? (Math.abs(Math.min(m.a[1], m.b[1]) - cota) < 1e-4 && Math.abs(m.a[0] - m.b[0]) < 1e-6 && Math.abs(m.a[2] - m.b[2]) < 1e-6) : false;
+if (pe && (gr === "banzoColuna" || gr === "pilar" || gr === "tapamento" || gr === "pilarInterno")) {
+var ck = m.calc.coluna || ("b:" + (m.calc.barraId || m.id));
+if (!colunas[ck]) { colunas[ck] = []; ordCol.push(ck); } colunas[ck].push(m);
+}
+if (s.forma === "2L" && /^(diagonal|montante|banzoSup|banzoInf)$/.test(gr)) {
+if (modo !== "parafusada") return;
+E = env(r, m);
+var L2 = { b: num(s.a, num(s.b, 50)), t: num(s.t, 3) }, e2 = num(s.e, 8);
+var l = parafusada({ N: E.N, Nt: E.Nt, combN: E.combN, planos: 2, aba: L2,
+partes: [{ papel: "chapa de nó (" + br(e2, 1) + " mm)", t: e2, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } },
+{ papel: "abas da 2L", t: L2.t, fy: a.fy, fu: a.fu, conta: 2, ltFn: function (d, gg) { return L2.b - num(gg, L2.b / 2); } }],
+perfil: { A: num(s.A, 0), t: L2.t, xc: num(s.xc, 0), abas: 2, fu: a.fu } });
+fechaLig(l, "parafusada", "Nó de treliça — " + m.nome + " (" + s.nome + ")", m, E);
+out.modelo.porBarra[m.calc.barraId || m.peca] = { n: l.n, id: l.id, classe: l.classe };
+return;
+}
+if (gr === "maoFrancesa") {
+E = env(r, m);
+var ligMF = op.ligMaoFrancesa === "soldada" || modo === "soldada" || (m.calc && m.calc.ligacao === "soldada") ? "soldada" : "parafusada";
+var Ls = { b: num(s.a, num(s.b, 50)), t: num(s.t, 3), xc: num(s.xc, 0), A: num(s.A, 0) };
+var tTer = null, nosMF = arr(m.nos);
+M.forEach(function (q) { if (tTer != null || grupoDe(q) !== "terca") return; var nq = arr(q.nos); if (nq.indexOf(nosMF[0]) >= 0 || nq.indexOf(nosMF[nosMF.length - 1]) >= 0) tTer = num(sec(q).t, null); });
+if (tTer == null) tTer = num(op.tApoioMF, 2.66);
+var fina = tTer < 3 - 1e-9;
+if (ligMF === "soldada" && !fina) {
+var sl = soldaL({ N: E.N, Nt: E.Nt, L: Ls, aco: a, tApoio: tTer, fyApoio: 250 });
+fechaLig(sl, "soldaMF", "Mão-francesa soldada — " + m.nome, m, E);
+sl.resumo = "2 filetes " + sl.dw + " mm × " + sl.Lw + " mm em cada ponta";
+return;
+}
+var lm = parafusada({ N: E.N, Nt: E.Nt, combN: E.combN, planos: 1, aba: { b: Ls.b, t: Ls.t },
+partes: [{ papel: "chapa da mão-francesa (" + br(T_CHAPA_MF, 2) + " mm)", t: T_CHAPA_MF, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } },
+{ papel: "aba da cantoneira", t: Ls.t, fy: a.fy, fu: a.fu, conta: 1, ltFn: function (d, gg) { return Ls.b - num(gg, Ls.b / 2); } }],
+perfil: { A: Ls.A, t: Ls.t, xc: Ls.xc, abas: 1, fu: a.fu } });
+var ent = { n: lm.n, id: lm.id, classe: lm.classe };
+if (fina) {
+var vS = soldaChapa(E.N, Ls.b, T_CHAPA_MF, tTer, 250, 2, true).vPerna; vS.informativa = true; vS.nome += " — ponta SOLDADA na terça reprova: chapa parafusada na alma da terça";
+var lt = parafusada({ N: E.N, Nt: E.Nt, combN: E.combN, planos: 1,
+partes: [{ papel: "chapa da mão-francesa na terça (" + br(T_CHAPA_MF, 2) + " mm)", t: T_CHAPA_MF, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } },
+{ papel: "alma da terça", t: tTer, fy: 250, fu: 400, conta: 1, fino: true }] });
+lt.verificacoes.forEach(function (v) { v.nome = "Chapa → terça: " + v.nome; });
+lm.verificacoes = lm.verificacoes.concat([vS], lt.verificacoes);
+var fT = fecha(lm.verificacoes.filter(function (v) { return !v.informativa; })); lm.ok = fT.ok; lm.razao = fT.razao; lm.governante = fT.governante;
+ent.terca = { n: lt.n, id: lt.id, classe: lt.classe, t: tTer };
+lm.terca = ent.terca;
+fechaLig(lm, "parafusada", "Mão-francesa parafusada — " + m.nome, m, E);
+lm.resumo = lm.n + " parafusos " + lm.id + " " + lm.classe + " na cantoneira; chapa " + br(T_CHAPA_MF, 2) + " mm PARAFUSADA na alma da terça (" + lt.n + " × " + lt.id + " " + lt.classe + ", parede " + br(tTer, 2) + " mm < filete mínimo)" + (ligMF === "soldada" ? " — a ligação soldada pedida não cabe na terça fina" : "");
+} else {
+var sc = soldaChapa(E.N, Ls.b, T_CHAPA_MF, tTer, 250, 2, true); lm.verificacoes.push(sc.v, sc.vPerna);
+var f2 = fecha(lm.verificacoes); lm.ok = f2.ok && lm.ok !== false; lm.razao = f2.razao; lm.governante = f2.governante;
+fechaLig(lm, "parafusada", "Mão-francesa parafusada — " + m.nome, m, E);
+}
+out.modelo.porBarra[m.calc.barraId || m.peca] = ent;
+return;
+}
+if (gr === "terca" && /frio/.test(s.forma || "")) {
+E = env(r, m);
+var best = null;
+[{ id: "ASTM A307", fub: 415 }, { id: "ISO 4016 classe 8.8", fub: 800 }].forEach(function (pc) {
+if (best && best.ok) return;
+var q = LCc.clipTerca({ terca: { t: num(s.t, 2), fu: a.fu }, parafuso: pc, aco: { fy: 250, fu: 400 }, viga: { tf: 6 }, forcaPonta: Math.abs(E.N), reacao: { normal: Math.sqrt(sq(E.Vy) + sq(E.N)), paralela: E.Vz, cima: E.Vy } });
+if (!best || q.ok) best = q;
+});
+best.verificacoes.unshift(verif("Esforços na ponta da terça (envoltória ELU)", "cálculo", [passo("R⊥ (alma)", "√(Vy² + N²) — a força de escora da terça passa pelo clip", br(Math.sqrt(sq(E.Vy) + sq(E.N)), 2) + " kN", "Vy = " + br(E.Vy, 2) + "; N = " + br(E.N, 2) + " kN"), passo("R∥", "Vz", br(E.Vz, 2) + " kN")], 1, 0, ""));
+fechaLig(best, "clip", "Clip de terça — " + m.nome, m, E);
+out.modelo.porBarra[m.calc.barraId || m.peca] = { n: best.dimensoes.n, id: best.dimensoes.parafuso, classe: /8\.8/.test(best.dimensoes.classe) ? "8.8" : "A307", clip: best.dimensoes.cat };
+return;
+}
+if (s.forma === "circ") {
+E = env(r, m);
+var cv = LCc.contravento({ d: num(s.d, 12.5), N: E.Nt, barra: a, alfa: 45 });
+if (gr === "corrente") { cv.verificacoes = cv.verificacoes.slice(0, 2); var f3 = fecha(cv.verificacoes); cv.ok = f3.ok; cv.razao = f3.razao; cv.governante = f3.governante; }
+fechaLig(cv, "barra", (gr === "corrente" ? "Corrente" : "Contravento") + " — " + m.nome, m, E);
+return;
+}
+if (ROTUL[gr]) {
+E = env(r, m);
+var R = gr === "escora" || gr === "escoraColuna" ? Math.sqrt(sq(E.N) + sq(E.V)) : Math.sqrt(sq(E.V) + sq(E.Nt));
+var tubo = /^tubo/.test(s.forma || ""), tP = num(s.t, num(s.tw, 4));
+if (tubo && tP < 3 - 1e-9) {
+var Aliq = num(s.A, 0) - 2 * (T_GUSSET + 2) * tP;
+var lp = parafusada({ N: R, Nt: E.Nt, combN: E.combN || E.combV, planos: 2,
+partes: [{ papel: "chapa do apoio no rasgo (" + T_GUSSET + " mm)", t: T_GUSSET, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } },
+{ papel: "parede do tubo", t: tP, fy: a.fy, fu: a.fu, conta: 2, fino: true }],
+perfil: { A: Aliq, t: tP, xc: 1e9, abas: 2, fu: a.fu } });
+fechaLig(lp, "parafusada", "Ponta rotulada PASSANTE (parede " + br(tP, 2) + " mm < filete mínimo) — " + m.nome + " (" + s.nome + ")", m, E);
+lp.passante = true;
+lp.resumo = lp.n + " parafusos passantes " + lp.id + " " + lp.classe + " (2 planos) pelo tubo e pela chapa " + T_GUSSET + " mm do apoio no rasgo — sem solda na parede de " + br(tP, 2) + " mm";
+out.modelo.porBarra[m.calc.barraId || m.peca] = { n: lp.n, id: lp.id, classe: lp.classe, chapaLigacao: T_GUSSET, passante: true };
+return;
+}
+var lg = parafusada({ N: R, Nt: E.Nt, combN: E.combN || E.combV, planos: 1,
+partes: [{ papel: "chapa da peça (" + T_GUSSET + " mm)", t: T_GUSSET, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } },
+{ papel: "chapa do apoio (" + T_GUSSET + " mm)", t: T_GUSSET, fy: CHAPA.fy, fu: CHAPA.fu, conta: 1, ltFn: function (d) { return N().bordaMin(d, "serra").e; } }] });
+if (lg.n) { var sw = soldaChapa(R, (lg.n - 1) * num(lg.passo, 40) + 2 * num(lg.borda, 25), T_GUSSET, tP, a.fy, tubo ? 4 : 2); lg.verificacoes.push(sw.v, sw.vPerna); lg.soldaPeca = { dw: sw.dw, Lw: sw.Lw, filetes: tubo ? 4 : 2 }; var f4 = fecha(lg.verificacoes); lg.ok = f4.ok && lg.ok !== false; lg.razao = f4.razao; lg.governante = f4.governante; }
+fechaLig(lg, "parafusada", "Ponta rotulada por chapa — " + m.nome + " (" + s.nome + ")", m, E);
+out.modelo.porBarra[m.calc.barraId || m.peca] = { n: lg.n, id: lg.id, classe: lg.classe, chapaLigacao: T_GUSSET };
+return;
+}
+if (!/^(travejamento|diagonal|montante|banzoSup|banzoInf|banzoColuna|pilar)$/.test(gr)) faltou[gr] = (faltou[gr] || 0) + 1;
+});
+var combs = combsELU(r);
+ordCol.forEach(function (ck) {
+var ms = colunas[ck], E0 = function (m, k) { var p = pontas(r, m, k), ya = m.a[1], yb = m.b[1]; return ya <= yb ? p.a : p.b; };
+var noBase = function (m) { var ns = arr(m.nos); return m.a[1] <= m.b[1] ? ns[0] : ns[ns.length - 1]; };
+var esf = combs.map(function (k) {
+var Ns = [], vx = 0, vz = 0, RE = r.analise.combinacoes[k].reacoes || {};
+ms.forEach(function (m) { var R = RE[noBase(m)]; if (R) { Ns.push(-num(R[1], 0)); vx += num(R[0], 0); vz += num(R[2], 0); return; } var e = E0(m, k); if (!e) return; Ns.push(num(e.N, 0)); vx += num(e.Vy, 0); vz += num(e.Vz, 0); });
+return { comb: k, N: Ns, Vx: vx, Vz: vz };
+});
+var s0 = sec(ms[0]), l;
+if (ms.length >= 2) {
+l = placaColuna({ montantes: ms.map(function (m) { var s = sec(m); return { id: m.id, bw: num(s.bw, num(s.d, 100)), bf: num(s.bf, 50), t: num(s.t, num(s.tw, 3)), fy: aco(m).fy }; }), esforcos: esf, fck: fck, chumbador: { fy: 250, fu: 400, id: "ASTM F1554 Gr.36" } });
+l.resumo = "Placa t = " + br(l.t, 1) + " mm sob " + ms.length + " montantes, " + l.nChumb + " chumbadores " + l.chumbador + " F1554 Gr.36 com gancho, ancoragem " + l.ancoragem + " mm";
+fechaLig(l, "placaColuna", "Placa de base da coluna " + ck + " (" + s0.nome + ")", ms[0], null);
+out.modelo.placas[ck] = { t: l.t / 1000, parafuso: l.chumbador, ancoragem: l.ancoragem / 1000, nChumb: l.nChumb };
+} else {
+var m = ms[0], tubo = /^tubo/.test(s0.forma || ""), pil = tubo ? { d: num(s0.h, 100), bf: num(s0.b, 100), tw: num(s0.t, 4), tf: num(s0.t, 4) } : { d: num(s0.d, num(s0.bw, 100)), bf: num(s0.bf, 50), tw: num(s0.tw, num(s0.t, 3)), tf: num(s0.tf, num(s0.t, 3)) };
+var pb = LCc.placaBase({ tipo: "rotulada", pilar: pil, aco: { fy: 250, fu: 400 }, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck }, acoPilar: aco(m),
+esforcos: esf.map(function (e) { return { comb: e.comb, N: e.N[0] || 0, Vx: e.Vx, Vz: e.Vz }; }) });
+fechaLig(pb, "placaBase", "Placa de base — " + m.nome + " (" + s0.nome + ")", m, null);
+out.modelo.placas[ck] = { t: pb.dimensoes.t / 1000, parafuso: pb.dimensoes.chumbadores.id, ancoragem: pb.dimensoes.chumbadores.ancoragem / 1000, nChumb: pb.dimensoes.chumbadores.n };
+}
+});
+arr(r.nosChapa && r.nosChapa.nos).forEach(function (o) {
+if (!o.chapa || !(o.chapa.Sy > 0) || !o.principal) return;
+var pm = porId[o.principal], s = pm && sec(pm); if (!s || !(s.bw > 0) || s.forma !== "frio") return;
+var Ep = env(r, pm), v = almaU({ F: o.chapa.Sy, Lg: o.chapa.Lg, tp: o.chapa.tg, U: { bw: s.bw, t: s.t, A: s.A }, fy: aco(pm).fy, Nc: Ep.Nc, nome: s.nome });
+var f = fecha([v]), vsA = [v], enr = null, res = "chapa " + br(o.chapa.tg, 0) + " × " + o.chapa.Lg + " mm, F⊥ = " + br(o.chapa.Sy, 1) + " kN — a alma resiste sozinha";
+if (!f.ok) {
+enr = enrijecedores({ F: o.chapa.Sy, tp: o.chapa.tg, U: { bw: s.bw, bf: s.bf, t: s.t }, fy: aco(pm).fy });
+v.informativa = true; v.nome += " — NÃO basta (razão " + br(v.razao, 2) + "): enrijecedores";
+vsA = [v].concat(enr.verificacoes); f = fecha(enr.verificacoes);
+res = "chapa " + br(o.chapa.tg, 0) + " × " + o.chapa.Lg + " mm, F⊥ = " + br(o.chapa.Sy, 1) + " kN — 2 enrijecedores " + br(enr.t, 1) + " × " + br(enr.h, 0) + " × " + br(enr.comprimento, 0) + " mm (ASTM A36) nas bordas da chapa";
+var nI = r.modelo.noInfo && r.modelo.noInfo[o.no], nM = !nI && r.modelo.modelo && arr(r.modelo.modelo.nos).filter(function (q) { return q.id === o.no; })[0];
+out.modelo.enrijecedores = arr(out.modelo.enrijecedores).concat([{ no: o.no, membro: pm.id, peca: pm.peca, barraId: pm.calc ? pm.calc.barraId : null, P: nI ? nI.P : (nM ? [nM.x, nM.y, nM.z] : null),
+t: enr.t / 1000, h: enr.h / 1000, comprimento: enr.comprimento / 1000, Lg: o.chapa.Lg / 1000, soldaAlma: enr.soldaAlma, soldaAbas: enr.soldaAbas, U: s.nome }]);
+}
+add({ tipo: "almaU", nome: "Alma do " + s.nome + " no nó " + o.no, membro: pm.id, peca: pm.peca, barraId: pm.calc ? pm.calc.barraId : null, ok: f.ok, razao: f.razao, governante: f.governante, verificacoes: vsA, resumo: res, enrijecedores: enr ? { t: enr.t, h: enr.h, comprimento: enr.comprimento } : null });
+if (!f.ok) out.pendencias.push("Alma do " + s.nome + " no nó " + o.no + ": nem o enrijecedor de " + T_ENR[T_ENR.length - 1] + " mm passa (razão " + br(f.razao, 2) + ") — detalhar à mão.");
+});
+Object.keys(faltou).forEach(function (k) { out.naoDim.push(faltou[k] + " barra(s) do grupo " + k); });
+var placasOk = ordCol.length > 0;
+out.cobertos.base = placasOk;
+out.cobertos.rotuladas = !Object.keys(faltou).length;
+out.cobertos.tubo = !M.some(function (m) { var gr = grupoDe(m), s = sec(m); return /^tubo/.test(s.forma || "") && /^(diagonal|montante|banzoSup|banzoInf|travejamento)$/.test(gr) && !(m.calc && m.calc.tuboSoldado); });
+out.pendencias.push("Cone de arrancamento do concreto, bloco/pedestal e armadura de fretagem: projeto de fundação (com as reações deste memorial) — a NBR 8800 e a NBR 6118 9.4 não tratam o cone.");
+function fechaLig(l, tipo, nome, m, E) {
+if (tipo === "clip" || tipo === "barra" || tipo === "placaBase") txt2008(l);
+l.tipo = tipo; l.nome = nome; l.membro = m ? m.id : null; l.peca = m ? m.peca : null; l.barraId = m && m.calc ? m.calc.barraId : null;
+if (E) l.esforcos = { Nt: E.Nt, Nc: E.Nc, V: E.V, comb: E.combN || E.combV };
+if (!l.resumo) l.resumo = l.n ? l.n + " parafusos " + l.id + " " + l.classe + (l.soldaPeca ? "; chapa " + T_GUSSET + " mm soldada (" + l.soldaPeca.filetes + " × " + l.soldaPeca.dw + " mm × " + l.soldaPeca.Lw + " mm)" : "") : (l.resumo || "");
+add(l);
+}
+}
+function txt2008(l) {
+function f(x) { return String(x == null ? "" : x).replace(/NBR 8800:2024/g, "NBR 8800:2008").replace(/0,45·Ab/g, "0,40·Ab").replace(/0,45·/g, "0,40·")
+.replace(/σc,Rd = 0,85·fck\/γc·√\(A2\/A1\) ≤ 1,7·fck\/γc/g, "σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck — conferir no texto"); }
+arr(l.verificacoes).forEach(function (v) { v.nome = f(v.nome); v.item = f(v.item); arr(v.passos).forEach(function (p) { p.rotulo = f(p.rotulo); p.formula = f(p.formula); }); });
+var cp = arr(l.verificacoes).filter(function (v) { return /Pressão no concreto/.test(v.nome); })[0];
+if (cp) arr(cp.passos).forEach(function (p) { if (p.rotulo === "σc,Rd") p.formula = "fck·√(A2/A1)/(γc·γn) (2008, 6.6.1 — conferir no texto)"; });
+}
+var ITENS = { base: /^placas de base$/, tubo: /^nós SOLDADOS de tubo/, rotuladas: /^ligações rotuladas/ };
+function tirarDoMotivo(motivo, cob) {
+var m = /^(.*? — )(.*)( — e o cálculo da estrutura desenhada NÃO as dimensiona.*)$/.exec(String(motivo || ""));
+if (!m) return motivo;
+var it = m[2].split("; ").filter(function (x) { x = x.trim(); if (!x) return false; for (var k in ITENS) if (cob[k] && ITENS[k].test(x)) return false; return true; });
+return it.length ? m[1] + it.join("; ") + m[3] : null;
+}
+function escH(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function memoriaHtml(ld, op) {
+op = op || {};
+if (!ld || !arr(ld.ligacoes).length) return "";
+var L = arr(ld.ligacoes), ids = op.ids ? op.ids.map(String) : null;
+if (ids) L = L.filter(function (l) { return ids.indexOf(String(l.peca)) >= 0; });
+L = L.slice().sort(function (a, b) { return b.razao - a.razao; });
+if (op.max) L = L.slice(0, op.max);
+if (!L.length) return "";
+function cor(rz) { return rz > 1 + 1e-9 ? "var(--ml-erro, #c62828)" : rz > 0.9 ? "var(--ml-aviso, #b26a00)" : "var(--ml-ok, #2e7d32)"; }
+var h = '<div class="lig-dim" data-lig-dim="' + L.length + '">';
+L.forEach(function (l) {
+h += '<details data-lig-dim-item="' + escH(l.tipo) + '"' + (op.abrir ? " open" : "") + '><summary><b>' + escH(l.nome) + '</b> — ' + escH(l.resumo || "") + ' · razão <b style="color:' + cor(l.razao) + '">' + br(l.razao, 3) + "</b> (" + escH(l.governante || "") + ")</summary>";
+if (l.esforcos) h += '<p class="ml-nota">Esforços (envoltória ELU): Nt = ' + br(l.esforcos.Nt, 2) + " kN; Nc = " + br(l.esforcos.Nc, 2) + " kN; V = " + br(l.esforcos.V, 2) + " kN" + (l.esforcos.comb ? " (" + escH(l.esforcos.comb) + ")" : "") + "</p>";
+if (!op.resumo) h += '<table class="ml-t"><thead><tr><th>Verificação</th><th>Item</th><th>Passos</th><th>Solicitante</th><th>Resistente</th><th>Razão</th></tr></thead><tbody>' + arr(l.verificacoes).map(function (v) {
+return "<tr><td>" + escH(v.nome) + "</td><td>" + escH(v.item) + "</td><td>" + arr(v.passos).map(function (p) { return escH(p.rotulo) + (p.formula ? ": " + escH(p.formula) : "") + " = <b>" + escH(p.valor) + "</b>" + (p.extra ? " <small>(" + escH(p.extra) + ")</small>" : ""); }).join("<br>") +
+"</td><td>" + br(v.solicitante, 2) + " " + escH(v.unidade || "") + "</td><td>" + br(v.resistencia, 2) + " " + escH(v.unidade || "") + '</td><td style="color:' + cor(v.razao) + '">' + br(v.razao, 3) + (v.informativa ? " (substituída)" : "") + "</td></tr>";
+}).join("") + "</tbody></table>";
+h += "</details>";
+});
+return h + "</div>";
+}
+var MetalLigDim = { memoriaHtml: memoriaHtml, soldaChapa: soldaChapa, enrijecedores: enrijecedores, verificar: verificar, parafusada: parafusada, placaColuna: placaColuna, soldaL: soldaL, almaU: almaU, tirarDoMotivo: tirarDoMotivo, env: env,
+FvRd: FvRd, FtRd: FtRd, FcRd: FcRd, sigmaC: sigmaC, FCK_PADRAO: FCK_PADRAO, N_MAX: N_MAX, CLASSES: CLASSES, CHUMB: CHUMB, PLACAS: PLACAS };
+global.MetalLigDim = MetalLigDim;
+if (typeof module !== "undefined" && module.exports) module.exports = MetalLigDim;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/acoligfundacao.js ==== */
@@ -135425,6 +135942,8 @@ if (melhor) return;
 var d = pf.d, passoB = cima5(ESPF * d), bordaS = Math.max(25, cima5(1.75 * d + BACR)), La = (n - 1) * passoB + 2 * bordaS, h = cima5(0.55 * ct.a);
 var FvRd = parafusoCisal(d, fub, true), Fb = R / n, fino = tT < 4.75;
 var FcRd = fino ? esmagamento14762(d, tT, fuT) : pressaoContato(d, tT, fuT, bordaS - (d + 1.5) / 2);
+var Fponta = num(p.forcaPonta, 0), ePonta = cima5(bordaMin(d, "serra")), dhP = d + 1.5;
+var FrPonta = Fponta > 0 ? pressaoContato(d, tT, fuT, ePonta - dhP / 2) + (n - 1) * pressaoContato(d, tT, fuT, passoB - dhP) : 0;
 var Mleg = Rp * h / 1000, MRd = La * ct.t * ct.t / 4 * fy / g.a1 / 1e6;
 var aW = Math.max(pernaMinima(Math.max(ct.t, tfV)), 5), FwRd = soldaFilete(aW, 2 * La, fw, Math.min(fy, 250));
 var dhC = furoPadrao(d), etC = ct.a - h, FcAba = pressaoContato(d, ct.t, fuC, etC - dhC / 2), FbC = Rc / n;
@@ -135438,6 +135957,8 @@ verif("Aba vertical do clip à flexão (" + ct.cat + " × " + La + " mm)", "bala
 [passo("Momento", "R∥·h", br(Mleg, 3) + " kN·m"), passo("Resistente", "La·t²·fy/(4·γa1)", br(MRd, 3) + " kN·m")], MRd, Mleg, "kN·m"),
 verif("Solda do clip na viga (filete " + aW + " mm, 2 × " + La + " mm)", ED08 + ", 6.2.5", [passo("Resistente", "0,60·0,707·a·L·fw/γw2 (ou metal-base)", br(FwRd, 1) + " kN")], FwRd, R)
 ];
+if (Fponta > 0) vs.push(verif("Rasgamento da alma da terça até a ponta pela força de escora (" + n + " furos, borda " + ePonta + " mm, passo " + passoB + " mm)", ED08 + ", 6.3.3.3 — analogia para chapa fina (t = " + br(tT, 2) + " mm; NBR 14762: conferir)",
+[passo("Fr,Rd", "1,2·(e − dh/2)·t·fu/γa2 + (n − 1)·1,2·(s − dh)·t·fu/γa2", br(FrPonta, 2) + " kN", "e = " + ePonta + "; s = " + passoB + "; dh = " + br(dhP, 1) + " mm"), passo("Solicitante", "|N| da terça (escora)", br(Fponta, 2) + " kN")], FrPonta, Fponta));
 if (Rc > 0) {
 vs.push(verif("Pressão de contato na aba do clip sob sucção (borda de cima a " + etC + " mm)", ED08 + ", 6.3.3.3",
 [passo("Fc,Rd por parafuso", "1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(FcAba, 2) + " kN", "lf = " + etC + " − " + br(dhC, 1) + "/2 = " + br(etC - dhC / 2, 1) + " mm; t = " + br(ct.t, 2) + " mm"),
@@ -136312,7 +136833,7 @@ arr(caixas).forEach(function (c) {
 if (c && (c.tipo === "pilar" || c.tipo === "viga") && !c.metal) { lerEstrutura(c); return; }
 if (!c || c.tipo !== "metal" || !c.metal) return;
 var m = c.metal, id = String(c.id);
-if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia); if (c.ligInfo && c.ligInfo.entrada && !L0.entrada) L0.entrada = c.ligInfo.entrada;
+if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia); if (c.ligInfo && c.ligInfo.entrada && !L0.entrada) L0.entrada = c.ligInfo.entrada; if (c.ligInfo && c.ligInfo.ligDim && !L0.ligDim) L0.ligDim = c.ligInfo.ligDim;
 if (c.ligInfo && c.ligInfo.aConfirmar && c.ligInfo.origem === "lancar-viga") L0.provisoria = true;
 return; }
 if (m.kind !== "perfil") { if (m.kind === "chapa" || m.kind === "mecanica") o.ignoradas.push({ id: id, nome: BM.nome(c), motivo: "não é barra (chapa/peça mecânica fora de ligação): não entra no modelo de barras" }); return; }
@@ -137816,7 +138337,7 @@ var ligVistas = {};
 function confereLig(ligId, L1, m, lado, onde) {
 var ch = ligId + "|" + m.id + "|" + lado; if (ligVistas[ch]) return; ligVistas[ch] = 1;
 var nomeL = (L1 && L1.tipologia) || "ligação " + ligId, es = L1 && L1.entrada && arr(L1.entrada.esforcos);
-if (!es || !es.length) { ligDesat.push({ lig: String(ligId), tipologia: (L1 && L1.tipologia) || null, peca: m.peca, membro: m.id, lado: lado, semEsforco: true, texto: nomeL + " (" + onde + " de " + m.id + "): esforços da ligação não gravados — redimensione para conferir" }); return; }
+if (!es || !es.length) { ligDesat.push({ lig: String(ligId), ligDim: (L1 && L1.ligDim) || null, tipologia: (L1 && L1.tipologia) || null, peca: m.peca, membro: m.id, lado: lado, semEsforco: true, texto: nomeL + " (" + onde + " de " + m.id + "): esforços da ligação não gravados — redimensione para conferir" }); return; }
 var g = { M: 0, V: 0, N: 0 }, a = { M: 0, V: 0, N: 0, comb: null }, viu = false;
 es.forEach(function (q) { g.M = Math.max(g.M, Math.abs(num(q.M, 0))); g.V = Math.max(g.V, Math.abs(num(q.V, Math.sqrt(Math.pow(num(q.Vx, 0), 2) + Math.pow(num(q.Vz, 0), 2))))); g.N = Math.max(g.N, Math.abs(num(q.N, 0))); });
 elu.forEach(function (cb) {
@@ -137830,7 +138351,7 @@ var o = [];
 if (passa(a.M, g.M)) o.push("M " + br(g.M, 2) + " → " + br(a.M, 2) + " kN·m");
 if (passa(a.V, g.V)) o.push("V " + br(g.V, 2) + " → " + br(a.V, 2) + " kN");
 if (passa(a.N, g.N)) o.push("N " + br(g.N, 2) + " → " + br(a.N, 2) + " kN");
-if (o.length) ligDesat.push({ lig: String(ligId), tipologia: L1.tipologia || null, peca: m.peca, membro: m.id, lado: lado, gravado: g, atual: a, texto: nomeL + " (" + onde + " de " + m.id + ", " + m.secao.nome + "): " + o.join("; ") });
+if (o.length) ligDesat.push({ lig: String(ligId), ligDim: L1.ligDim || null, tipologia: L1.tipologia || null, peca: m.peca, membro: m.id, lado: lado, gravado: g, atual: a, texto: nomeL + " (" + onde + " de " + m.id + ", " + m.secao.nome + "): " + o.join("; ") });
 }
 if (OPC.ligDesatualizada) {
 var LG = (G.lido && G.lido.ligacoes) || {};
@@ -138118,6 +138639,36 @@ r.decisoes = arr(r.decisoes).concat([{ tema: "Nós com chapa (treliça em canton
 if (vc.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vc.reprovados; }
 if (Env()) r.situacao = Env().situacao({ ok: true, aprovado: aprovBarras0 && !(r.nosTubo && r.nosTubo.reprovados) && !vc.reprovados }, r.naoVerificados);
 if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false;
+}
+var LD = dep("MetalLigDim", "./metalligdim.js");
+if (r && r.ok && r.modelo && LD && arr(r.modelo.membros).some(function (m) { return m.calc && m.calc.grupoTip; })) {
+var m0 = arr(r.modelo.membros).filter(function (m) { return m.calc && m.calc.grupoTip; })[0].calc, mf0 = arr(r.modelo.membros).filter(function (m) { return m.calc && m.calc.grupoTip === "maoFrancesa"; })[0];
+var vl = LD.verificar(r, { ligacao: m0.ligGeral, fck: m0.fckFundacao, ligMaoFrancesa: mf0 && mf0.calc.ligacao });
+r.ligDim = vl;
+if (arr(r.ligacoesDesatualizadas).length) {
+var diam = function (id) { var x = String(id || ""), m = /^M(\d+)/.exec(x); if (m) return +m[1]; var c = arr(LD.CHUMB).filter(function (q) { return q.id === x; })[0]; return c ? c.d : 0; };
+var atende = function (sg) {
+if (!sg) return null;
+if (sg.tipo === "placa") { var q = vl.modelo.placas[sg.chave]; if (!q) return null; return num(sg.t, 0) >= num(q.t, 0) - 1e-9 && diam(sg.parafuso) >= diam(q.parafuso) - 1e-9 && num(sg.nChumb, 0) >= num(q.nChumb, 0) && num(sg.ancoragem, 0) >= num(q.ancoragem, 0) - 1e-9 ? true : "placa " + br(num(q.t, 0) * 1000, 1) + " mm, " + q.nChumb + " × " + q.parafuso + ", ancoragem " + br(num(q.ancoragem, 0) * 1000, 0) + " mm"; }
+if (sg.tipo === "clip") { var falta = null; arr(sg.barras).forEach(function (b) { var q = vl.modelo.porBarra[b]; if (!q) { falta = falta || "sem dimensionamento da terça " + b; return; } if (!(diam(sg.parafuso) >= diam(q.id) - 1e-9 && num(sg.n, 0) >= num(q.n, 0))) falta = q.n + " × " + q.id; }); return falta || true; }
+return null;
+};
+var fica = [], ok0 = 0;
+arr(r.ligacoesDesatualizadas).forEach(function (q) { var a = atende(q.ligDim); if (a === true) { ok0++; return; } if (typeof a === "string") q.texto += " — o cálculo de agora pede " + a + ": \"Atualizar parafusos, placas e chumbadores no modelo\""; fica.push(q); });
+if (ok0) {
+r.ligacoesDesatualizadas = fica;
+var temaL = "Ligações desatualizadas (esforço gravado menor que o desta análise)";
+r.naoVerificados = arr(r.naoVerificados).filter(function (x) { return x.tema !== temaL; });
+if (fica.length) r.naoVerificados.push({ tema: temaL, motivo: fica.length + " ligação(ões) — redimensionar com este cálculo: " + fica.map(function (q) { return q.texto; }).join("; ") });
+r.decisoes = arr(r.decisoes).concat([{ tema: "Ligações do modelo × dimensionamento de agora", decisao: ok0 + " ligação(ões) da biblioteca conferida(s) com os esforços desta análise: o que está no modelo atende ao que o cálculo pede (js/metalligdim.js)", motivo: "a ligação posta por \"Atualizar … no modelo\" grava o que foi posto; o cálculo de agora redimensiona com a envoltória ELU e compara" }]);
+}
+}
+var cob = { base: vl.cobertos.base, rotuladas: vl.cobertos.rotuladas, tubo: vl.cobertos.tubo };
+r.naoVerificados = arr(r.naoVerificados).map(function (x) { if (x.tema !== "Ligações da tipologia") return x; var mt = LD.tirarDoMotivo(x.motivo, cob); return mt ? { tema: x.tema, motivo: mt } : null; }).filter(Boolean);
+r.decisoes = arr(r.decisoes).concat([{ tema: "Ligações dimensionadas (NBR 8800:2008)", decisao: vl.resumo, motivo: vl.premissas }]);
+if (vl.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vl.reprovados; }
+if (Env()) r.situacao = Env().situacao({ ok: true, aprovado: aprovBarras0 && !(r.nosTubo && r.nosTubo.reprovados) && !(r.nosChapa && r.nosChapa.reprovados) && !vl.reprovados }, r.naoVerificados);
+if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false; else if (r.situacao) r.aprovado = true;
 }
 var sanA = r.analise && r.analise.sanidade;
 if (r.ok && sanA && !sanA.grave) {
@@ -146633,7 +147184,7 @@ var NO_WORKER = typeof global.importScripts === "function" && typeof global.docu
 var MOTORES = ["perfisaco.js", "bimarq.js", "bimedit.js", "bimprecisao.js", "metalnorma.js", "metalpeca.js", "metalcriar.js", "metalligacao.js",
 "acomateriais.js", "acosecao.js", "acofsm.js", "acodim14762.js", "acoanalise.js", "acocargas.js", "acomodelo.js", "acodim8800.js",
 "acoisopletas.js", "acovento.js", "acosecundarias.js", "acoligcalc.js", "acodimensionar.js", "acomodelolivre.js", "acofechamentos.js",
-"acoenvoltorio.js", "acodimlivre.js", "acoligcalc2.js", "metalnostubo.js", "metalchapano.js"];
+"acoenvoltorio.js", "acodimlivre.js", "acoligcalc2.js", "metalnostubo.js", "metalchapano.js", "metalligdim.js"];
 var OBRIGATORIOS = { "perfisaco.js": 1, "acomateriais.js": 1, "acosecao.js": 1, "acoanalise.js": 1, "acocargas.js": 1, "acodim8800.js": 1, "acomodelolivre.js": 1, "acodimlivre.js": 1 };
 function agora() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
 function limitador(enviar, ms) {
@@ -149919,7 +150470,7 @@ h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-
 }
 var pr0 = r.parametros || {};
 if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
-h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
+h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? (tudoDimensionado(r) ? "barras, nós e ligações atendem — conferir e assinar pelo responsável técnico" : "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)") : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
 '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
 '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
 '<div class="ml-kpi"><small>Modelo</small><b>' + r.modelo.membros.length + ' barras</b><span class="ml-nota">' + r.modelo.modelo.nos.length + " nós · " + r.combinacoes.length + " combinações · " + fmt(r.tempoMs / 1000, 1) + " s</span></div></div>";
@@ -149932,6 +150483,10 @@ if (vento) sols.push({ id: "rever-envoltorio", texto: "Rever o envoltório (face
 var p = { tipo: "nao-verificado", titulo: x.tema + " não foi verificado", texto: x.motivo, gravidade: "aviso", solucoes: sols }; U.probExtra["nv" + k] = p; return p;
 }), { pre: "ml", titulo: "Não verificado", gravidade: "aviso", attrs: 'data-ml="nao-verificado"', acoes: BOTAO_SOL, prefixoIndice: "x:nv" })
 : '<div class="ml-prob" data-ml="nao-verificado"><h4>Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") + "</div>";
+if (r.ligDim && r.ligDim.n && global.MetalLigDim) h += '<div class="ml-card" data-ml="lig-dim"><h4>Ligações dimensionadas (NBR 8800:2008)</h4><p class="ml-nota" style="margin-top:0">' + esc(r.ligDim.resumo) + "</p>" +
+(r.ligDim.pendencias.length ? '<ul class="ml-l">' + r.ligDim.pendencias.map(function (x) { return '<li class="ml-aviso">' + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+'<button class="ml-bt mini pri" data-ml-acao="ligdim-modelo">Atualizar parafusos, placas e chumbadores no modelo</button> <span class="ml-nota">memória completa de cada ligação: selecione a peça e abra a Ligação inteligente</span>' +
+MetalLigDim.memoriaHtml(r.ligDim, { max: 12 }) + "</div>";
 if (U.ligAuto && U.ligAuto.r === r && global.MetalLigAutoUI) { try { h += MetalLigAutoUI.quadroHtml(U.ligAuto); } catch (eQ) {} }
 var ajC = ajustesCota(); if (ajC.length) h += '<div class="ml-card" data-ml="ajuste-cota" style="border-color:var(--ml-aviso)"><h4>Ajuste de cota das fundações</h4><ul class="ml-l">' + ajC.map(function (x) { return '<li class="ml-aviso">' + esc(x.texto) + "</li>"; }).join("") + '</ul><button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="ajustar-topos">Ajustar o topo das fundações (' + ajC.length + ")</button></div>";
 if (r.trocas) h += '<div class="ml-card" data-ml="trocas" style="border-color:var(--ml-aco)"><b>' + r.trocas + " peça(s) com perfil novo</b> (o mais leve que passa): " + esc(Object.keys(r.pecas).filter(function (k) { return r.pecas[k].mudou; }).map(function (k) { var mb = r.membros && r.membros[r.pecas[k].membro]; return r.pecas[k].membro + " " + r.pecas[k].de + " → " + r.pecas[k].para + (mb && isFinite(mb.razao) ? " (razão " + String(Math.round(mb.razao * 100) / 100).replace(".", ",") + ")" : ""); }).slice(0, 40).join("; ")) + (r.aplicado ? ' <span class="ml-chip ok">aplicado no modelo</span>' : ' — <button class="ml-bt mini pri" data-ml-acao="aplicar">Aplicar os perfis no modelo</button>') + "</div>";
@@ -150045,6 +150600,7 @@ if (a === "pranchas-svg") return baixarSvgs();
 if (a === "pranchas-dxf") return baixarDxf();
 if (a === "pranchas-dwg") return explicarDwg();
 if (a === "aplicar") return aplicar();
+if (a === "ligdim-modelo") { if (barrarVelho()) return; var PU0 = global.MetalPorticosUI; if (PU0 && PU0.atualizarLigacoes) { PU0.atualizarLigacoes(U.r); U.convergirLig = 3; } else toast("A biblioteca de pórticos não carregou.", "aviso"); return; }
 if (a === "corrigir") return calcularCorrigir();
 if (a === "ver3d") return verEm3D();
 if (a === "memorial") return memorial();
@@ -150404,6 +150960,14 @@ U.calculando = false; U.r = r; U.modo = "resultado";
 var corr = U.corrigir; U.corrigir = false; if (corr) estado().otimizar = corr.otimizarAntes;
 render();
 if (corr && r && r.ok) { if (r.trocas) aplicar(); else toast("Calcular e corrigir: nenhuma peça precisou trocar.", "ok", 6000); }
+var faltaLig = r && r.ok ? arr(r.ligacoesDesatualizadas).filter(function (q) { return q.ligDim; }) : [];
+if (U.convergirLig > 0 && faltaLig.length && r.ligDim && global.MetalPorticosUI && MetalPorticosUI.atualizarLigacoes) {
+U.convergirLig--;
+toast("Ligações: o cálculo de agora pede mais que o posto em " + faltaLig.length + " ligação(ões) — atualizando o modelo e recalculando.", "info", 6000);
+try { MetalPorticosUI.atualizarLigacoes(r); } catch (eCv) { U.convergirLig = 0; }
+if (U.convergirLig >= 0) { setTimeout(function () { calcular(); }, 0); return; }
+}
+if (!faltaLig.length) U.convergirLig = 0;
 status(r && r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA") : "Estrutura desenhada: não calculou");
 }
 function erroCalc(msg) { return { ok: false, motivo: "Erro no cálculo: " + msg, problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + msg, solucoes: [] }] }; }
@@ -150473,6 +151037,16 @@ fim();
 function nomeArq() { var o = obra(), n = String((o && o.nome) || "obra"); try { n = n.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {} return n.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "obra"; }
 function baixar(nome, dados, mime) { var M = MU(); if (M && M.baixar) return M.baixar(nome, dados, mime); return false; }
 function lic(acao) { var L = global.LicencaFuncao; return L && L.guarda ? L.guarda("metalica", acao) : true; }
+function tudoDimensionado(r) {
+var v = false;
+try {
+var ligs = global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo ? arr(MetalLigSugUI.ligacoesComCalculo(r)) : [];
+var Mm = global.AcoMemorialLivre, encs = Mm && Mm._int && Mm._int.encontros ? arr(Mm._int.encontros(r, ligs)) : [];
+v = ligs.length > 0 && encs.length > 0 && !encs.some(function (e) { return !e.lig || e.incoerente; }) &&
+!ligs.some(function (l) { var R = l.resultado; return !(R && R.ok) || !l.comCalculo || l.confere === false || arr(R.naoVerificadoCritico).length || R.ajusteCota; });
+} catch (e) { v = false; }
+return v;
+}
 function memorial() {
 if (!lic("gerar o memorial")) return;
 var r = U.r, Mm = global.AcoMemorialLivre; if (!r || !r.ok || !Mm) { toast("O memorial sai de um cálculo que fechou.", "aviso"); return; }
@@ -150581,6 +151155,7 @@ calcular: function () { if (!lic("calcular a estrutura desenhada")) return false
 calcularCorrigir: function () { if (!lic("calcular a estrutura desenhada")) return false; estado(); garantir(); return calcularCorrigir(); },
 licenca: function (acao) { return lic(acao || "usar a função"); },
 resultado: function () { return U.r; },
+convergindo: function () { return !!U.calculando || (U.convergirLig > 0 && arr(U.r && U.r.ligacoesDesatualizadas).some(function (q) { return q.ligDim; })); },
 ligAuto: function () { return U.ligAuto || null; },
 desatualizado: function () { return velho(); },
 estado: function () { return estado(); },
@@ -154140,6 +154715,7 @@ function num(v, d) { if (v == null || v === "") return d; var n = Number(String(
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function arr(v) { return Array.isArray(v) ? v : []; }
 function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 6000); } catch (e) {} }
 function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 var COMANDOS = [
@@ -154243,6 +154819,15 @@ por[g].pecas.push(String(c.id)); if (c.porticoInfo) por[g].info = c.porticoInfo;
 });
 return ordem.map(function (g) { var o = por[g]; o.n = o.pecas.length; return o; });
 },
+atualizarLigacoes: function (r) {
+var M = MP(), self = this; if (!M || !r || !r.ligDim || !r.ligDim.modelo) { toast("Calcule a estrutura primeiro: as ligações saem do cálculo.", "aviso"); return null; }
+var pc = {}; arr(r.modelo && r.modelo.membros).forEach(function (m) { pc[String(m.peca)] = 1; });
+var alvo = this.porticos().filter(function (g) { return arr(g.pecas).some(function (id) { return pc[String(id)]; }); })[0];
+if (!alvo || !alvo.info) { toast("O cálculo não é de um pórtico da biblioteca — as ligações ficam só na memória.", "aviso", 8000); return null; }
+var el = global.document && document.body, pg = el && global.UI && UI.progresso ? UI.progresso(el, { titulo: "Atualizar as ligações no modelo", etapas: [{ id: "g", peso: 1, rotulo: "Refazendo o pórtico com as ligações calculadas" }], texto: "Refazendo o pórtico", fundo: true }) : null;
+try { if (pg) pg.etapa("g", 0.3, "Refazendo o pórtico (" + alvo.n + " peças)"); var g = this.criar(alvo.info.tipo, alvo.info.par, { alvo: alvo, ligDim: r.ligDim.modelo }); if (g && g.ok) toast("Ligações do cálculo no modelo: " + (g.fixacao ? g.fixacao.resumo : "") + ". Recalcule para conferir o modelo novo.", "ok", 10000); return g; }
+finally { if (pg) pg.fim(); }
+},
 porticoSelecionado: function () {
 var U = MU(), ids = U && U.selecao ? U.selecao().map(String) : [], gs = this.porticos();
 var c = this.caixas().filter(function (x) { return x && x.portico && ids.indexOf(String(x.id)) >= 0; })[0];
@@ -154318,7 +154903,7 @@ h += "</label>";
 });
 var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
 if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
-' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#b3261e;color:#fff;font-weight:700">EM REVISÃO — barras e nós passam nas 4 variantes; faltam as placas de base e as ligações rotuladas (não dimensionadas): não fabricar</span></div>' + h;
+' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#2e7d32;color:#fff;font-weight:700">Calculado — conferir e assinar pelo responsável técnico (barras, nós, ligações e placas de base passam nas 4 variantes, NBR 8800:2008 com itens a conferir no texto; os enrijecedores da coluna ainda não estão no 3D)</span></div>' + h;
 if (el) el.innerHTML = h;
 },
 usarPreset: function (id, vid) { var d = this._dlg, M = MP(); if (!d || !M) return false; var p = M.presetPar(id, vid); if (!p) return false; d.par = M.normalizar(M.PRESETS[id].tipo, p); this.desenharCampos(); this.previa(); return true; },
@@ -154467,7 +155052,7 @@ try { MetalCalcUI.calcular(); } catch (eC) {}
 }
 return rg;
 }
-var g = M.gerar(tipo, p, function () { return self.novoId(); }, { porticoId: op.alvo ? op.alvo.id : null, edicoes: op.alvo && global.MetalElemento ? global.MetalElemento.edicoesDe(this.caixas(), op.alvo.id) : null });
+var g = M.gerar(tipo, p, function () { return self.novoId(); }, { ligDim: op.ligDim || null, porticoId: op.alvo ? op.alvo.id : null, edicoes: op.alvo && global.MetalElemento ? global.MetalElemento.edicoesDe(this.caixas(), op.alvo.id) : null });
 if (!g.ok) { toast(T.rotulo + ": " + g.motivo, "aviso", 9000); status(g.motivo); return g; }
 if (op.alvo) { g.op.ops = op.alvo.pecas.map(function (id) { return { op: "apagar", id: id }; }).concat(g.op.ops); g.op.pedido = "Atualizar o pórtico (" + op.alvo.n + " peças refeitas)"; }
 if (!U.enviar(g.op)) { toast("O editor recusou o pórtico.", "erro"); g.ok = false; return g; }
@@ -157072,6 +157657,15 @@ return { ok: false, multi: true, nos: pares0.length };
 }
 }
 var rcAb = resultadoCalc();
+if (!o.sugestoes && rcAb && rcAb.ok && rcAb.ligDim && global.MetalLigDim) {
+var mh = global.MetalLigDim.memoriaHtml(rcAb.ligDim, { ids: cxs.map(function (c) { return String(c.id); }), abrir: true }), selfM = this;
+if (mh) {
+U.cxs = cxs;
+UI.modal("Ligação inteligente — memória de cálculo das ligações", '<div class="lsg" data-lsg="lig-dim"><p class="ml-nota">' + esc(rcAb.ligDim.resumo) + "</p>" + mh + "</div>",
+[{ texto: "Ver as sugestões de ligação", onClick: function () { UI.fecharModal(); selfM.abrir({ manter: true, sugestoes: true }); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+return { ok: true, memoria: true };
+}
+}
 if (o.estimativa) U.aceitouEstimativa = true;
 if ((!rcAb || !rcAb.ok) && !o.estimativa && !o.manter && !U.aceitouEstimativa) {
 UI.modal("Ligação inteligente — calcule primeiro", '<div class="lsg" data-lsg="sem-calculo"><p>As ligações são dimensionadas com os <b>esforços do cálculo</b> da estrutura. Ainda não há um cálculo que fechou para este modelo — calcule primeiro (o resultado fica guardado e a Ligação inteligente usa os esforços dele).</p></div>',

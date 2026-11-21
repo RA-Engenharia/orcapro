@@ -76,6 +76,11 @@
     var Mod = g.modelo, nos = Mod.nos, gid = g.porticoId, porId = {};
     g.pecas.forEach(function (c) { porId[c.id] = c; });
     var cx = function (b) { return b ? porId[g.mapa[b.id]] : null; };
+    /* 21/11/2026: o resultado do DIMENSIONAMENTO DAS LIGAÇÕES (js/metalligdim.js, r.ligDim.modelo) — placa, chumbador e clip calculados */
+    var LD = op.ligDim || null;
+    function parPlaca(k, base) { var q = LD && LD.placas && LD.placas[k]; if (!q) return base; base.t = q.t; base.parafuso = q.parafuso; base.ancoragem = q.ancoragem; return base; }
+    function sigPlaca(k, par) { var q = LD && LD.placas && LD.placas[k]; return q ? { tipo: "placa", chave: k, t: par.t, parafuso: par.parafuso, nChumb: q.nChumb, ancoragem: par.ancoragem } : null; }
+    function maiorClip(a, b) { var x = [a, b].map(function (t) { return t && LD && LD.porBarra ? LD.porBarra[t.id] : null; }).filter(Boolean); if (!x.length) return null; x.sort(function (u, v) { var du = parseFloat(String(u.id).replace(/^M/, "")) || 0, dv = parseFloat(String(v.id).replace(/^M/, "")) || 0; return dv - du || v.n - u.n; }); return x[0]; }
 
     /* ------------------------------------------------ COR DO AÇO (caixa.acab — a das Propriedades) */
     var acab = op.acab === null ? null : clone(op.acab || ACAB_PADRAO);
@@ -88,7 +93,10 @@
       else {
         var atual = {}; g.pecas.forEach(function (c) { atual[c.id] = c; });
         var cur = function (c) { return c && atual[c.id] ? atual[c.id] : c; };
-        var aplicar = function (tipo, sel, par) {
+        /* R10 (21/11/2026): a ligação DIMENSIONADA (js/metalligdim.js) leva a assinatura do que foi posto (c.ligInfo.ligDim: placa
+           t/chumbador/n/ancoragem; clip n/diâmetro e as barras) — o cálculo (js/acodimlivre.js) compara com o que ELE pede agora:
+           o modelo atende → a ligação não é "desatualizada / sem esforço gravado" (a tela ficava INCOMPLETA com o Node aprovado) */
+        var aplicar = function (tipo, sel, par, sigLD) {
           var pr = clone(par || {}); if (pr.terca2) pr.terca2 = cur(par.terca2); pr.lig = String(novoId());   /* cada ligação com o seu id (sem ele todas viravam UMA ligação "lig-<tipo>" no leitor do cálculo) */
           var r; try { r = Lg.aplicar(tipo, sel.map(cur), pr); } catch (eL) { r = { ok: false, motivo: String(eL && eL.message || eL) }; }
           ligs.push({ tipo: tipo, ok: !!r.ok, motivo: r.ok ? "" : r.motivo });
@@ -97,7 +105,7 @@
           lote.ops.forEach(function (o) {
             if (o.op === "criar" && o.caixa) {
               if (atual[o.id]) { o.caixa.id = o.id; atual[o.id] = clone(o.caixa); }
-              else { o.caixa.id = o.id; o.caixa.portico = gid; var h0 = sel[0] && cur(sel[0]); if (h0 && h0.elemMetal) { o.caixa.elemMetal = clone(h0.elemMetal); o.caixa.elemMetal.anexo = true; o.caixa.elemMetal.slot = "lig:" + tipo; delete o.caixa.elemMetal.mud; } if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
+              else { o.caixa.id = o.id; o.caixa.portico = gid; if (sigLD) o.caixa.ligInfo = { nome: "Ligação dimensionada no cálculo (NBR 8800:2008)", ligDim: clone(sigLD) }; var h0 = sel[0] && cur(sel[0]); if (h0 && h0.elemMetal) { o.caixa.elemMetal = clone(h0.elemMetal); o.caixa.elemMetal.anexo = true; o.caixa.elemMetal.slot = "lig:" + tipo; delete o.caixa.elemMetal.mud; } if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
             }
             if (o.op === "metalFuros" && atual[o.id]) { var q = atual[o.id]; q.metalFuros = arr(q.metalFuros).filter(function (f) { return f.lig !== o.lig; }).concat(o.furos.map(function (f) { var h = clone(f); h.lig = o.lig; return h; })); }
             ops.push(o);
@@ -114,9 +122,9 @@
           if (b.ferr !== "pilar") return;
           var a = nos[b.a], z = nos[b.b]; if (!a || !z || Math.abs(a[1] - cota) > 1e-6) return;
           if (b.coluna) { if (!porCol[b.coluna]) { porCol[b.coluna] = []; ordCol.push(b.coluna); } porCol[b.coluna].push(b); return; }
-          aplicar("placaBase", [cx(b)], { nChumb: 4 });
+          var pp0 = parPlaca("b:" + b.id, { nChumb: 4 }); aplicar("placaBase", [cx(b)], pp0, sigPlaca("b:" + b.id, pp0));
         });
-        ordCol.forEach(function (k) { var bs = porCol[k]; if (bs.length < 2) { aplicar("placaBase", [cx(bs[0])], { nChumb: 4 }); return; } if (aplicar("placaBaseColuna", bs.map(cx), {})) { cont.placaBase = (cont.placaBase || 0) + 1; cont.placaBaseColuna -= 1; } });
+        ordCol.forEach(function (k) { var bs = porCol[k]; if (bs.length < 2) { var pp1 = parPlaca(k, { nChumb: 4 }); aplicar("placaBase", [cx(bs[0])], pp1, sigPlaca(k, pp1)); return; } if (aplicar("placaBaseColuna", bs.map(cx), parPlaca(k, {}), sigPlaca(k, parPlaca(k, {})))) { cont.placaBase = (cont.placaBase || 0) + 1; cont.placaBaseColuna -= 1; } });
         /* clip de terça: em cada pórtico, cada linha de terça (as dos dois vãos vizinhos dividem o clip) sobre a viga/banzo de cima */
         var porK = {}, linhaDe = function (nm) { var m = /^t(\d+):(\d+)'?$/.exec(nm); return m ? { k: +m[1], j: +m[2] } : null; };
         var vigasK = {}, semClip = 0;
@@ -142,7 +150,9 @@
             /* na PONTA do banzo (beiral, cumeeira) o clip não entra: o leitor daria a rótula do clip à ponta do banzo contínuo e o
                cálculo mudaria (a terça ali apoia no nó da treliça — detalhe da serralheria, declarado) */
             if (sM * LM < 0.10 || (1 - sM) * LM < 0.10) { semClip++; return; }
-            aplicar("clipTerca", [cx(t1), cx(melhor)], { terca2: t2 ? cx(t2) : null, parafuso: "M12", parafusos: 2 });
+            var dc = maiorClip(t1, t2);   /* 21/11: o clip DIMENSIONADO (js/metalligdim.js) — o maior das duas terças que ele recebe */
+            aplicar("clipTerca", [cx(t1), cx(melhor)], { terca2: t2 ? cx(t2) : null, parafuso: dc ? dc.id : "M12", parafusos: dc ? dc.n : 2, cat: dc && dc.clip ? dc.clip : undefined },
+              dc ? { tipo: "clip", barras: [t1.id].concat(t2 ? [t2.id] : []), n: dc.n, parafuso: dc.id, clip: dc.clip || null } : null);
           });
         });
         /* contraventamento em BARRA REDONDA: chapa de apoio com furo, porca e contraporca nas duas pontas, na peça que passa pelo nó */

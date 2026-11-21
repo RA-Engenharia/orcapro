@@ -63,6 +63,7 @@
   function N() { return dep("BimMetalNorma", "./metalnorma.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+  function r6(v) { return Math.round(v * 1e6) / 1e6; }
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
   function add(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
   function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
@@ -178,16 +179,24 @@
     });
 
     /* ---------------- 3. nós de treliça em 2L (só parafusada) */
-    if (modo === "parafusada") noTrelica2L(g, Mod, nos, cx, Nn, criar, out);
+    var LD = op.ligDim || null; out.dimensionado = !!LD;
+    if (modo === "parafusada") noTrelica2L(g, Mod, nos, cx, Nn, criar, out, LD);
     else if (p.sistemaTrelica === "cantoneira") out.soldas.push({ ligacao: "Nós da treliça em 2L (chapa de nó soldada entre as abas)", marca: "TS", cordao: "filete longitudinal, 4 por barra (js/metalchapano.js — dimensionado no cálculo)", comprimento: null, fonte: "NBR 8800:2008 6.2.5 (verificação do nó com chapa)" });
 
     /* ---------------- 4. mão-francesa */
     var mfs = Mod.barras.filter(function (b) { return b.grupo === "maoFrancesa"; });
     if (mfs.length) {
       var ligMF = p.ligMaoFrancesa === "soldada" || modo === "soldada" ? "soldada" : "parafusada";
-      if (ligMF === "parafusada") mfs.forEach(function (b) { var c = cx(b); if (c) maoFrancesa(c, Nn, criar, out); });
+      /* R7 (21/11): terça de parede fina → a mão-francesa vai parafusada na terça mesmo com a ligação "soldada" (o cálculo decidiu: dq.terca) */
+      mfs.forEach(function (b) { var c = cx(b), dq = LD && LD.porBarra ? LD.porBarra[b.id] : null; if (c && (ligMF === "parafusada" || (dq && dq.terca))) maoFrancesa(c, Nn, criar, out, dq); });
+      if (ligMF === "soldada" && mfs.some(function (b) { var dq = LD && LD.porBarra ? LD.porBarra[b.id] : null; return dq && dq.terca; })) out.avisos.push("Mão-francesa: a terça tem parede menor que o filete mínimo (3 mm) — a ligação soldada não cabe; a chapa foi parafusada na alma da terça (cálculo).");
       else out.soldas.push({ ligacao: "Mão-francesa soldada (as duas pontas)", marca: "MF", cordao: "filete na aba, 2 lados por ponta", comprimento: null, fonte: "a dimensionar — a ligação não é verificada pelo motor" });
     }
+
+    /* ---------------- 4b. ENRIJECEDORES DA ALMA DO U (21/11/2026): o js/metalligdim.js dimensiona o par de enrijecedores dentro do U da
+       coluna onde a alma sozinha não aguenta a força ⊥ da chapa de nó — aqui eles viram peça (chapa A36 dentro do U, nas bordas da
+       chapa de nó, anexa ao elemento da coluna) e entram na lista de montagem e na relação de fábrica com a massa e a solda */
+    if (LD && arr(LD.enrijecedores).length) enrijecedoresU(g, Mod, cx, M, criar, out, LD.enrijecedores);
 
     /* ---------------- 5. emendas: o gerador não corta barra (a mais longa cabe numa barra de 12 m) */
     var maior = 0; g.pecas.forEach(function (c) { if (c.metal && c.metal.kind === "perfil" && num(c.metal.L, 0) > maior) maior = num(c.metal.L, 0); });
@@ -199,6 +208,32 @@
     out.novosParafusos = nP;
     return out;
   }
+  /* e = { barraId, P (m, o nó), t, h, comprimento, Lg (m), soldaAlma {dw, Lw mm}, soldaAbas {dw, Lw mm} } — 2 chapas por nó, em x_nó ± Lg/2.
+     Seção do U formado a frio (js/metalpeca.js): a = largura (mb.A), alma em a = −bf/2, abas em b = ±bw/2 (mb.B). A chapa ocupa
+     a ∈ [−bf/2 + t, +bf/2] e b ∈ [−bw/2 + t, +bw/2 − t]; a espessura vai em −X (A × B = −X), por isso a origem fica em x + te/2. */
+  function enrijecedoresU(g, Mod, cx, M, criar, out, lista) {
+    var porB = {}; Mod.barras.forEach(function (b) { porB[b.id] = b; });
+    out.contagem.enrijecedor = 0; out.enrijecedores = [];
+    lista.forEach(function (e) {
+      var host = e.barraId ? cx(porB[e.barraId]) : null, mb = host ? M.membro(host) : null;
+      if (!mb || !e.P || !mb.perfil || mb.perfil.forma !== "frio") { out.avisos.push("Enrijecedor do nó " + e.no + ": a coluna (" + (e.barraId || "?") + ") não foi achada no modelo — não desenhado."); return; }
+      var pf = mb.perfil, tU = num(pf.t, 0.003), bw = num(pf.bw, 0.1), bf = num(pf.bf, 0.05), te = num(e.t, 0.0063), xN = dot(sub(V3(e.P), mb.Pref), mb.X);
+      [-1, 1].forEach(function (sg) {
+        var x = Math.max(te / 2, Math.min(mb.L + num(mb.xOff, 0) - te / 2, xN + sg * num(e.Lg, 0.1) / 2));
+        var O = add(add(add(mb.Pref, mul(mb.X, x + te / 2)), mul(mb.A, -bf / 2 + tU)), mul(mb.B, -bw / 2 + tU));
+        var c = M.chapa({ origem: O, ex: mb.A, ey: mb.B, t: te, ret: { L: bf - tU, B: bw - 2 * tU }, papel: "Enrijecedor da alma do U", aco: "ASTM A36", lig: "enr:" + e.no, soldadaEm: host.id,
+          nome: "Enrijecedor " + r1(te * 1000) + " mm — nó " + e.no,
+          solda: { tipo: "filete", perna: num(e.soldaAlma && e.soldaAlma.dw, 3), lados: "ambos", comprimento: Math.round((2 * num(e.soldaAlma && e.soldaAlma.Lw, (bw - 2 * tU) * 1000) + 4 * num(e.soldaAbas && e.soldaAbas.Lw, (bf - tU) * 1000))) / 1000, campo: false } });
+        if (c.erro) { out.avisos.push("Enrijecedor do nó " + e.no + ": " + c.erro); return; }
+        c.metal.enrijecedor = { no: e.no, soldaAlma: e.soldaAlma || null, soldaAbas: e.soldaAbas || null };
+        criar(c, host, "lig:enrijecedor");
+        out.contagem.enrijecedor++;
+      });
+      out.enrijecedores.push({ no: e.no, t: te, n: 2 });
+    });
+    if (out.contagem.enrijecedor) out.soldas.push({ ligacao: "Enrijecedores da alma do U (par por nó com chapa)", marca: "EN", cordao: "filete nos 2 lados na alma (bw − 2t) e nas 2 abas (bf − t)", comprimento: null, fonte: "js/metalligdim.js — dimensionado no cálculo (NBR 8800:2008 6.2.5)" });
+  }
+
   function nomeBarra(dbmm) {
     var Nn = N(), best = null, dd = 1e9; Nn.PARAFUSOS.forEach(function (q) { var d = Math.abs(q.d - dbmm); if (d < dd) { dd = d; best = q.id; } });
     return dd < 0.6 ? best : null;
@@ -210,7 +245,7 @@
   }
 
   /* ===================================================== NÓ DE TRELIÇA 2L */
-  function noTrelica2L(g, Mod, nos, cx, Nn, criar, out) {
+  function noTrelica2L(g, Mod, nos, cx, Nn, criar, out, LD) {
     var ALMA = { diagonal: 1, montante: 1 }, BANZO = { banzoSup: 1, banzoInf: 1 }, porNo = {}, ordem = [];
     var geoC = {};
     function geo(b) { if (geoC[b.id] !== undefined) return geoC[b.id]; var c = cx(b), G = c && c.metal && c.metal.perfil && c.metal.perfil.forma === "2L" ? barraGeo(c) : null; geoC[b.id] = G; return G; }
@@ -232,14 +267,16 @@
       var nP = bars[0].G.A, ref = bars.filter(function (q) { return BANZO[q.b.grupo]; })[0] || bars[0], hBanzo = ref.G.perfil ? num(ref.G.perfil.b, 0.05) : 0.05;
       var bolts = [];
       bars.forEach(function (q) {
-        var G = q.G, L2 = geo2L(G), P2 = Nn.parafuso(bitola2L(L2.b)), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
+        var dq = LD && LD.porBarra ? LD.porBarra[q.b.id] : null;   /* 21/11: o número e o diâmetro DIMENSIONADOS (js/metalligdim.js) */
+        q.nP = dq ? Math.max(2, dq.n) : N_POR_BARRA; q.classe = dq ? dq.classe : "8.8";
+        var G = q.G, L2 = geo2L(G), P2 = Nn.parafuso(dq ? dq.id : bitola2L(L2.b)), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
         var gg = gage(L2.b, L2.t, P2); if (gg.aviso) out.avisos.push("Nó " + nm + ": " + gg.aviso);
         var bLoc = L2.heel + L2.sg * gg.g, xs = [];
         var sNo = dot(sub(P, G.P0), G.X);
-        if (q.cont) { for (var k = 0; k < N_POR_BARRA; k++) xs.push(sNo + (k - (N_POR_BARRA - 1) / 2) * passo); }
+        if (q.cont) { for (var k = 0; k < N_POR_BARRA; k++) xs.push(sNo + (k - (N_POR_BARRA - 1) / 2) * passo); }   /* o banzo que passa: 2 construtivos (a força passa no banzo) */
         else {
           var dir = sNo < G.L / 2 ? 1 : -1, sinT = Math.max(0.4, len(cross(G.X, ref.G.X))), x1 = q.b === ref.b ? bS : (hBanzo / 2 + FOLGA_C0 + bS) / sinT;
-          for (var j = 0; j < N_POR_BARRA; j++) xs.push(sNo + dir * (x1 + j * passo));
+          for (var j = 0; j < q.nP; j++) xs.push(sNo + dir * (x1 + j * passo));
         }
         q.pts = xs.map(function (x) { return { x: x, Pc: ptBarra(G, x, 0, bLoc) }; });
         q.P2 = P2; q.L2 = L2; q.passo = passo;
@@ -275,42 +312,61 @@
       bars.forEach(function (q) {
         var pega = { itens: [{ peca: "aba da 2L", t: q.L2.t }, { peca: "chapa de nó", t: e }, { peca: "aba da 2L", t: q.L2.t }], total: 2 * q.L2.t + e };
         q.pts.forEach(function (a) {
-          var b0 = parafuso({ origem: add(a.Pc, mul(nP, -(e / 2 + q.L2.t))), eixo: nP, aperto: pega.total }, q.P2, "8.8", ligM, pega);
+          var b0 = parafuso({ origem: add(a.Pc, mul(nP, -(e / 2 + q.L2.t))), eixo: nP, aperto: pega.total }, q.P2, q.classe || "8.8", ligM, pega);
           if (b0.erro) { out.avisos.push("Nó " + nm + ": " + b0.erro); return; }
           criar(b0, cx(q.b), "lig:noTrelica"); out.parafusos.noTrelica++;
         });
       });
       out.contagem.noTrelica++;
     });
-    if (out.contagem.noTrelica) out.pendencias.push("Nós da treliça parafusados: " + N_POR_BARRA + " parafusos por barra e a chapa de nó da folga da 2L — " + PARTIDA + " (o cálculo do nó com chapa, js/metalchapano.js, verifica a solda; a ligação parafusada do nó tem de ser dimensionada).");
+    if (out.contagem.noTrelica && !LD) out.pendencias.push("Nós da treliça parafusados: " + N_POR_BARRA + " parafusos por barra e a chapa de nó da folga da 2L — " + PARTIDA + " (o cálculo do nó com chapa, js/metalchapano.js, verifica a solda; a ligação parafusada do nó tem de ser dimensionada).");
   }
 
   /* ===================================================== MÃO-FRANCESA */
-  function maoFrancesa(c, Nn, criar, out) {
+  function maoFrancesa(c, Nn, criar, out, dq) {
     var M = BM(), mb = M.membro(c); if (!mb || !mb.perfil || mb.perfil.forma !== "L") return;
     var fs = M.faces(mb.perfil), fv = fs.filter(function (f) { return f.n === "a"; })[0]; if (!fv) return;
-    var P2 = Nn.parafuso("M12"), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
+    var nPF = dq ? Math.max(2, dq.n) : N_POR_BARRA, P2 = Nn.parafuso(dq ? dq.id : "M12"), pt = Nn.partida(P2.d, "laminada"), passo = pt.passo / 1000, bS = Nn.bordaMin(P2.d, "serra").e / 1000;
     var tL = fv.t, larg = fv.larg, gg = gage(larg, tL, P2), bLoc = fv.y0 + gg.g;
     var aFora = fv.meio - tL / 2, tC = T_CHAPA_MF;
     [0, 1].forEach(function (ponta) {
       var xs = [], x1 = 0.06 + bS;   /* 60 mm: livra o apoio (meia altura do banzo/terça + folga) — PARTIDA */
-      for (var k = 0; k < N_POR_BARRA; k++) xs.push(ponta ? mb.xOff + mb.L - x1 - k * passo : mb.xOff + x1 + k * passo);
+      for (var k = 0; k < nPF; k++) xs.push(ponta ? mb.xOff + mb.L - x1 - k * passo : mb.xOff + x1 + k * passo);
       var xa = Math.min.apply(null, xs) - bS, xb = Math.max.apply(null, xs) + bS;
       if (ponta) xb = mb.xOff + mb.L; else xa = mb.xOff;
+      /* R7: a ponta da TERÇA (a mais alta) com parede fina — a chapa passa da ponta da cantoneira e leva os parafusos na alma da terça
+         (o plano da mão-francesa é o da alma da terça); sem solda nessa ponta */
+      var naTerca = !!(dq && dq.terca) && ((ponta === 1) === (mb.X[1] >= 0)), xsT = [], PT = naTerca ? Nn.parafuso(dq.terca.id || "M12") : null;
+      if (naTerca) {
+        var pT = Nn.partida(PT.d, "laminada").passo / 1000, bT = Nn.bordaMin(PT.d, "serra").e / 1000, nT = Math.max(2, num(dq.terca.n, 2));
+        var x0T = ponta ? mb.xOff + mb.L + bT : mb.xOff - bT;
+        for (var kT = 0; kT < nT; kT++) xsT.push(ponta ? x0T + kT * pT : x0T - kT * pT);
+        if (ponta) xb = Math.max.apply(null, xsT) + bT; else xa = Math.min.apply(null, xsT) - bT;
+      }
       var O = M.membroPonto(mb, xa, aFora - tC, fv.y0);
       var ch = M.chapa({ origem: O, ex: mb.X, ey: mb.B, t: tC, ret: { L: xb - xa, B: larg }, papel: "Chapa da mão-francesa", aco: "ASTM A36",
         furos: xs.map(function (x) { return { u: x - xa, v: bLoc - fv.y0, db: P2.d, tipo: "padrao" }; }) });
       if (ch.erro) { out.avisos.push("Mão-francesa: " + ch.erro); return; }
       /* ex × ey tem de apontar para a cantoneira (+A): se não, a chapa nasceu do lado de dentro — espelha a origem */
       var ez = cross(mb.X, mb.B); if (dot(ez, mb.A) < 0) { ch = M.chapa({ origem: M.membroPonto(mb, xa, aFora, fv.y0), ex: mb.X, ey: mb.B, t: tC, ret: { L: xb - xa, B: larg }, papel: "Chapa da mão-francesa", aco: "ASTM A36", furos: xs.map(function (x) { return { u: x - xa, v: bLoc - fv.y0, db: P2.d, tipo: "padrao" }; }) }); }
-      var ligM = "mf:" + c.id + ":" + ponta; ch.metal.ligMont = ligM; ch.metal.solda = { tipo: "filete", perna: Nn.soldaMin(tC * 1000).perna, lados: "ambos", comprimento: Math.round(larg * 1000) / 1000, campo: false };
+      var ligM = "mf:" + c.id + ":" + ponta; ch.metal.ligMont = ligM;
+      if (naTerca) { ch.metal.papel = "Chapa da mão-francesa (parafusada na terça)"; ch.metal.furos = (ch.metal.furos || []).concat(xsT.map(function (x) { return { u: r6(x - xa), v: r6(larg / 2), db: PT.d, d: Nn.furo(PT.d, "padrao").d, l: Nn.furo(PT.d, "padrao").d, tipo: "padrao" }; })); }
+      else ch.metal.solda = { tipo: "filete", perna: Nn.soldaMin(tC * 1000).perna, lados: "ambos", comprimento: Math.round(larg * 1000) / 1000, campo: false };
       criar(ch, c, "lig:maoFrancesa");
       var pega = { itens: [{ peca: "chapa da mão-francesa", t: tC }, { peca: "aba da cantoneira", t: tL }], total: tC + tL };
       xs.forEach(function (x) {
-        var b0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, bLoc), eixo: mb.A, aperto: pega.total }, P2, "8.8", ligM, pega);
+        var b0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, bLoc), eixo: mb.A, aperto: pega.total }, P2, dq ? dq.classe : "8.8", ligM, pega);
         if (b0.erro) { out.avisos.push("Mão-francesa: " + b0.erro); return; }
         criar(b0, c, "lig:maoFrancesa"); out.parafusos.maoFrancesa++;
       });
+      if (naTerca) {
+        var pegaT = { itens: [{ peca: "chapa da mão-francesa", t: tC }, { peca: "alma da terça", t: num(dq.terca.t, 2.66) / 1000 }], total: tC + num(dq.terca.t, 2.66) / 1000 };
+        xsT.forEach(function (x) {
+          var bT0 = parafuso({ origem: M.membroPonto(mb, x, aFora - tC, fv.y0 + larg / 2), eixo: mb.A, aperto: pegaT.total }, PT, dq.terca.classe || "8.8", ligM + ":terca", pegaT);
+          if (bT0.erro) { out.avisos.push("Mão-francesa (terça): " + bT0.erro); return; }
+          criar(bT0, c, "lig:maoFrancesa"); out.parafusos.maoFrancesa++; out.parafusos.mfTerca = (out.parafusos.mfTerca || 0) + 1;
+        });
+      }
       out.contagem.maoFrancesa++;
     });
   }

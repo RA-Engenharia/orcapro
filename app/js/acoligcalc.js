@@ -451,6 +451,12 @@
           var d = pf.d, passoB = cima5(ESPF * d), bordaS = Math.max(25, cima5(1.75 * d + BACR)), La = (n - 1) * passoB + 2 * bordaS, h = cima5(0.55 * ct.a);
           var FvRd = parafusoCisal(d, fub, true), Fb = R / n, fino = tT < 4.75;
           var FcRd = fino ? esmagamento14762(d, tT, fuT) : pressaoContato(d, tT, fuT, bordaS - (d + 1.5) / 2);
+          /* REVISÃO 21/11/2026 (js/metalligdim.js): p.forcaPonta (kN) = a força de ESCORA da terça (N ao longo dela). Os parafusos do
+             clip ficam numa linha AO LONGO da terça (js/metalligacao.js clipTerca: borda = Tabela 14 "serra" arredondada a 5 mm da
+             ponta, passo 3·db), e a força de escora rasga a alma fina entre os furos e a ponta — analogia conservadora com o 6.3.3.3
+             da NBR 8800 (1,2·lf·t·fu/γa2; a NBR 14762 trata o rasgamento à parte — conferir). Sem p.forcaPonta, o de antes. */
+          var Fponta = num(p.forcaPonta, 0), ePonta = cima5(bordaMin(d, "serra")), dhP = d + 1.5;
+          var FrPonta = Fponta > 0 ? pressaoContato(d, tT, fuT, ePonta - dhP / 2) + (n - 1) * pressaoContato(d, tT, fuT, passoB - dhP) : 0;
           var Mleg = Rp * h / 1000, MRd = La * ct.t * ct.t / 4 * fy / g.a1 / 1e6;
           var aW = Math.max(pernaMinima(Math.max(ct.t, tfV)), 5), FwRd = soldaFilete(aW, 2 * La, fw, Math.min(fy, 250));
           /* sucção: a terça puxa os parafusos para a borda livre de cima da aba (et = aba − h) */
@@ -465,6 +471,8 @@
               [passo("Momento", "R∥·h", br(Mleg, 3) + " kN·m"), passo("Resistente", "La·t²·fy/(4·γa1)", br(MRd, 3) + " kN·m")], MRd, Mleg, "kN·m"),
             verif("Solda do clip na viga (filete " + aW + " mm, 2 × " + La + " mm)", ED08 + ", 6.2.5", [passo("Resistente", "0,60·0,707·a·L·fw/γw2 (ou metal-base)", br(FwRd, 1) + " kN")], FwRd, R)
           ];
+          if (Fponta > 0) vs.push(verif("Rasgamento da alma da terça até a ponta pela força de escora (" + n + " furos, borda " + ePonta + " mm, passo " + passoB + " mm)", ED08 + ", 6.3.3.3 — analogia para chapa fina (t = " + br(tT, 2) + " mm; NBR 14762: conferir)",
+            [passo("Fr,Rd", "1,2·(e − dh/2)·t·fu/γa2 + (n − 1)·1,2·(s − dh)·t·fu/γa2", br(FrPonta, 2) + " kN", "e = " + ePonta + "; s = " + passoB + "; dh = " + br(dhP, 1) + " mm"), passo("Solicitante", "|N| da terça (escora)", br(Fponta, 2) + " kN")], FrPonta, Fponta));
           if (Rc > 0) {
             vs.push(verif("Pressão de contato na aba do clip sob sucção (borda de cima a " + etC + " mm)", ED08 + ", 6.3.3.3",
               [passo("Fc,Rd por parafuso", "1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(FcAba, 2) + " kN", "lf = " + etC + " − " + br(dhC, 1) + "/2 = " + br(etC - dhC / 2, 1) + " mm; t = " + br(ct.t, 2) + " mm"),

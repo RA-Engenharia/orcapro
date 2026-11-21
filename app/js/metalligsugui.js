@@ -397,6 +397,17 @@
         }
       }
       var rcAb = resultadoCalc();
+      /* 21/11/2026: com o cálculo feito, as ligações da peça selecionada JÁ foram dimensionadas (js/metalligdim.js) — a tela mostra a
+         memória (passos, item da NBR 8800, solicitante/resistente) antes das sugestões */
+      if (!o.sugestoes && rcAb && rcAb.ok && rcAb.ligDim && global.MetalLigDim) {
+        var mh = global.MetalLigDim.memoriaHtml(rcAb.ligDim, { ids: cxs.map(function (c) { return String(c.id); }), abrir: true }), selfM = this;
+        if (mh) {
+          U.cxs = cxs;
+          UI.modal("Ligação inteligente — memória de cálculo das ligações", '<div class="lsg" data-lsg="lig-dim"><p class="ml-nota">' + esc(rcAb.ligDim.resumo) + "</p>" + mh + "</div>",
+            [{ texto: "Ver as sugestões de ligação", onClick: function () { UI.fecharModal(); selfM.abrir({ manter: true, sugestoes: true }); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return { ok: true, memoria: true };
+        }
+      }
       if (o.estimativa) U.aceitouEstimativa = true;   /* escolheu ver estimado: nesta sessão não pergunta de novo (até haver cálculo) */
       if ((!rcAb || !rcAb.ok) && !o.estimativa && !o.manter && !U.aceitouEstimativa) {
         UI.modal("Ligação inteligente — calcule primeiro", '<div class="lsg" data-lsg="sem-calculo"><p>As ligações são dimensionadas com os <b>esforços do cálculo</b> da estrutura. Ainda não há um cálculo que fechou para este modelo — calcule primeiro (o resultado fica guardado e a Ligação inteligente usa os esforços dele).</p></div>',

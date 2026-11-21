@@ -296,7 +296,40 @@
     if (p.padrao != null) p.padrao = PADROES[p.padrao] ? p.padrao : "pratt";
     if (t === "misula") { p.degraus = Math.max(2, Math.min(6, Math.round(num(p.degraus, 3)))); }
     if (!p.posicoes) p.comprimento = r6((p.nPorticos - 1) * p.espacamento);
+    paredeParaSolda(p);
     return p;
+  }
+  /* 21/11/2026 (revisão das ligações, item 3): as pontas ROTULADAS por chapa de ligação (escora, escora da coluna, pilar de
+     tapamento/interno em tubo) têm a chapa SOLDADA na parede do tubo. O filete mínimo da NBR 8800:2008 Tabela 10 é 3 mm e a perna
+     não pode passar da espessura da parede (6.2.6.2) — tubo de parede < 3 mm não tem solda possível. O sistema troca sozinho pelo
+     tubo MAIS LEVE da mesma série (mesmo aço) com t ≥ 3 mm e A, Ix, Iy ≥ os do original (a barra não fica mais fraca; o cálculo
+     confere de novo) e declara a troca (p.trocasParede → decisões do cálculo). Opcional (p.trocarParedeSolda). */
+  var T_PAREDE_SOLDA = 3, GRUPOS_PONTA_SOLDADA = ["escora", "escoraColuna", "tapamento", "pilarInterno"];
+  /* os candidatos, do mais leve ao mais pesado: mesma série e forma, t ≥ 3 mm; escora (só compressão do contraventamento, L = o vão
+     entre pórticos): r ≥ L/200 (a esbeltez do 5.3.4); pilar: A, Ix, Iy ≥ os do original (não fica mais fraco) */
+  function candidatosParede(p, k, o, A) {
+    var esc = k === "escora" || k === "escoraColuna", rMin = esc ? num(p.espacamento, 6) * 1000 / 200 : 0;
+    return A.listar(o.serie).map(function (nm) { return A.obter(nm); }).filter(function (c) {
+      if (!c || c.forma !== o.forma || !(c.t >= T_PAREDE_SOLDA - 1e-9) || !(c.A > 0)) return false;
+      if (esc) return Math.sqrt(Math.min(c.Ix, c.Iy) / c.A) >= rMin - 1e-6;
+      return c.A >= o.A - 1e-6 && c.Ix >= o.Ix - 1e-6 && c.Iy >= o.Iy - 1e-6;
+    }).sort(function (a, b) { return a.A - b.A || a.h - b.h; }).map(function (c) { return c.nome; });
+  }
+  function paredeParaSolda(p) {
+    var A = Aco(); p.trocasParede = [];
+    /* SÓ com p.trocarParedeSolda = true. O padrão (21/11, revisão) é a LIGAÇÃO PARAFUSADA PASSANTE do js/metalligdim.js (NBR 14762),
+       que não muda a barra: no Pedido Gabriel PD 8 m com solar a troca da escora TQ 100×2 por qualquer tubo Tuper de 3 mm reprovava
+       outra barra — TQ 80×3: as escoras a 1,24 (momento do oitão); TQ 88,9×3 / 90×3 / 100×3: a escora mais rígida puxa força para a
+       terça 7 (1,0039 / 1,0046 / 1,0103) — docs/alumetal/LIGACOES-DIMENSIONAMENTO.md, Revisão R2 */
+    if (!p.trocarParedeSolda) return;
+    if (!A || !A.obter || !A.listar) return;
+    GRUPOS_PONTA_SOLDADA.forEach(function (k) {
+      var o = p[k] ? A.obter(p[k]) : null;
+      if (!o || !/^tubo/.test(o.forma || "") || !(o.t > 0) || o.t >= T_PAREDE_SOLDA - 1e-9) return;
+      var cs = candidatosParede(p, k, o, A); if (!cs.length) return;
+      p.trocasParede.push({ grupo: k, de: o.nome, para: cs[0], candidatos: cs.slice(0, 4) });
+      p[k] = cs[0];
+    });
   }
   function motorDe(t) { return TIPOS[t] ? TIPOS[t].motor : null; }
 
@@ -990,7 +1023,7 @@
     function W(x, y, z) { return [r6(p.x0 + x), r6(p.cota + y), r6(p.z0 + z)]; }
     function no(id, x, y, z) { nos[id] = W(x, y, z); return id; }
     /* toda peça leva a tipologia e a declaração de GALPÃO DE UM PAVIMENTO (deslocamento do topo H/300 — js/acodimlivre.js) */
-    function barra(o) { o.id = "b" + (barras.length + 1); o.calc = o.calc || {}; o.calc.tipologia = nomeT; if (t !== "mezanino") o.calc.umPavimento = true; barras.push(o); cont[o.grupo] = (cont[o.grupo] || 0) + 1; return o; }
+    function barra(o) { o.id = "b" + (barras.length + 1); o.calc = o.calc ? clone(o.calc) : {}; o.calc.tipologia = nomeT; o.calc.grupoTip = o.grupo; o.calc.barraId = o.id; if (o.coluna) o.calc.coluna = o.coluna; o.calc.ligGeral = p.ligacao === "parafusada" || p.ligacao === "soldada" ? p.ligacao : "padrao"; if (p.fckFundacao > 0) o.calc.fckFundacao = +p.fckFundacao;   /* 21/11: o dimensionamento das ligações (js/metalligdim.js) sabe o grupo, a barra e a coluna */ if (t !== "mezanino") o.calc.umPavimento = true; barras.push(o); cont[o.grupo] = (cont[o.grupo] || 0) + 1; return o; }
     var zs = []; for (var k = 0; k < nP; k++) zs.push(p.posicoes ? r6(p.posicoes[k]) : r6(k * esp));
     function vk(i) { return r6(zs[Math.min(nP - 1, i + 1)] - zs[Math.max(0, i)]); }   /* o vão entre o pórtico i e o seguinte */
     /* pórticos */
@@ -1328,12 +1361,12 @@
        (o teste prova: o leitor monta os mesmos membros e pontas). semAcabamento: só as barras (o calcular em Node) */
     var PA = opG.semAcabamento ? null : dep("MetalPorticosAcab", "./metalporticosacab.js");
     if (PA) {
-      var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
+      var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha", "ligDim"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
       var ac = PA.completar(t, p, g, novoId, acO);
       /* 21/11/2026: parafusos, porcas e arruelas das ligações parafusadas (js/metalparafusos.js) — o cálculo não muda (sem `lig`);
          na ligação SOLDADA o completar tira do acabamento os parafusos do clip (antes de as ops entrarem no lote) */
       var MPf = ac.ok && opG.ligacoes !== false ? dep("MetalParafusos", "./metalparafusos.js") : null, fx = null;
-      if (MPf) { g.acab = ac; fx = MPf.completar(t, p, g, novoId, {}); }
+      if (MPf) { g.acab = ac; fx = MPf.completar(t, p, g, novoId, { ligDim: opG.ligDim || null }); }   /* opG.ligDim = r.ligDim.modelo: o nº de parafusos CALCULADO */
       if (ac.ok) { g.acab = ac; ac.ops.forEach(function (o) { ops.push(o); }); if (ac.resumo) g.resumo = g.resumo + " Acabamento: " + ac.resumo + "."; g.avisos = arr(g.avisos).concat(ac.avisos); }
       if (fx && fx.ok) { g.fixacao = fx; fx.ops.forEach(function (o) { ops.push(o); }); g.avisos = arr(g.avisos).concat(fx.avisos); }
     }
@@ -1406,6 +1439,10 @@
       ent = entradaLivre(t, p, g, op); r2 = DL.calcular(ent, op.calc || {});
     }
     if (trocasCor.length && r2 && r2.ok) r2.decisoes = arr(r2.decisoes).concat([{ tema: "Correntes — bitola pela força do cálculo", decisao: "corrente de terça " + trocasCor.join("; "), motivo: "a reação do eixo fraco das terças (vento local do cpe médio, NBR 6123:2023 6.1.2) acumulada na linha passou da resistência da barra redonda (NBR 8800 5.2 e 6.3.3.1): a menor bitola do catálogo com área ≥ a necessária; a diagonal de ancoragem pela regra A ≥ A da linha/(n·cos β)" }]);
+    /* parede para a solda (paredeParaSolda): se a estrutura reprova com o tubo mais leve, tenta o próximo candidato (até 3) —
+       "o perfil mais leve que passa"; nenhum passa → volta ao mais leve (o memorial mostra o que reprova) */
+    if (p.trocasParede && p.trocasParede.length && r2 && r2.ok) r2.decisoes = arr(r2.decisoes).concat([{ tema: "Ligações — parede do tubo para a solda", decisao: p.trocasParede.map(function (x) { return x.grupo + ": " + x.de + " → " + x.para + (x.para !== x.candidatos[0] ? " (o mais leve, " + x.candidatos[0] + ", reprovava a estrutura)" : ""); }).join("; "),
+      motivo: "a chapa de ligação da ponta rotulada é soldada na parede do tubo: filete mínimo 3 mm (ABNT NBR 8800:2008, Tabela 10) e a perna não passa da parede (6.2.6.2) — o tubo mais leve da mesma série com t ≥ 3 mm (escora: r ≥ L/200; pilar: A, Ix, Iy ≥ os do original) ; calculado com ele" }]);
     /* AUDITORIA A1: a premissa do portão vai às decisões (o memorial mostra) */
     if (r2 && r2.ok && p.fechamento === "fechado") r2.decisoes = arr(r2.decisoes).concat([p.semAberturasDominantes
       ? { tema: "Vento — aberturas dominantes", decisao: "ATENÇÃO: declarado SEM aberturas dominantes (cpi −0,3 ou 0, NBR 6123:2023 6.3.2.1-b)", motivo: "o engenheiro declarou que portas e portões ficam fechados e são dimensionados para o vento. Se algum portão, porta de enrolar ou janela grande puder ficar aberto num temporal, esta declaração está ERRADA: desmarque e calcule de novo (a sucção na cobertura sobe cerca de 1,8×)" }
@@ -1460,11 +1497,12 @@
       rotulo: "Pedido Gabriel — galpão 20 × 30 m (Alumetal)", tipo: "tesoura-leve",
       /* 21/11/2026: SISTEMA CANTONEIRA (decisão do dono — como a metalúrgica fabrica): banzos e alma em 2L costas com costas com
          chapa de nó de 8 mm entre as abas; travejamento da coluna em L 2" × 3/16" soldada na aba do U (5.3.4.4). Nas 4 variantes,
-         sem otimizador (ele estourou a memória do Node): TODAS as barras e TODOS os nós com chapa passam; a situação fica
-         "incompleto" só pelas placas de base e ligações rotuladas, que o motor não dimensiona. Escora da coluna TQ 110×5 → 140×5:
+         sem otimizador (ele estourou a memória do Node): TODAS as barras e TODOS os nós com chapa passam; desde 21/11 as ligações e as placas de base são
+         DIMENSIONADAS (js/metalligdim.js, fck 25) e as 4 variantes saem "aprovado". Escora da coluna TQ 110×5 → 140×5:
          a flecha L/120 do vento local (85 mm > 50 mm) reprovava. Banzo 2L 76,2×6 (A36): a escora do banzo de baixo no nó de cada coluna de tapamento tirou o My ≈ 9,9 kN·m do oitão (era 2L 88,9×7,94). Jogo do OTIMIZADOR (21/11, PD 8 m com solar, 19.607 kg), o mesmo nas 4 variantes, com duas exceções conferidas: coluna U 300×100×4,25 (o U mais raso muda o encaixe do banzo de dentro da coluna na tesoura — entra um nó no meio do painel e o banzo de baixo reprova a 1,33) e travejamento L 50,8×4,76 (a L 45×5 reprova a 1,13 no PD 6 m). 0 falhas e 0 nós reprovados nas 4. O jogo de tubo (que reprova: nó T 4,61) fica em sistemas.tubo. */
       base: { vao: 20, comprimento: 30, definirPor: "numero", nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
-              sistemaTrelica: "cantoneira", chapaNo: 8,
+              sistemaTrelica: "cantoneira", chapaNo: 8, fckFundacao: 25,   /* fck da fundação: decisão do Rogério (21/11/2026) — placas de base e ancoragem (js/metalligdim.js) */
+             
               banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",   /* 21/11 (ângulo 35°–60°): a alma passou a 1 painel por terça (41°, era 2 a 62°) e a diagonal de 2,04 m em 2L 50,8×4,5 reprovava a 1,02 no PD 8 com solar */
               montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
               travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 2,66", tercaBorda: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 300 x 100 x 4,25",

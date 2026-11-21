@@ -249,7 +249,30 @@
     return { borda: Math.ceil(b.e / 5) * 5, passo: Math.ceil(e.pref / 5) * 5 };
   }
 
+  /* ITENS DA NBR 8800:2008 USADOS NO DIMENSIONAMENTO DAS LIGAÇÕES (js/metalligdim.js, 21/11/2026) — LUGAR ÚNICO.
+     A biblioteca de normas da RA NÃO tem o texto da NBR 8800: os coeficientes abaixo são os da edição 2008 tirados de memória
+     da norma e das transcrições citadas no topo deste arquivo; cada um sai na memória como "item X, conferir no texto".
+     A lista do doc (docs/alumetal/LIGACOES-DIMENSIONAMENTO.md, seção "Itens a conferir") é ESTA. */
+  var LIGDIM = {
+    cisalRosca: { v: 0.40, item: "6.3.3.2", texto: "Fv,Rd = 0,40·Ab·fub/γa2 por plano de corte, rosca no plano (0,50 fora do plano)" },
+    cisalFora: { v: 0.50, item: "6.3.3.2", texto: "Fv,Rd = 0,50·Ab·fub/γa2 por plano de corte, rosca fora do plano" },
+    tracao: { v: 0.75, item: "6.3.3.1", texto: "Ft,Rd = 0,75·Ab·fub/γa2" },
+    interacao: { item: "6.3.3.4", texto: "(Ft,Sd/Ft,Rd)² + (Fv,Sd/Fv,Rd)² ≤ 1,0" },
+    contato1: { v: 1.2, item: "6.3.3.3", texto: "Fc,Rd = 1,2·lf·t·fu/γa2 (rasgamento entre furos ou furo-borda)" },
+    contato2: { v: 2.4, item: "6.3.3.3", texto: "Fc,Rd ≤ 2,4·db·t·fu/γa2 (pressão de contato), furo-padrão, deformação no furo considerada" },
+    bloco: { item: "6.5.6", texto: "Fr,Rd = (0,60·fu·Anv + Cts·fu·Ant)/γa2 ≤ (0,60·fy·Agv + Cts·fu·Ant)/γa2" },
+    liquida: { item: "5.2.3 e 5.2.5", texto: "Nt,Rd = Ae·fu/γa2, Ae = Ct·An; An com furo + 2,0 mm (5.2.4.1); Ct = 1 − ec/lc (cantoneira/perfil parafusado; 0,60 ≤ Ct ≤ 0,90)" },
+    furoLiq: { v: 2.0, item: "5.2.4.1", texto: "diâmetro do furo nas áreas líquidas = furo-padrão + 2,0 mm" },
+    solda: { item: "6.2.5 / Tabela 8", texto: "filete: Fw,Rd = 0,60·Aw·fw/γw2 (Aw = 0,707·dw·Lw); metal-base 0,60·AMB·fy/γa1" },
+    soldaMin: { item: "Tabela 10", texto: "perna mínima do filete pela parte menos espessa" },
+    soldaComp: { item: "6.2.6.2", texto: "comprimento efetivo do filete ≥ 4·dw e ≥ 40 mm" },
+    concreto: { item: "6.6.1", texto: "σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck/γc (pressão de contato na área carregada), γc = γn = 1,4" },
+    gamas: { item: "Tabela 3 e 6.2.5", texto: "γa1 = 1,10; γa2 = 1,35; γw2 = 1,35" }
+  };
+  function itemLig(k) { var x = LIGDIM[k]; return x ? FONTE_8800 + ", " + x.item + " (conferir no texto)" : FONTE_8800; }
+
   var BimMetalNorma = {
+    LIGDIM: LIGDIM, itemLig: itemLig,
     FONTE_8800: FONTE_8800, PARTIDA: PARTIDA, PARAFUSOS: PARAFUSOS, CLASSES: CLASSES, TAB14: TAB14, TAB10: TAB10, RHO_ACO: 7850,
     AJUSTES: AJUSTES,
     parafuso: parafuso, furo: furo, bordaMin: bordaMin, bordaMax: bordaMax, espMin: espMin, espMax: espMax,

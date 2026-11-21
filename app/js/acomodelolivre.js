@@ -212,7 +212,7 @@
       if (c && (c.tipo === "pilar" || c.tipo === "viga") && !c.metal) { lerEstrutura(c); return; }
       if (!c || c.tipo !== "metal" || !c.metal) return;
       var m = c.metal, id = String(c.id);
-      if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia); if (c.ligInfo && c.ligInfo.entrada && !L0.entrada) L0.entrada = c.ligInfo.entrada;
+      if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia); if (c.ligInfo && c.ligInfo.entrada && !L0.entrada) L0.entrada = c.ligInfo.entrada; if (c.ligInfo && c.ligInfo.ligDim && !L0.ligDim) L0.ligDim = c.ligInfo.ligDim;   /* R10 21/11: a assinatura da ligação dimensionada (js/metalporticosacab.js) */
         /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a ligação lançada só pelo peso próprio (A CONFIRMAR, origem
            "lancar-viga") é PROVISÓRIA — não manda no nó: vale a escolha da tela (rotulada/rígida) e o cálculo confirma ou troca
            a ligação depois. Ela mandando, o joelho marcado rígido virava rótula e o pórtico, mecanismo (e2e da simulação) */

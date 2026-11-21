@@ -30,6 +30,7 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+  function arr(v) { return Array.isArray(v) ? v : []; }
   function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 6000); } catch (e) {} }
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
@@ -142,6 +143,17 @@
       });
       return ordem.map(function (g) { var o = por[g]; o.n = o.pecas.length; return o; });
     },
+    /* 21/11/2026: o resultado do DIMENSIONAMENTO DAS LIGAÇÕES (r.ligDim, js/metalligdim.js) volta para o modelo — o pórtico é refeito
+       no lugar (um Ctrl+Z) com o nº de parafusos, o diâmetro, a placa e o chumbador calculados; a lista de montagem conta do modelo */
+    atualizarLigacoes: function (r) {
+      var M = MP(), self = this; if (!M || !r || !r.ligDim || !r.ligDim.modelo) { toast("Calcule a estrutura primeiro: as ligações saem do cálculo.", "aviso"); return null; }
+      var pc = {}; arr(r.modelo && r.modelo.membros).forEach(function (m) { pc[String(m.peca)] = 1; });
+      var alvo = this.porticos().filter(function (g) { return arr(g.pecas).some(function (id) { return pc[String(id)]; }); })[0];
+      if (!alvo || !alvo.info) { toast("O cálculo não é de um pórtico da biblioteca — as ligações ficam só na memória.", "aviso", 8000); return null; }
+      var el = global.document && document.body, pg = el && global.UI && UI.progresso ? UI.progresso(el, { titulo: "Atualizar as ligações no modelo", etapas: [{ id: "g", peso: 1, rotulo: "Refazendo o pórtico com as ligações calculadas" }], texto: "Refazendo o pórtico", fundo: true }) : null;
+      try { if (pg) pg.etapa("g", 0.3, "Refazendo o pórtico (" + alvo.n + " peças)"); var g = this.criar(alvo.info.tipo, alvo.info.par, { alvo: alvo, ligDim: r.ligDim.modelo }); if (g && g.ok) toast("Ligações do cálculo no modelo: " + (g.fixacao ? g.fixacao.resumo : "") + ". Recalcule para conferir o modelo novo.", "ok", 10000); return g; }
+      finally { if (pg) pg.fim(); }
+    },
     porticoSelecionado: function () {
       var U = MU(), ids = U && U.selecao ? U.selecao().map(String) : [], gs = this.porticos();
       var c = this.caixas().filter(function (x) { return x && x.portico && ids.indexOf(String(x.id)) >= 0; })[0];
@@ -221,7 +233,7 @@
       /* pré-configuração "Pedido Gabriel" (tesoura leve): uma variante no formulário, ou as 4 lado a lado no modelo */
       var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
       if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
-        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#b3261e;color:#fff;font-weight:700">EM REVISÃO — barras e nós passam nas 4 variantes; faltam as placas de base e as ligações rotuladas (não dimensionadas): não fabricar</span></div>' + h;
+        ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#2e7d32;color:#fff;font-weight:700">Calculado — conferir e assinar pelo responsável técnico (barras, nós, ligações e placas de base passam nas 4 variantes, NBR 8800:2008 com itens a conferir no texto; os enrijecedores da coluna ainda não estão no 3D)</span></div>' + h;
       if (el) el.innerHTML = h;
     },
     /* a variante no formulário */
@@ -387,7 +399,7 @@
         }
         return rg;
       }
-      var g = M.gerar(tipo, p, function () { return self.novoId(); }, { porticoId: op.alvo ? op.alvo.id : null, edicoes: op.alvo && global.MetalElemento ? global.MetalElemento.edicoesDe(this.caixas(), op.alvo.id) : null });   /* 21/11: as edições por tipo voltam no pórtico refeito */
+      var g = M.gerar(tipo, p, function () { return self.novoId(); }, { ligDim: op.ligDim || null, porticoId: op.alvo ? op.alvo.id : null, edicoes: op.alvo && global.MetalElemento ? global.MetalElemento.edicoesDe(this.caixas(), op.alvo.id) : null });   /* 21/11: as edições por tipo voltam no pórtico refeito */
       if (!g.ok) { toast(T.rotulo + ": " + g.motivo, "aviso", 9000); status(g.motivo); return g; }
       if (op.alvo) { g.op.ops = op.alvo.pecas.map(function (id) { return { op: "apagar", id: id }; }).concat(g.op.ops); g.op.pedido = "Atualizar o pórtico (" + op.alvo.n + " peças refeitas)"; }
       if (!U.enviar(g.op)) { toast("O editor recusou o pórtico.", "erro"); g.ok = false; return g; }

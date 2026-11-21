@@ -471,7 +471,7 @@
     }
     var pr0 = r.parametros || {};
     if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
-    h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
+    h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? (tudoDimensionado(r) ? "barras, nós e ligações atendem — conferir e assinar pelo responsável técnico" : "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)") : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
       '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
       '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
       '<div class="ml-kpi"><small>Modelo</small><b>' + r.modelo.membros.length + ' barras</b><span class="ml-nota">' + r.modelo.modelo.nos.length + " nós · " + r.combinacoes.length + " combinações · " + fmt(r.tempoMs / 1000, 1) + " s</span></div></div>";
@@ -486,6 +486,12 @@
         var p = { tipo: "nao-verificado", titulo: x.tema + " não foi verificado", texto: x.motivo, gravidade: "aviso", solucoes: sols }; U.probExtra["nv" + k] = p; return p;
       }), { pre: "ml", titulo: "Não verificado", gravidade: "aviso", attrs: 'data-ml="nao-verificado"', acoes: BOTAO_SOL, prefixoIndice: "x:nv" })
       : '<div class="ml-prob" data-ml="nao-verificado"><h4>Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") + "</div>";
+    /* 21/11/2026: LIGAÇÕES DIMENSIONADAS (js/metalligdim.js) — resumo, as 12 mais solicitadas e o botão que leva o nº de parafusos,
+       a placa e o chumbador CALCULADOS para o modelo 3D e para a lista de montagem */
+    if (r.ligDim && r.ligDim.n && global.MetalLigDim) h += '<div class="ml-card" data-ml="lig-dim"><h4>Ligações dimensionadas (NBR 8800:2008)</h4><p class="ml-nota" style="margin-top:0">' + esc(r.ligDim.resumo) + "</p>" +
+      (r.ligDim.pendencias.length ? '<ul class="ml-l">' + r.ligDim.pendencias.map(function (x) { return '<li class="ml-aviso">' + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+      '<button class="ml-bt mini pri" data-ml-acao="ligdim-modelo">Atualizar parafusos, placas e chumbadores no modelo</button> <span class="ml-nota">memória completa de cada ligação: selecione a peça e abra a Ligação inteligente</span>' +
+      MetalLigDim.memoriaHtml(r.ligDim, { max: 12 }) + "</div>";
     if (U.ligAuto && U.ligAuto.r === r && global.MetalLigAutoUI) { try { h += MetalLigAutoUI.quadroHtml(U.ligAuto); } catch (eQ) {} }
     var ajC = ajustesCota(); if (ajC.length) h += '<div class="ml-card" data-ml="ajuste-cota" style="border-color:var(--ml-aviso)"><h4>Ajuste de cota das fundações</h4><ul class="ml-l">' + ajC.map(function (x) { return '<li class="ml-aviso">' + esc(x.texto) + "</li>"; }).join("") + '</ul><button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="ajustar-topos">Ajustar o topo das fundações (' + ajC.length + ")</button></div>";
     if (r.trocas) h += '<div class="ml-card" data-ml="trocas" style="border-color:var(--ml-aco)"><b>' + r.trocas + " peça(s) com perfil novo</b> (o mais leve que passa): " + esc(Object.keys(r.pecas).filter(function (k) { return r.pecas[k].mudou; }).map(function (k) { var mb = r.membros && r.membros[r.pecas[k].membro]; return r.pecas[k].membro + " " + r.pecas[k].de + " → " + r.pecas[k].para + (mb && isFinite(mb.razao) ? " (razão " + String(Math.round(mb.razao * 100) / 100).replace(".", ",") + ")" : ""); }).slice(0, 40).join("; ")) + (r.aplicado ? ' <span class="ml-chip ok">aplicado no modelo</span>' : ' — <button class="ml-bt mini pri" data-ml-acao="aplicar">Aplicar os perfis no modelo</button>') + "</div>";
@@ -604,6 +610,7 @@
     if (a === "pranchas-dxf") return baixarDxf();
     if (a === "pranchas-dwg") return explicarDwg();
     if (a === "aplicar") return aplicar();
+    if (a === "ligdim-modelo") { if (barrarVelho()) return; var PU0 = global.MetalPorticosUI; if (PU0 && PU0.atualizarLigacoes) { PU0.atualizarLigacoes(U.r); U.convergirLig = 3; } else toast("A biblioteca de pórticos não carregou.", "aviso"); return; }
     if (a === "corrigir") return calcularCorrigir();
     if (a === "ver3d") return verEm3D();
     if (a === "memorial") return memorial();
@@ -1007,6 +1014,17 @@
       var corr = U.corrigir; U.corrigir = false; if (corr) estado().otimizar = corr.otimizarAntes;
       render();
       if (corr && r && r.ok) { if (r.trocas) aplicar(); else toast("Calcular e corrigir: nenhuma peça precisou trocar.", "ok", 6000); }
+      /* R10 (21/11/2026): depois de "Atualizar … no modelo", a placa/clip desenhados mudam a análise (a placa de base desenhada manda
+         na rigidez do apoio) e o cálculo de agora pode pedir mais que o que foi posto — o modelo é atualizado de novo e recalculado
+         (até 3 vezes) até o que está no modelo atender ao cálculo: a tela fecha na MESMA situação do Node */
+      var faltaLig = r && r.ok ? arr(r.ligacoesDesatualizadas).filter(function (q) { return q.ligDim; }) : [];
+      if (U.convergirLig > 0 && faltaLig.length && r.ligDim && global.MetalPorticosUI && MetalPorticosUI.atualizarLigacoes) {
+        U.convergirLig--;
+        toast("Ligações: o cálculo de agora pede mais que o posto em " + faltaLig.length + " ligação(ões) — atualizando o modelo e recalculando.", "info", 6000);
+        try { MetalPorticosUI.atualizarLigacoes(r); } catch (eCv) { U.convergirLig = 0; }
+        if (U.convergirLig >= 0) { setTimeout(function () { calcular(); }, 0); return; }
+      }
+      if (!faltaLig.length) U.convergirLig = 0;
       status(r && r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA") : "Estrutura desenhada: não calculou");
     }
     function erroCalc(msg) { return { ok: false, motivo: "Erro no cálculo: " + msg, problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + msg, solucoes: [] }] }; }
@@ -1079,6 +1097,19 @@
      entrega da estrutura desenhada conferem sozinhos a disciplina Metálica (teste de 1 hora: libera e conta; vencido ou sem licença
      recusa e mostra a oferta). Consultar o que já foi calculado continua livre. Sem o módulo: não trava. */
   function lic(acao) { var L = global.LicencaFuncao; return L && L.guarda ? L.guarda("metalica", acao) : true; }
+  /* o subtítulo do "Aprovado" depende das ligações — a MESMA régua da faixa "NÃO EMITIR" das pranchas
+     (js/acopranchaslivre.js): todo encontro com ligação refeita com ESTE cálculo, atendendo, conferindo com o desenhado,
+     sem verificação crítica pendente nem ajuste de cota. Sem isso continua "emitir só com as ligações…" */
+  function tudoDimensionado(r) {
+    var v = false;
+    try {
+      var ligs = global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo ? arr(MetalLigSugUI.ligacoesComCalculo(r)) : [];
+      var Mm = global.AcoMemorialLivre, encs = Mm && Mm._int && Mm._int.encontros ? arr(Mm._int.encontros(r, ligs)) : [];
+      v = ligs.length > 0 && encs.length > 0 && !encs.some(function (e) { return !e.lig || e.incoerente; }) &&
+        !ligs.some(function (l) { var R = l.resultado; return !(R && R.ok) || !l.comCalculo || l.confere === false || arr(R.naoVerificadoCritico).length || R.ajusteCota; });
+    } catch (e) { v = false; }
+    return v;
+  }
   function memorial() {
     if (!lic("gerar o memorial")) return;
     var r = U.r, Mm = global.AcoMemorialLivre; if (!r || !r.ok || !Mm) { toast("O memorial sai de um cálculo que fechou.", "aviso"); return; }
@@ -1206,6 +1237,7 @@
     /* a trava na função, para quem integra e para o teste */
     licenca: function (acao) { return lic(acao || "usar a função"); },
     resultado: function () { return U.r; },
+    convergindo: function () { return !!U.calculando || (U.convergirLig > 0 && arr(U.r && U.r.ligacoesDesatualizadas).some(function (q) { return q.ligDim; })); },
     /* LIGAÇÃO AO LANÇAR: o que o último cálculo fez com as ligações "a confirmar" (a e2e lê) */
     ligAuto: function () { return U.ligAuto || null; },
     /* VÍNCULOS: o resultado guardado é do modelo de antes? (o memorial das ligações e as e2e perguntam) */
