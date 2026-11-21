@@ -86,7 +86,10 @@
         ["VD", "VÁLVULA DE DESCARGA"], ["RP", "REGISTRO DE PRESSÃO"], ["RG", "REGISTRO DE GAVETA"], ["RE", "REGISTRO DE ESFERA"], ["VR", "VÁLVULA DE RETENÇÃO"],
         ["CS", "CAIXA SIFONADA"], ["RS", "RALO SIFONADO"], ["RSE", "RALO SECO"], ["RL", "RALO LINEAR"]],
       acess: { registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" } },
-    quadro: { linha: 12, icone: 10.5, grupo: 7, col: [11, 16, 0, 22, 12, 20], gap: 12, cab: 8, corCab: "#263445", corGrupo: "#e9eef4", corZebra: "#f6f7f9" },
+    quadro: { linha: 12, icone: 10.5, grupo: 8, col: [11, 16, 0, 22, 12, 20], gap: 12, cab: 8, corCab: "#263445", corGrupo: "#e3e9f0", corZebra: "#f1f4f7", letra: 2.6, letraMin: 2.5, pad: 3, descMax: 160, itemMin: 9, pecaFolga: 3.5 },
+    /* 21/11/2026 (pranchas compactas, o Rogério: "só o que precisa"): obra pequena = até pavMax pavimento(s) com ambiente e ambMax ambientes molhados (sem a prancha única de isométricos);
+       foraAmbMinM = o isométrico "fora dos ambientes" só sai com pelo menos esse tubo (m); esqLargMin/esqFolga/detLarg/gapMin/gapMax = a folha que junta esquema vertical, quadro e detalhes (mm de papel). Critério de apresentação RA, não é norma */
+    compacta: { pavMax: 1, ambMax: 2, foraAmbMinM: 3, esqLargMin: 110, esqFolga: 36, esqAltMin: 120, esqKvMin: 20, detLarg: 125, gapMin: 10, gapMax: 40 },
     detalhe: { linhas: 2, colunas: 3 }, barMax: 4, chamadaPlanta: 1.8,
     /* rodada 2: louça real (vinco em graus, quantização de vértice, lados do círculo), vistas agrupadas na folha (mm de papel) */
     vinco: 40, quant: 10000, ladosCirc: 16, folgaVista: 4, folgaRotulos: 20, entreVistas: 10, corteFracW: 0.62, corteFracH: 0.55, folgaRotulo: 0.9,
@@ -152,6 +155,7 @@
   }
   function PAD() { var p = dep("BimInstPadrao", "./biminstpadrao.js"); return p && p.pronto && p.pronto() ? p : null; }
   function PDF() { return dep("SvgPdf", "./svgpdf.js"); }
+  function EDT() { return dep("HidPranchasEdit", "./hidpranchasedit.js"); }   /* ETAPA 3: o ajuste manual por vista (câmera, crop, o que se esconde, viewport, rótulos) */
   function NIV() { return dep("BimInstNivel", "./biminstnivel.js"); }
   function GEO() { return dep("BimInstGeo", "./biminstgeo.js"); }
   function KIT() { return dep("HidKitDados", "./hidkitdados.js"); }
@@ -507,13 +511,16 @@
      data-bloco="<tipo>-NN" data-escala="1:50" (ou "sem" = sem escala: fica no layout, em mm de papel) — o MESMO contrato de js/arqdiagrama.js; o
      exportador CAD (js/arqcad.js) monta uma viewport travada por bloco com escala. escala = "1:50" | número (50) | função(resultado) → uma dessas. */
   function escalaBloco(e) { var m = /^1\s*:\s*(\d+)$/.exec(txt(e)); if (!m && typeof e === "number" && isFinite(e) && e > 0) return "1:" + e; return m ? "1:" + m[1] : "sem"; }
-  function blocoAbre(D, tipo, esc0, r) {
+  /* ETAPA 3: cada bloco leva data-chave = a chave ESTÁVEL da vista (ambiente × grupo × pavimento, ou o título da folha + a ordem do bloco): é por ela que o ajuste manual
+     (js/hidpranchasedit.js) acha a vista de novo depois de regerar, mesmo que a numeração das folhas tenha mudado */
+  function blocoAbre(D, tipo, esc0, r, chave) {
     D._nBloco = (D._nBloco || 0) + 1;
-    return '<g data-bloco="' + txt(tipo).toLowerCase() + "-" + dois(D._nBloco) + '" data-x="' + n(r.x) + '" data-y="' + n(r.y) + '" data-w="' + n(r.w) + '" data-h="' + n(r.h) + '" data-escala="' + escalaBloco(esc0) + '">';
+    var X = EDT(), ch = txt(chave) || (X ? X.chaveBloco(tipo, DEF_ATUAL ? DEF_ATUAL.titulo : "", D._nBloco) : "");
+    return '<g data-bloco="' + txt(tipo).toLowerCase() + "-" + dois(D._nBloco) + '" data-x="' + n(r.x) + '" data-y="' + n(r.y) + '" data-w="' + n(r.w) + '" data-h="' + n(r.h) + '" data-escala="' + escalaBloco(esc0) + '"' + (ch ? ' data-chave="' + esc(ch) + '"' : "") + ">";
   }
-  function blocoVista(D, tipo, esc0, r, fn) {
+  function blocoVista(D, tipo, esc0, r, fn, chave) {
     var i0 = D.s.length, res; D.s.push("");
-    try { res = fn(); } finally { D.s.push("</g>"); D.s[i0] = blocoAbre(D, tipo, typeof esc0 === "function" ? esc0(res) : esc0, r); }
+    try { res = fn(); } finally { D.s.push("</g>"); D.s[i0] = blocoAbre(D, tipo, typeof esc0 === "function" ? esc0(res) : esc0, r, chave); }
     return res;
   }
   function D0() { if (!_D0) _D0 = new (AP().Desenho)(estilo(), null); return _D0; }
@@ -1128,14 +1135,16 @@
   /* ------------------------------------------------------------ DETALHES TÍPICOS (6 painéis; esquemáticos, sem escala) */
   /* cada painel: a geometria à esquerda e as CHAMADAS em lista à direita (uma linha por item, nunca uma sobre a outra);
      embaixo, a tabela do catálogo com as LETRAS da ficha */
-  function chamadas(D, itens, xT, yMin, yMax, h) {
+  function chamadas(D, itens, xT, yMin, yMax, h, xMax) {
     var passo = h * K2.notaLinha + K2.notaEntre, ord = itens.slice().sort(function (a, b) { return a.p[1] - b.p[1]; }), y = yMin;
     ord.forEach(function (it) {
       var ty = Math.max(y, Math.min(it.p[1] + h * 0.35, yMax));
       D.linha(it.p[0], it.p[1], xT - 1, ty - h * 0.35, "HID-COTA");
       D.ponto(it.p[0], it.p[1], HI().K.rTe * 0.7, "#000");
-      D.texto(xT, ty, it.t, h, { cor: it.cor });
-      y = ty + passo;
+      /* 21/11/2026: com a margem direita do painel (xMax) a chamada QUEBRA em vez de invadir a vista ao lado (os detalhes agora dividem a folha com o quadro) */
+      var lsC = xMax && xMax - xT > 10 ? AP().quebrar(it.t, h, xMax - xT) : [it.t];
+      lsC.forEach(function (lc, kc) { D.texto(xT, ty + kc * h * K2.notaLinha, lc, h, { cor: it.cor }); });
+      y = ty + passo + (lsC.length - 1) * h * K2.notaLinha;
     });
     return y;
   }
@@ -1388,7 +1397,7 @@
       else if (pn.id === "calha") it = pnCalhaEmbutida(D, g, c.r);
       else if (cxsReais.length) it = pnReservatorioReal(D, g, cxsReais[0]);
       else it = pnCaixa(D, g, ["TAMPA", "ENTRADA COM BOIA", "SAÍDA (barrilete)", "NÍVEL DE OPERAÇÃO", "LIMPEZA"], false);
-      var yFim = chamadas(D, it, gx + gw + cw * 0.06, gy, gy + gh, h);
+      var yFim = chamadas(D, it, gx + gw + cw * 0.06, gy, gy + gh, h, px + cw - 3);
       var yT = Math.max(gy + gh, yFim) + T.nota * 2;
       if (it.fonte) { c.AP.quebrar(it.fonte, h, cw - 6).forEach(function (ln, q) { D.texto(px + 2, yT + q * h * K2.notaLinha, ln, h, {}); }); yT += h * K2.notaLinha * 2 + K2.notaEntre; }
       if (pn.id === "res" && cxsReais.length) tabelaCaixasReais(D, c, px + 2, yT, cw - 6, py + ch - 2, cxsReais);
@@ -1439,19 +1448,40 @@
     if (/lavatorio|cuba|pia|tanque/.test(ic)) D.circ(cx, cy, h * 0.15, "HID-SIMBOLO");
   }
   var NOME_SIS_Q = { agua_fria: "ÁGUA FRIA", agua_quente: "ÁGUA QUENTE", esgoto: "ESGOTO", ventilacao: "VENTILAÇÃO", pluvial: "ÁGUAS PLUVIAIS", incendio: "INCÊNDIO", industrial: "FLUIDO INDUSTRIAL", gas: "GÁS (GLP)", "": "LOUÇAS, METAIS E EQUIPAMENTOS" };
+  /* QUADRO (21/11/2026, o Rogério: "letras minúsculas, a tabela com a descrição estreita e a quantidade lá na ponta"): a LETRA é fixa (K2.quadro.letra, nunca abaixo de
+     letraMin = 2,5 mm impressos: a paginação só encolhe a ALTURA da linha) e a largura da tabela é a JUSTA do conteúdo: DESCRIÇÃO do tamanho da maior descrição (sem quebrar até
+     K2.quadro.descMax) e ITEM/PEÇA/SISTEMA/UN/QUANT. do tamanho do que trazem, tudo encostado; a sobra do papel fica fora da tabela (centrada, ou dividida com outras vistas). */
+  function letraQuadro() { return Math.max(K2.quadro.letra, K2.quadro.letraMin); }
+  function largurasQuadro(linhas, wMax) {
+    var Q = K2.quadro, h = letraQuadro(), hc = h * 1.08, p = Q.pad * 1.4, L = arr(linhas).filter(function (l) { return l && !l.grupo; }), w = {};
+    function mx(f) { return L.reduce(function (m, l) { return Math.max(m, f(l)); }, 0); }
+    function nq(l) { return br(l.quantidade, l.unidade === "m" ? 2 : 0); }
+    w.item = Math.max(Q.itemMin, larg("ITEM", hc) + p, larg(String(Math.max(L.length, 10)), h) + p);
+    w.peca = Q.icone + Q.pecaFolga;
+    w.desc = Math.min(Q.descMax, Math.max(larg("DESCRIÇÃO", hc) + 2 * Q.pad, mx(function (l) { return larg(txt(l.descricao), h); }) + 2 * Q.pad));
+    w.sis = Math.max(larg("SISTEMA", hc), mx(function (l) { return larg(CAMADA_SIS[l.sistema] || "-", hc); })) + p;
+    w.un = Math.max(larg("UN", hc), mx(function (l) { return larg(txt(l.unidade), h); })) + p;
+    w.qtd = Math.max(larg("QUANT.", hc), mx(function (l) { return larg(nq(l), h * 1.08); })) + p;
+    var soGrupo = 0; Object.keys(NOME_SIS_Q).forEach(function (k) { soGrupo = Math.max(soGrupo, larg(NOME_SIS_Q[k], h * 1.1) + 2 * Q.pad + 4); });
+    var tot = w.item + w.peca + w.desc + w.sis + w.un + w.qtd;
+    if (tot < soGrupo) { w.desc += soGrupo - tot; tot = soGrupo; }
+    if (wMax && tot > wMax) { var cort = Math.min(tot - wMax, w.desc - (larg("DESCRIÇÃO", hc) + 2 * Q.pad)); if (cort > 0) { w.desc -= cort; tot -= cort; } }
+    w.total = tot; return w;
+  }
   /* ETAPA 2: a última página do quadro quase vazia (a 3ª com 7 % do papel) some quando um passo menos de altura de linha cabe em menos páginas (a linha vai de 12 mm até K.auto.quadroLinhaMin) */
-  function paginarQuadro(c, linhas) {
+  function paginarQuadro(c, linhas, opc) {
     var melhor = null;
     for (var lin = K2.quadro.linha; lin >= K2.auto.quadroLinhaMin - 1e-9; lin -= 0.5) {
-      var r = paginarQuadroCom(c, linhas, lin);
+      var r = paginarQuadroCom(c, linhas, lin, opc);
       if (!melhor || r.paginas.length < melhor.paginas.length) melhor = r;
       if (r.paginas.length <= 1) break;
     }
     return melhor;
   }
   function quadroCom(linha) { var o = {}, Q = K2.quadro; for (var k in Q) if (Object.prototype.hasOwnProperty.call(Q, k)) o[k] = Q[k]; if (linha && linha < Q.linha) { o.linha = linha; o.icone = Math.min(Q.icone, linha - 1.5); } return o; }
-  function paginarQuadroCom(c, linhas, lin) {
-    var a = c.geo.area, Q = K2.quadro, porCol = Math.floor((a.h - K2.titulo - Q.cab - 4) / lin), nCol = a.w >= 2 * 280 ? 2 : 1, out = [], atual = null, col = 0, nl = 0, sisAnt = null;   // hid:ok largura mínima de uma coluna do quadro (mm)
+  /* opc.area = { w, h } da região do quadro (padrão: a área da folha); opc.nCol = nº de colunas (padrão: 2 em folha larga, 1 nas demais) */
+  function paginarQuadroCom(c, linhas, lin, opc) {
+    var a = opc && opc.area || c.geo.area, Q = K2.quadro, porCol = Math.floor((a.h - K2.titulo - Q.cab - 4) / lin), nCol = opc && opc.nCol || (a.w >= 2 * 280 ? 2 : 1), out = [], atual = null, col = 0, nl = 0, sisAnt = null;   // hid:ok largura mínima de uma coluna do quadro (mm)
     linhas.forEach(function (ln) {
       var precisa = ln.sistema !== sisAnt ? 2 : 1;
       if (!atual || nl + precisa > porCol) { if (atual && col + 1 < nCol) { col++; } else { atual = { cols: [] }; out.push(atual); col = 0; } atual.cols[col] = atual.cols[col] || []; nl = 0; sisAnt = null; precisa = 2; }
@@ -1459,7 +1489,7 @@
       if (ln.sistema !== sisAnt) { atual.cols[col].push({ grupo: NOME_SIS_Q[ln.sistema] || ln.sistema.toUpperCase(), sis: ln.sistema }); nl++; sisAnt = ln.sistema; }
       atual.cols[col].push(ln); nl++;
     });
-    return { paginas: out, nCol: nCol, linha: lin };
+    return { paginas: out, nCol: nCol, linha: lin, larg: largurasQuadro(linhas, (a.w - (nCol - 1) * Q.gap) / nCol), letra: letraQuadro() };
   }
   /* QUADRO DE MATERIAIS (14/11/2026 — o Rogério: "a tabela está horrível; organiza, descrição completa, e o ícone é a MESMA peça
      modelada — você já tem as imagens"). O ícone é a imagem da peça gerada da PRÓPRIA geometria do modelo (img/hid-pecas, a mesma
@@ -1475,37 +1505,39 @@
     return true;
   }
   function folhaQuadro(c) {
-    var D = c.D, a = c.geo.area, T = D.E.T, Q = quadroCom(c.quadroLinha), pg = c.quadroPagina, h = T.minimo * 1.12;
-    c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "Quantidades do modelo (tubo em m, peças em un) - a mesma lista do memorial e da planilha");
+    var D = c.D, a = c.geo.area, T = D.E.T, Q = quadroCom(c.quadroLinha), pg = c.quadroPagina, h = letraQuadro();
+    c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, c.quadroSub || "Quantidades do modelo (tubo em m, peças em un) - a mesma lista do memorial e da planilha");
     if (!pg) { D.texto(a.x + K2.erroX, a.y + K2.vazioY, "Lista de material indisponível (js/hidpecas.js não carregou): não verificado.", T.nota, { cor: K2.vermelho }); return { escala: "-" }; }
-    var nCol = c.quadroNCol, cwTot = (a.w - (nCol - 1) * Q.gap) / nCol, item = c.quadroItem0 || 0;
+    var nCol = c.quadroNCol, item = c.quadroItem0 || 0, W = c.quadroLarg;
+    if (!W) { var todas = []; pg.cols.forEach(function (cl0) { arr(cl0).forEach(function (l0) { if (!l0.grupo) todas.push(l0); }); }); W = largurasQuadro(todas, (a.w - (nCol - 1) * Q.gap) / nCol); }
+    var ws = [W.item, W.peca, W.desc, W.sis, W.un, W.qtd], cwTot = W.total, blocoW = nCol * cwTot + (nCol - 1) * Q.gap, xIni = c.quadroEsq ? a.x : a.x + Math.max(0, (a.w - blocoW) / 2), padQ = Q.pad * 0.7;
     function corSis(sis) { var cam = D.E.camadas["HID-" + (CAMADA_SIS[sis] || "AF") + "-TUBO"]; return sis && cam ? cam.cor : "#6b7280"; }
     pg.cols.forEach(function (lin, ci) {
-      var x0 = a.x + ci * (cwTot + Q.gap), y = a.y + K2.titulo, ws = Q.col.slice(), fixo = ws.reduce(function (s0, v) { return s0 + v; }, 0);
-      ws[2] = cwTot - fixo; var xs = [x0]; ws.forEach(function (w) { xs.push(xs[xs.length - 1] + w); });
+      var x0 = xIni + ci * (cwTot + Q.gap), y = a.y + K2.titulo, xs = [x0]; ws.forEach(function (w) { xs.push(xs[xs.length - 1] + w); });
       var cab = ["ITEM", "PEÇA", "DESCRIÇÃO", "SISTEMA", "UN", "QUANT."];
       D.fundo(x0, y, cwTot, Q.cab, Q.corCab);
-      cab.forEach(function (t, k) { D.texto(k === 2 ? xs[k] + 2 : (xs[k] + xs[k + 1]) / 2, y + Q.cab * 0.66, t, h, { al: k === 2 ? "E" : "C", peso: 0.2, cor: "#ffffff" }); });
+      cab.forEach(function (t, k) { D.texto(k === 2 ? xs[k] + Q.pad : (k === 5 ? xs[6] - padQ : (xs[k] + xs[k + 1]) / 2), y + Q.cab / 2 + h * 0.36, t, h, { al: k === 2 ? "E" : (k === 5 ? "D" : "C"), peso: 0.2, cor: "#ffffff" }); });
       y += Q.cab;
       var zebra = 0, sisG = "";
       lin.forEach(function (ln) {
         if (ln.grupo) {
           sisG = ln.sis != null ? ln.sis : sisG;
           D.fundo(x0, y, cwTot, Q.grupo, Q.corGrupo); D.fundo(x0, y, 1.6, Q.grupo, corSis(ln.sis));
-          D.texto(x0 + 4, y + Q.grupo * 0.68, ln.grupo, h * 1.05, { peso: 0.24, cor: "#1f2937" });
+          D.texto(x0 + Q.pad + 1.5, y + Q.grupo / 2 + h * 1.1 * 0.36, ln.grupo, h * 1.1, { peso: 0.24, cor: "#1f2937" });
           y += Q.grupo; zebra = 0; return;
         }
         item++;
+        var yb = y + Q.linha / 2 + h * 0.36;
         if (zebra++ % 2) D.fundo(x0, y, cwTot, Q.linha, Q.corZebra);
         if (!iconeImagem(D, ln.icone, xs[1] + (ws[1] - Q.icone) / 2, y + (Q.linha - Q.icone) / 2, Q.icone)) iconePeca(D, ln.icone, ln.sistema, xs[1] + (ws[1] - Q.icone) / 2, y + (Q.linha - Q.icone) / 2 + Q.icone * 0.2, Q.icone, Q.icone * 0.6);
-        D.texto((xs[0] + xs[1]) / 2, y + Q.linha * 0.58, dois(item), h, { al: "C", cor: "#6b7280" });
-        var ls = c.AP.quebrar(ln.descricao, h, ws[2] - 4);
+        D.texto((xs[0] + xs[1]) / 2, yb, dois(item), h, { al: "C", cor: "#6b7280" });
+        var ls = c.AP.quebrar(ln.descricao, h, ws[2] - Q.pad * 1.2);
         if (ls.length > 2) { ls = [ls[0], ls.slice(1).join(" ")]; }
         var y0d = y + Q.linha / 2 - (ls.length - 1) * h * 0.62 + h * 0.36;
-        ls.forEach(function (sl, k2) { D.texto(xs[2] + 2, y0d + k2 * h * 1.24, sl, h, {}); });
-        D.texto((xs[3] + xs[4]) / 2, y + Q.linha * 0.58, (CAMADA_SIS[ln.sistema] || "-"), h, { al: "C", cor: corSis(ln.sistema), peso: 0.2 });
-        D.texto((xs[4] + xs[5]) / 2, y + Q.linha * 0.58, ln.unidade, h, { al: "C" });
-        D.texto(xs[6] - 2.5, y + Q.linha * 0.58, br(ln.quantidade, ln.unidade === "m" ? 2 : 0), h * 1.08, { al: "D", peso: 0.24 });
+        ls.forEach(function (sl, k2) { D.texto(xs[2] + Q.pad, y0d + k2 * h * 1.24, sl, h, {}); });
+        D.texto((xs[3] + xs[4]) / 2, yb, (CAMADA_SIS[ln.sistema] || "-"), h, { al: "C", cor: corSis(ln.sistema), peso: 0.2 });
+        D.texto((xs[4] + xs[5]) / 2, yb, ln.unidade, h, { al: "C" });
+        D.texto(xs[6] - padQ, yb, br(ln.quantidade, ln.unidade === "m" ? 2 : 0), h * 1.08, { al: "D", peso: 0.24 });
         y += Q.linha; D.linha(x0, y, x0 + cwTot, y, "HID-COTA");
       });
       D.linha(x0, a.y + K2.titulo, x0, y, "HID-TABELA"); D.linha(x0 + cwTot, a.y + K2.titulo, x0 + cwTot, y, "HID-TABELA"); D.linha(x0, y, x0 + cwTot, y, "HID-TABELA");
@@ -1740,7 +1772,8 @@
    * sem escala, isométrico a 30° visto de um dos 4 quadrantes (cfg.perspectiva.vista: SE, SO, NO, NE). */
   var QUADRANTE = { SE: 0, SO: 1, NO: 2, NE: 3 };
   function projetor(vista) {
-    var q = QUADRANTE[vista] == null ? 0 : QUADRANTE[vista], a = q * Math.PI / 2, co = Math.cos(a), si = Math.sin(a), C = HI().K.cos, Sn = HI().K.sen;
+    /* "A<graus>" = órbita livre (azimute qualquer, ETAPA 3); SE/SO/NO/NE = os 4 quadrantes de sempre */
+    var mo = /^A(-?[\d.]+)$/.exec(txt(vista)), q = QUADRANTE[vista] == null ? 0 : QUADRANTE[vista], a = mo ? (+mo[1]) * Math.PI / 180 : q * Math.PI / 2, co = Math.cos(a), si = Math.sin(a), C = HI().K.cos, Sn = HI().K.sen;   // hid:ok graus para radianos
     var f = function (p) { var x = p.x * co - p.z * si, z = p.x * si + p.z * co; return { u: (x - z) * C, v: (x + z) * Sn - p.y, d: x + z + p.y, x: x, z: z }; };
     var vn = Math.sqrt((co + si) * (co + si) + 1 + (co - si) * (co - si));
     f.viewer = [(co + si) / vn, 1 / vn, (co - si) / vn];   /* a direção da cena para quem olha (gradiente de d) */
@@ -1775,6 +1808,7 @@
    * foto NÃO mostra: (1) o que cai fora do recorte da frente (a parede da frente é cortada: o tubo embutido nela some), (2) o que outro tubo mais perto da câmera cobre na
    * projeção e (3) o que uma louça mais perto cobre (a louça é translúcida: vale a metade). Amostras ao longo de cada trecho; a conta é geométrica (vale em Node e no app). */
   var VISTAS_AUTO = {};
+  var AJ = null, DEF_ATUAL = null, VISTAS_GER = {};   /* ETAPA 3: os ajustes manuais da geração em curso e a folha que está sendo desenhada (zerados no fim de gerar) */
   function trechosDaVista(c, amb, pv) {
     var KI = HI().K, b = { x0: amb.x0, x1: amb.x1, z0: amb.z0, z1: amb.z1 }, f = c.grupo ? 0.12 : 0, b0 = pv.base != null ? pv.base : pv.cota - K2.cortePiso, b1 = pv.sup != null ? pv.sup : pv.topo;
     return arr((c.redeTotal || c.rede) && (c.redeTotal || c.rede).trechos).filter(function (t) {
@@ -1860,9 +1894,13 @@
   }
   function perspectivaDe(c, amb, pv) {
     var infoAuto = null, vista0 = (c.cfg && c.cfg.perspectiva && c.cfg.perspectiva.vista) || "SE";
-    if (!c.vistaForcada && c.cfg && c.cfg.perspectiva && c.cfg.perspectiva.auto === true) { infoAuto = vistaAuto(c, amb, pv); vista0 = infoAuto.vista; }
-    var est = c.modelo.estado, B = BI(), G = GEO(), vista = c.vistaForcada || vista0, P = projetor(vista);
-    var b = { x0: amb.x0, x1: amb.x1, z0: amb.z0, z1: amb.z1 }, KI = HI().K;
+    /* ETAPA 3: o ajuste MANUAL desta vista (câmera, crop, o que se esconde) vale por cima do automático e sobrevive ao regerar */
+    var chaveV = c.chaveVista || (EDT() ? EDT().chaveVista(amb, c.grupo, pv) : ""), ajV = AJ && AJ.vistas && chaveV ? AJ.vistas[chaveV] || null : null, azV = ajV && ajV.cam ? EDT().anguloDe(ajV.cam) : null;
+    if (azV != null) vista0 = ajV.cam.az != null ? "A" + ajV.cam.az : ajV.cam.vista;
+    else if (!c.vistaForcada && c.cfg && c.cfg.perspectiva && c.cfg.perspectiva.auto === true) { infoAuto = vistaAuto(c, amb, pv); vista0 = infoAuto.vista; }
+    var est = c.modelo.estado, B = BI(), G = GEO(), vista = azV != null ? vista0 : (c.vistaForcada || vista0), P = projetor(vista);
+    var b = { x0: amb.x0, x1: amb.x1, z0: amb.z0, z1: amb.z1 }, KI = HI().K, caixaAuto = { x0: amb.x0, x1: amb.x1, z0: amb.z0, z1: amb.z1 };
+    if (ajV && ajV.crop) { var cr = ajV.crop; if (cr.x0 != null) b.x0 = cr.x0; if (cr.x1 != null) b.x1 = cr.x1; if (cr.z0 != null) b.z0 = cr.z0; if (cr.z1 != null) b.z1 = cr.z1; }
     function dentro(p, f) { f = f || (c.grupo ? 0.12 : 0);   /* HIDRO-3D: no caderno por grupo o recorte é o MESMO da tabela (hidcaderno.dadosAmbiente, folga 0,12 m): toda linha da tabela tem a peça no isométrico */ return p.x >= b.x0 - f && p.x <= b.x1 + f && p.z >= b.z0 - f && p.z <= b.z1 + f; }
     var b0 = pv.base != null ? pv.base : pv.cota - K2.cortePiso, b1 = pv.sup != null ? pv.sup : pv.topo;
     var trs = arr(c.rede.trechos).filter(function (t) { var m = { x: (t.p1.x + t.p2.x) / 2, z: (t.p1.z + t.p2.z) / 2 }, ym = (t.p1.y + t.p2.y) / 2; return t.sistema !== "incendio" && dentro(m) && ym >= b0 - KI.tolPiso_m && ym < b1; });
@@ -1873,6 +1911,9 @@
     var yTeto = pv.cota + K2.perspAltura; paredesDoPav(est, pv).forEach(function (w) { if (recortaEixo(w, b)) yTeto = Math.max(yTeto, Math.min(w.y1, pv.cota + K2.perspAlturaMax)); });
     yT = Math.min(yT, yTeto);
     if (c.cortaY) yT = Math.min(yT, pv.cota + c.cortaY);   /* HIDRO-3D: detalhe por grupo - o prumo (ventilação) sai INTERROMPIDO acima desta altura do piso, como a folha da Tânia */
+    caixaAuto.y0 = yB; caixaAuto.y1 = yT;
+    if (ajV && ajV.crop) { if (ajV.crop.y0 != null) yB = ajV.crop.y0; if (ajV.crop.y1 != null) yT = ajV.crop.y1; }   /* ETAPA 3: a PROFUNDIDADE (de baixo e de cima) escolhida à mão */
+    if (chaveV) VISTAS_GER[chaveV] = { chave: chaveV, vista: vista, caixaAuto: caixaAuto, caixa: { x0: b.x0, x1: b.x1, z0: b.z0, z1: b.z1, y0: yB, y1: yT }, ajustada: !!ajV, pav: txt(pv && pv.nome) };   /* a tela do ajuste lê daqui o recorte automático e o atual */
     var paredesIso = [], par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
     /* os dois lados do FUNDO do cômodo (os de menor profundidade para quem olha) e a parede que está NELES: devolve o nome do lado ('x0','x1','z0','z1'),
        null (parede inclinada: segue a regra antiga) ou false (parede que não é uma das duas do fundo) */
@@ -1939,7 +1980,7 @@
     });
     var pontos = arr(c.rede.ligacoes).filter(function (l) { return l.tipo === "aparelho" && dentro(l) && l.y >= b0 && l.y < b1; });
     var acess = arr(c.rede.acessorios).filter(function (a) { return a.centro && dentro(a.centro) && a.centro.y >= b0 && a.centro.y < b1; });
-    return { auto: infoAuto, paredesIso: paredesIso, dCentro: cBox, faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
+    return { auto: infoAuto, paredesIso: paredesIso, dCentro: cBox, faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, vistaNome: /^A/.test(vista) ? "órbita " + vista.slice(1) + "°" : vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d, chave: chaveV, ajuste: ajV };
   }
   /* 14/11/2026 — O ISOMÉTRICO DE SISTEMA COM O DESENHO DO MODELO (o Rogério: "a prancha tem que sair do mesmo jeito que está no
      sistema; está saindo o tracejado estranho"). O isométrico de linha (js/hidisometrico.js: duas linhas finas e tique de
@@ -1965,6 +2006,7 @@
     r.acessorios = arr(c.rede.acessorios).filter(function (a) { return !a.sistema || sis[a.sistema]; });
     var cc = {}; for (var m in c) if (Object.prototype.hasOwnProperty.call(c, m)) cc[m] = c[m];
     cc.rede = r;
+    if (EDT()) cc.chaveVista = EDT().chaveIso(d.titulo);   /* ETAPA 3: o isométrico de sistema é achado pelo TÍTULO, que não depende da ordem das folhas */
     return perspectivaDe(cc, amb, pv);
   }
   /* 14/11/2026 — A FOTO DO MODELO NA PERSPECTIVA: com FOTO3D (a geração no app passa BIM.fotoIso), cada perspectiva e cada isométrico
@@ -2061,7 +2103,9 @@
     var fo = K2.folgaAmb, b = pz.b, tc = { x: (b.x0 + b.x1) / 2, y: (pz.yB + pz.yT) / 2, z: (b.z0 + b.z1) / 2 }, pt = P(tc);
     /* o sistema da FOLHA vai em cor (a da legenda: esgoto VERDE), o outro em meio-tom (o Rogério, HID-R00 (51), 14/11/2026) */
     var foco = []; arr(pz.trs).forEach(function (t) { var g = /^agua/.test(t.sistema) ? "agua" : "esgoto"; if (foco.indexOf(g) < 0) foco.push(g); });
+    var ocV = pz.ajuste && pz.ajuste.oculto ? pz.ajuste.oculto : null;   /* ETAPA 3: categorias, disciplinas e peças que o usuário escondeu nesta vista */
     var r = null; try { r = FOTO3D({ foco: foco.length ? foco : ["agua", "esgoto"], semArquitetura: true, loucasTransl: true, reservTransl: true, pisoOp: K2.pisoOp, pecaOp: K2.pecaOp, R: R, U: U, V: V, T: [tc.x, tc.y, tc.z], uT: pt.u, vT: pt.v, u0: lim.u0, u1: lim.u1, v0: lim.v0, v1: lim.v1,
+      ocultar: ocV && (ocV.cats.length || ocV.discs.length || ocV.uids.length) ? { cats: ocV.cats, discs: ocV.discs, uids: ocV.uids } : undefined,
       /* a parede da FRENTE (do lado de quem olha) fica fora do recorte e a do FUNDO entra: o fundo aparece limpo (o Rogério: "a parede na frente você oculta") */
       min: [V[0] > 0 ? b.x0 - fo : b.x0 + K2.recuoFrente, pz.yB - 0.05, V[2] > 0 ? b.z0 - fo : b.z0 + K2.recuoFrente],
       max: [V[0] > 0 ? b.x1 - K2.recuoFrente : b.x1 + fo, pz.yT + K2.perspTopo, V[2] > 0 ? b.z1 - K2.recuoFrente : b.z1 + fo] }); } catch (e) { r = null; }
@@ -2091,6 +2135,7 @@
     var hs = [K2.esquema.alturaMin]; r.ligacoes.forEach(function (l) { if (l.tipo === "aparelho" && l.y != null) hs.push(l.y - pv.cota); });
     r.acessorios.forEach(function (ac) { if (ac.centro) hs.push(ac.centro.y - pv.cota); });
     cc.cortaY = Math.max.apply(null, hs) + K2.esquema.folgaTopo;
+    if (EDT()) cc.chaveVista = EDT().chaveVista(amb, sisL.join("+"), pv, "esq");   /* ETAPA 3: o esquema (linha única) é OUTRA vista do mesmo ambiente: ajuste próprio */
     var pz = perspectivaDe(cc, amb, pv); if (!pz) return null;
     pz.esquema = true; pz.sisL = sisL; pz.amb = amb;
     return pz;
@@ -2419,7 +2464,7 @@
   }
   function folhaEsquemaIso(c) {
     var D = c.D, a = c.areaPersp || c.geo.area, KI = HI().K, pz = c.persp, h = KI.hPeq * 1.1, P = pz.P, pv = pz.pv, b = pz.b, KE = K2.esquema, hT0 = c.semLegenda ? 0 : K2.titulo;   /* ETAPA 2: dentro de uma célula de mosaico (areaPersp) não leva título próprio */
-    if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
+    if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + (pz.vistaNome || pz.vista) + "; alturas em m do piso acabado");
     var est = c.modelo.estado, chao = [], louca = [];
     paredesDoPav(est, pv).forEach(function (w) {
       var rr = recortaEixo(w, { x0: b.x0 - w.esp, x1: b.x1 + w.esp, z0: b.z0 - w.esp, z1: b.z1 + w.esp }); if (!rr) return;
@@ -2591,7 +2636,7 @@
   function folhaPerspectiva(c) {
     var D = c.D, a = c.areaPersp || c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
     /* R01: o isométrico por ambiente (hidcaderno.js) usa esta mesma perspectiva dentro de um RETÂNGULO da folha (c.areaPersp), sem título nem legenda própria (c.semLegenda) */
-    if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
+    if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + (pz.vistaNome || pz.vista) + "; alturas em m do piso acabado");
     /* enquadramento: tudo projetado a k = 1, depois a escala que cabe acima da faixa da legenda */
     var us = [], vs = [];
     function junta(p) { us.push(p.u); vs.push(p.v); }
@@ -3082,7 +3127,7 @@
     var espCol = Math.max(K2.espacoColunaMin, Math.min(K2.espacoColuna, (a.w - KI.margem * 6) / Math.max(cols.length, 1)));
     var larguraTot = cols.length * espCol, x0 = a.x + Math.max(KI.margem * 3, (a.w - larguraTot) / 2) , yTopo = a.y + K2.titulo + KI.margem + bandaH;
     function Y(y) { return yTopo + (y1 - y) * kv; }
-    c.AP.tituloVista(D, a.x + 4, a.y + 2, "ESQUEMA VERTICAL - " + (cxs.length ? "RESERVAÇÃO, BARRILETE, " : "") + "ÁGUA FRIA E ESGOTO", "SEM ESCALA - níveis em m");
+    c.AP.tituloVista(D, a.x + 4, a.y + 2, c.tituloEsq || ("ESQUEMA VERTICAL - " + (cxs.length ? "RESERVAÇÃO, BARRILETE, " : "") + "ÁGUA FRIA E ESGOTO"), "SEM ESCALA - níveis em m");
     var prim = { linhas: [], simbolos: [], textos: [], trechos: [] }, pend = [], seg = [], L = prim.linhas, S = prim.simbolos, T = prim.textos;
     /* níveis dos pavimentos */
     c.pavs.forEach(function (p) {
@@ -3514,7 +3559,7 @@
     return fl;
   }
   function folhaIsos(c, df) {
-    arr(df.itens).forEach(function (q) { blocoVista(c.D, "iso", "sem", q.rect, function () { vistaNumerada(c, q.rect, q.num, q.v.titulo, q.v.pz); }); });
+    arr(df.itens).forEach(function (q) { blocoVista(c.D, "iso", "sem", q.rect, function () { vistaNumerada(c, q.rect, q.num, q.v.titulo, q.v.pz); }, q.v.pz && q.v.pz.chave); });
     return { escala: "SEM ESCALA" };
   }
   /* ------------------------------------------------------------ ETAPA 2: OCUPAÇÃO DA FOLHA (auditor)
@@ -3600,7 +3645,7 @@
     arr(df.celulas).forEach(function (ce, i) {
       var cc = {}; for (var k0 in c) if (Object.prototype.hasOwnProperty.call(c, k0)) cc[k0] = c[k0];
       cc.pv = ce.pv;
-      blocoVista(c.D, "iso", "sem", ce.rect, function () { vistaNumerada(cc, ce.rect, i + 1, ce.titulo, ce.pz, ce.tipo === "esquemaIso"); });
+      blocoVista(c.D, "iso", "sem", ce.rect, function () { vistaNumerada(cc, ce.rect, i + 1, ce.titulo, ce.pz, ce.tipo === "esquemaIso"); }, ce.pz && ce.pz.chave);
     });
     return { escala: "SEM ESCALA" };
   }
@@ -3623,6 +3668,78 @@
     avisos.push("Plantas/cortes com pouco desenho (< " + Math.round(KA.ocupMin * 100) + " % do papel) de " + fracas.length + " folha(s) foram juntos em " + novas.length + " folha(s).");
     return out;
   }
+  /* 21/11/2026 (pranchas compactas): ESQUEMA VERTICAL + QUADRO DE MATERIAIS (+ DETALHES TÍPICOS) na MESMA folha quando cada um, sozinho, ocupa pouco (obra pequena: dois traços de
+     coluna e uma tabela de 20 linhas ocupavam folhas inteiras). Cada um ganha uma região da largura útil (a do esquema pelo nº de colunas, a do quadro pela tabela justa, a dos
+     detalhes pela grade) e a folha só junta se TUDO cabe; o quadro paginado grande (mais de uma página) e o esquema grande seguem em folha própria. */
+  function colunasDoEsquema(rede, ix, colunas) {
+    var vistos = {}, nc = 0;
+    arr(rede && rede.trechos).forEach(function (t) {
+      var nome = null, pre = "";
+      if (t.sistema === "agua_fria" && t.vertical) { var cl = colunas && colunas[t.id]; if (cl) { nome = cl.nome; pre = "a"; } }
+      else if (t.sistema === "esgoto") { var tq = ix && ix.tq && ix.tq[t.id]; if (tq) { nome = tq; pre = "e"; } }
+      if (nome && !vistos[pre + nome]) { vistos[pre + nome] = 1; nc++; }
+    });
+    return nc;
+  }
+  /* mm de papel por metro de nível que o esquema teria numa região de altura h (a conta da folhaEsquema: altura útil / faixa de níveis das colunas e dos pavimentos) */
+  function escalaEsquema(cx, h) {
+    var ys = [], KI = HI().K;
+    arr(cx.rede && cx.rede.trechos).forEach(function (t) {
+      if ((t.sistema === "agua_fria" && t.vertical && cx.colunas && cx.colunas[t.id]) || (t.sistema === "esgoto" && cx.ix && cx.ix.tq && cx.ix.tq[t.id])) ys.push(t.p1.y, t.p2.y);
+    });
+    arr(cx.pavs).forEach(function (p) { ys.push(p.cota); });
+    if (!ys.length) return 0;
+    var faixa = Math.max(Math.max.apply(null, ys) - Math.min.apply(null, ys), 1e-6), banda = caixasReais(cx.modelo).length ? Math.min(h * K2.bandaRes, K2.bandaResMax) : 0;
+    return (h - K2.titulo - 3 * KI.margem - banda) / faixa;
+  }
+  function juntarEsquemaQuadro(defs, cx, linhas, avisos) {
+    var CP = K2.compacta, a = cx.geo.area, cfg = cx.cfg;
+    if (cfg && (cfg.mosaico === false || cfg.agrupar === false)) return defs;   /* "agrupar" desligado = uma folha para cada, como sempre */
+    var iE = -1, iQ = -1, iD = -1, nQ = 0, nD = 0;
+    defs.forEach(function (df, i) { if (df.tipo === "esquema") iE = i; if (df.tipo === "quadro") { iQ = i; nQ++; } if (df.tipo === "detalhes") { iD = i; nD++; } });
+    if (iE < 0 || nQ !== 1 || !defs[iQ].pagina || !arr(linhas).length) return defs;
+    var nc = colunasDoEsquema(cx.rede, cx.ix, cx.colunas); if (!nc) return defs;
+    var cxs = caixasReais(cx.modelo).length, wE = Math.max(CP.esqLargMin, nc * K2.espacoColuna + CP.esqFolga, cxs * (K2.larguraCaixaEsq + 8));
+    var pq = paginarQuadro({ geo: { area: a } }, linhas, { area: { w: a.w, h: a.h }, nCol: 1 }); if (!pq || pq.paginas.length !== 1) return defs;   /* quadro grande: folha própria */
+    var wQ = pq.larg.total, comDet = false, wD = 0;
+    if (iD >= 0 && nD === 1) { var lay = layoutDetalhes({ area: { x: 0, y: 0, w: CP.detLarg, h: a.h } }, cx.resultado); if (lay.folhas === 1) { wD = CP.detLarg; comDet = true; } }
+    function cabe(n, soma) { return soma + CP.gapMin * (n - 1) <= a.w - 8; }
+    if (comDet && !cabe(3, wE + wQ + wD)) { comDet = false; wD = 0; }
+    if (!cabe(2, wE + wQ)) return defs;
+    /* sem largura para três colunas: os detalhes vão EMBAIXO do esquema (mesma coluna) se o esquema ainda fica com altura útil */
+    var empilha = null;
+    if (!comDet && iD >= 0 && nD === 1) {
+      var wLd = Math.max(wE, CP.detLarg);
+      if (cabe(2, wLd + wQ)) for (var kd = 1; kd <= 2 && !empilha; kd++) {
+        var hD = K2.titulo + kd * 120 + 4, ly = layoutDetalhes({ area: { x: 0, y: 0, w: wLd, h: hD } }, cx.resultado);   // hid:ok altura de um painel de detalhe (mm de papel)
+        if (ly.folhas === 1 && a.h - hD - CP.gapMin >= CP.esqAltMin && escalaEsquema(cx, a.h - hD - CP.gapMin) >= CP.esqKvMin) empilha = { w: wLd, hD: hD };
+      }
+    }
+    if (empilha) { wE = empilha.w; comDet = true; }
+    var ns = comDet && !empilha ? 3 : 2, soma = wE + wQ + (empilha ? 0 : wD), gap = Math.min(CP.gapMax, (a.w - soma) / (ns + 1)), x = a.x + (a.w - (soma + gap * (ns - 1))) / 2, regioes = [];
+    if (empilha) { regioes.push({ tipo: "esquema", x: x, w: wE, y: a.y, h: a.h - empilha.hD - CP.gapMin }, { tipo: "detalhes", x: x, w: wE, y: a.y + a.h - empilha.hD, h: empilha.hD }); x += wE + gap; regioes.push({ tipo: "quadro", x: x, w: wQ }); }
+    else [["esquema", wE], ["quadro", wQ], ["detalhes", wD]].forEach(function (r) { if (!r[1]) return; regioes.push({ tipo: r[0], x: x, w: r[1] }); x += r[1] + gap; });
+    var q0 = defs[iQ], nov = { id: "esquema-quadro", titulo: "ESQUEMA VERTICAL E QUADRO DE MATERIAIS" + (comDet ? " E DETALHES TÍPICOS" : ""), tipo: "esqquadro", grupo: "esquema", regioes: regioes, pagina: q0.pagina, linha: pq.linha, larg: pq.larg };
+    var out = []; defs.forEach(function (df, i) { if (i === iE) out.push(nov); else if (i === iQ || (comDet && i === iD)) return; else out.push(df); });
+    avisos.push("Esquema vertical, quadro de materiais" + (comDet ? " e detalhes típicos" : "") + " na mesma folha (cada um sozinho ocupava pouco).");
+    return out;
+  }
+  function subFolha(c, rect, extra) {
+    var cc = {}, k; for (k in c) if (Object.prototype.hasOwnProperty.call(c, k)) cc[k] = c[k];
+    cc.geo = { area: rect }; for (k in c.geo) if (k !== "area" && Object.prototype.hasOwnProperty.call(c.geo, k)) cc.geo[k] = c.geo[k];
+    for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) cc[k] = extra[k];
+    return cc;
+  }
+  function folhaEsqQuadro(c, df) {
+    var a = c.geo.area;
+    arr(df.regioes).forEach(function (rg) {
+      var rect = { x: rg.x, y: rg.y != null ? rg.y : a.y, w: rg.w, h: rg.h != null ? rg.h : a.h };
+      if (rg.tipo === "esquema") folhaEsquema(subFolha(c, rect, { tituloEsq: "ESQUEMA VERTICAL" }));
+      else if (rg.tipo === "quadro") folhaQuadro(subFolha(c, rect, { titulo: "QUADRO DE MATERIAIS", quadroPagina: df.pagina, quadroNCol: 1, quadroLinha: df.linha, quadroLarg: df.larg, quadroEsq: true, quadroSub: "Quantidades do modelo (tubo em m, peças em un)" }));
+      else if (rg.tipo === "detalhes") folhaDetalhes(subFolha(c, rect, { titulo: "DETALHES TÍPICOS", parte: 0 }));
+    });
+    return { escala: "SEM ESCALA" };
+  }
   /* o mesmo ambiente × tipo × sistema × pavimento duas vezes: fica a primeira (o gerador corrige) */
   function tirarDuplicadas(defs, avisos) {
     var vistos = {}, out = [];
@@ -3636,7 +3753,7 @@
     return out;
   }
   /* AUDITOR DA FOLHA: devolve { problemas: [{ codigo, texto, marca }], ocupacao, oculto }. marca = vai para o NÃO LIBERADO da folha */
-  var AUDITA_OCUP = { planta: 1, cortes: 1, perspectiva: 1, esquemaIso: 1, mosaico: 1, ambientes: 1, incendio: 1, isoprancha: 1 };
+  var AUDITA_OCUP = { planta: 1, cortes: 1, perspectiva: 1, esquemaIso: 1, mosaico: 1, ambientes: 1, incendio: 1, isoprancha: 1, esqquadro: 1 };
   function textosDoSvg(svg) { var o = [], re = /<text[^>]*>([^<]*)<\/text>/g, m; while ((m = re.exec(svg))) o.push(desesc(m[1])); return o; }
   function ocultoDaVista(ctx, pz) {
     if (!pz || !pz.b || !pz.pv || !pz.trs || !pz.trs.length) return null;
@@ -3648,7 +3765,7 @@
     var KA = K2.auto, prob = [], tipo = df.tipo, out = { problemas: prob, ocupacao: null, oculto: null };
     var tx = textosDoSvg(corpoSvg);
     if (tx.some(function (s) { return /^\s*\d+,\d{1,2} m\s*$|^\s*,\d\d m\s*$/.test(s); })) prob.push({ codigo: "BALAO_UI", texto: "balão de cota da tela impresso na folha", marca: true });
-    if (tx.some(function (s) { return PROIBIDA_QUADRO.test(s); }) || (tipo === "quadro" && ctx.pecaProibida)) prob.push({ codigo: "PECA_FORA_CATALOGO", texto: "peça fora do catálogo (tê de redução no esgoto: é junção 45° do catálogo)", marca: true });
+    if (tx.some(function (s) { return PROIBIDA_QUADRO.test(s); }) || ((tipo === "quadro" || tipo === "esqquadro") && ctx.pecaProibida)) prob.push({ codigo: "PECA_FORA_CATALOGO", texto: "peça fora do catálogo (tê de redução no esgoto: é junção 45° do catálogo)", marca: true });
     if (AUDITA_OCUP[tipo]) {
       var oc = ocupacaoSvg(corpoSvg, geo.area); out.ocupacao = oc;
       if (oc < KA.ocupVazia) prob.push({ codigo: "QUASE_VAZIA", texto: "folha quase vazia (" + Math.round(oc * 100) + " % do papel)", marca: true });
@@ -3671,12 +3788,15 @@
     FOTO3D = opcoes && typeof opcoes.foto3d === "function" ? opcoes.foto3d : null; IMAGENS = null; VISTAS_AUTO = {};
     ICONES = opcoes && opcoes.icones && typeof opcoes.icones === "object" ? opcoes.icones : null;
     opcoes = opcoes || {};
+    AJ = EDT() && opcoes.ajustes ? EDT().normalizar(opcoes.ajustes) : null; DEF_ATUAL = null; VISTAS_GER = {};   /* ETAPA 3: os ajustes manuais valem por cima do automático */
     var avisos = [], P = PR(), A = AP(), H = HI(), B = BI(), cfg = normalizarConfig(opcoes);
     if (!P || !P.carimboRA || !A || !H || !B) return { ok: false, folhas: [], avisos: ["Motores de prancha (prancha.js, acopranchas.js, hidisometrico.js, biminst.js) não carregados."] };
     if (!resultado || !resultado.sistemas || !modelo || !modelo.estado) return { ok: false, folhas: [], avisos: ["Resultado do cálculo ou modelo vazio: não há pranchas para gerar."] };
     /* 17/11/2026 (o Rogério): o contexto da foto do 3D (parede, piso, laje, louça, móvel, outro sistema) sai SÓ EM LINHAS, cinza bem claro, sem preenchimento: tubo e conexão ficam sempre por cima.
        Padrão "linhas"; cfg.contexto = "translucido" volta ao meio-tom preenchido de antes. */
     if (FOTO3D && cfg.contexto !== "translucido") { var foto0 = FOTO3D; FOTO3D = function (o) { var o2 = {}; for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) o2[k] = o[k]; o2.soLinhas = true; return foto0(o2); }; }
+    /* ETAPA 3: a foto do 3D é a parte cara da geração; com o cache da sessão (opcoes.cacheFotos) regerar só refaz a foto da vista cujo ajuste mudou */
+    if (FOTO3D && opcoes.cacheFotos && typeof opcoes.cacheFotos === "object") { var foto1 = FOTO3D, cacheF = opcoes.cacheFotos; FOTO3D = function (o) { var kf = JSON.stringify(o); if (cacheF[kf]) return cacheF[kf]; var rf = foto1(o); if (rf && rf.ok) cacheF[kf] = rf; return rf; }; }
     var rede = B.rede(modelo.estado, modelo.avaliarFam), ix = H.indicesResultado(resultado), E = estilo();
     EXISTE = existeDe(rede, modelo);
     var pavs = arr(opcoes.pavimentos).filter(function (p) { return p && isFinite(+p.cota); }).map(function (p) { return { nome: txt(p.nome), cota: +p.cota }; }).sort(function (a, b) { return a.cota - b.cota; });
@@ -3736,40 +3856,6 @@
     }
     var ctx0 = { modelo: modelo, rede: rede, ix: ix, ambientes: ambientes, nomeAp: nomeAp, avisos: avisos, geo: geo, pavs: pavs, AP: A, cfg: cfg };
     var pavsA = pavsDosAmbientes(modelo.estado, ambientes, pavs);   /* 17/11/2026: as vistas por ambiente só rodam nos pavimentos que têm ambiente */
-    var iso = { desenhos: [], avisos: [] };
-    if (CJ.isometricos) {
-      iso = H.gerar(resultado, modelo, { pavimentos: pavs, ambientes: ambientes, nomeAparelho: nomeAp, nomePeca: function (id) { return rotuloPecaPlanta(rede, id); }, sistemas: sistemas.filter(function (q) { return q === "agua_fria" || q === "esgoto" || q === "agua_quente"; }), area: { w: geo.area.w - 2 * K2.folgaFolha, h: geo.area.h - K2.titulo - K2.folgaFolha } });
-      arr(iso.avisos).forEach(function (m) { avisos.push(m); });
-      arr(iso.desenhos).forEach(function (d) {
-        var pzI = null; if (FOTO3D && cfg.isoLinha !== true) { try { pzI = perspectivaDoIso(ctx0, d); } catch (eI) { pzI = null; avisos.push("Isométrico " + d.titulo + ": o desenho do modelo falhou (" + (eI && eI.message || eI) + "); saiu o de linha."); } }
-        if (pzI) defs.push({ id: d.id, titulo: d.titulo, tipo: "perspectiva", persp: pzI, pv: pzI.pv, grupo: "isometricos", isoDe: d });
-        else defs.push({ id: d.id, titulo: d.titulo, tipo: "iso", iso: d, grupo: "isometricos" });
-      });
-    }
-    if (CJ.perspectivas) {
-      var escA = cfg.perspectiva.ambientes.map(function (x) { return x.toUpperCase(); });
-      pavsA.forEach(function (pv) {
-        ambientes.forEach(function (am) {
-          if (!ambienteDoPav(ctx0, am, pv)) return;   /* 17/11/2026: o prumo que só atravessa o nível não cria ambiente */
-          if (escA.length && escA.indexOf(txt(am.id).toUpperCase()) < 0 && escA.indexOf(txt(am.nome).toUpperCase()) < 0) return;
-          var pz = perspectivaDe(ctx0, am, pv);
-          if (pz && perspVazia(pz)) { avisos.push("Perspectiva " + txt(am.nome) + " - " + pv.nome + ": sem tubo nem peça (folha vazia) - suprimida."); pz = null; }
-          if (pz) defs.push({ id: "perspectiva-" + am.id + "-" + defs.length, titulo: "PERSPECTIVA ISOMÉTRICA - " + txt(am.nome).toUpperCase() + (pavsA.length > 1 ? " - " + pv.nome.toUpperCase() : ""), tipo: "perspectiva", persp: pz, pv: pv, grupo: "perspectivas", ambiente: am.id });
-        });
-      });
-    }
-    /* 14/11/2026: ESQUEMA ISOMÉTRICO (planta chapada + linha única + altura dos pontos): um por ambiente x sistema (água | esgoto) */
-    if (CJ.isometricos) pavsA.forEach(function (pv) {
-      ambientes.forEach(function (am) {
-        if (!ambienteDoPav(ctx0, am, pv)) return;   /* 17/11/2026: ambiente fantasma (BANHEIRO - PLATIBANDA) não tem folha */
-        [["ÁGUA", ["agua_fria", "agua_quente"]], [EXISTE && !EXISTE.sis.ventilacao ? "ESGOTO" : "ESGOTO E VENTILAÇÃO", ["esgoto", "ventilacao"]]].forEach(function (g) {
-          var sl = g[1].filter(function (x) { return sistemas.indexOf(x) >= 0 || (x === "ventilacao" && sistemas.indexOf("esgoto") >= 0); }); if (!sl.length) return;
-          var pzE = null; try { pzE = esquemaIsoDe(ctx0, am, pv, sl); } catch (eE) { pzE = null; avisos.push("Esquema isométrico " + txt(am.nome) + ": " + (eE && eE.message || eE)); }
-          if (pzE && perspVazia(pzE)) { avisos.push("Esquema isométrico " + txt(am.nome) + " - " + g[0] + ": só um toco de tubo (folha quase vazia) - suprimido."); pzE = null; }
-          if (pzE) defs.push({ id: "esquemaiso-" + am.id + "-" + g[0].charAt(0) + "-" + defs.length, titulo: "ESQUEMA ISOMÉTRICO - " + g[0] + " - " + txt(am.nome).toUpperCase() + (pavsA.length > 1 ? " - " + pv.nome.toUpperCase() : ""), tipo: "esquemaIso", persp: pzE, pv: pv, grupo: "isometricos", ambiente: am.id });
-        });
-      });
-    });
     /* R01: ISOMÉTRICO POR AMBIENTE (js/hidcaderno.js): o bloco da referência da Tânia (planta + isométrico com balões de código + tabelas), 2 por folha */
     if (CJ.ambientes) {
       var HCa = dep("HidCaderno", "./hidcaderno.js");
@@ -3795,8 +3881,63 @@
         }
       });
     }
+    /* 21/11/2026 (pranchas compactas, o Rogério: "só o que precisa"): com o isométrico por AMBIENTE (caderno: planta, vista cotada, isométrico com balões, tabelas) gerado, as vistas
+       por ambiente do jogo clássico (isométrico AF/ES do ambiente, perspectiva, esquema isométrico) repetiriam o mesmo desenho: não saem. O "fora dos ambientes" só sai com tubo relevante. */
+    var cadAmbs = []; defs.forEach(function (df0) { if (df0.tipo === "ambientes") arr(df0.ambientes).forEach(function (q0) { cadAmbs.push({ am: q0, pv: df0.pv }); }); });
+    var temCaderno = cadAmbs.length > 0, omit = { iso: 0, persp: 0, esqIso: 0, fora: 0 };
+    function ambCoberto(am, pv) {
+      var nm = txt(am.nome).toUpperCase(), cx0 = (am.x0 + am.x1) / 2, cz0 = (am.z0 + am.z1) / 2, pvA = pv || pavDoAmbiente(modelo.estado, am, pavs);
+      return cadAmbs.some(function (q) {
+        if (pvA && q.pv && chavePav(pvA) !== chavePav(q.pv)) return false;
+        return txt(q.am.nome).toUpperCase() === nm || (cx0 >= q.am.x0 - 0.05 && cx0 <= q.am.x1 + 0.05 && cz0 >= q.am.z0 - 0.05 && cz0 <= q.am.z1 + 0.05);
+      });
+    }
+    function compTrechos(ids) { var m = {}, L = 0; arr(rede.trechos).forEach(function (t) { m[t.id] = t; }); arr(ids).forEach(function (id) { var t = m[id]; if (t && t.p1 && t.p2) L += dist3d(t.p1, t.p2); }); return L; }
+    var iso = { desenhos: [], avisos: [] };
+    if (CJ.isometricos) {
+      iso = H.gerar(resultado, modelo, { pavimentos: pavs, ambientes: ambientes, nomeAparelho: nomeAp, nomePeca: function (id) { return rotuloPecaPlanta(rede, id); }, sistemas: sistemas.filter(function (q) { return q === "agua_fria" || q === "esgoto" || q === "agua_quente"; }), area: { w: geo.area.w - 2 * K2.folgaFolha, h: geo.area.h - K2.titulo - K2.folgaFolha } });
+      arr(iso.avisos).forEach(function (m) { avisos.push(m); });
+      arr(iso.desenhos).forEach(function (d) {
+        if (temCaderno) {
+          if (/^fora dos ambientes$/i.test(txt(d.grupo))) { if (compTrechos(d.trechos) < K2.compacta.foraAmbMinM) { omit.fora++; return; } }
+          else { var amD = ambientes.filter(function (q) { return txt(q.nome).toUpperCase() === txt(d.grupo).toUpperCase() || txt(q.id).toUpperCase() === txt(d.grupo).toUpperCase(); })[0]; if (amD && ambCoberto(amD, null)) { omit.iso++; return; } }
+        }
+        var pzI = null; if (FOTO3D && cfg.isoLinha !== true) { try { pzI = perspectivaDoIso(ctx0, d); } catch (eI) { pzI = null; avisos.push("Isométrico " + d.titulo + ": o desenho do modelo falhou (" + (eI && eI.message || eI) + "); saiu o de linha."); } }
+        if (pzI) defs.push({ id: d.id, titulo: d.titulo, tipo: "perspectiva", persp: pzI, pv: pzI.pv, grupo: "isometricos", isoDe: d });
+        else defs.push({ id: d.id, titulo: d.titulo, tipo: "iso", iso: d, grupo: "isometricos" });
+      });
+    }
+    if (CJ.perspectivas) {
+      var escA = cfg.perspectiva.ambientes.map(function (x) { return x.toUpperCase(); });
+      pavsA.forEach(function (pv) {
+        ambientes.forEach(function (am) {
+          if (!ambienteDoPav(ctx0, am, pv)) return;   /* 17/11/2026: o prumo que só atravessa o nível não cria ambiente */
+          if (temCaderno && ambCoberto(am, pv)) { omit.persp++; return; }
+          if (escA.length && escA.indexOf(txt(am.id).toUpperCase()) < 0 && escA.indexOf(txt(am.nome).toUpperCase()) < 0) return;
+          var pz = perspectivaDe(ctx0, am, pv);
+          if (pz && perspVazia(pz)) { avisos.push("Perspectiva " + txt(am.nome) + " - " + pv.nome + ": sem tubo nem peça (folha vazia) - suprimida."); pz = null; }
+          if (pz) defs.push({ id: "perspectiva-" + am.id + "-" + defs.length, titulo: "PERSPECTIVA ISOMÉTRICA - " + txt(am.nome).toUpperCase() + (pavsA.length > 1 ? " - " + pv.nome.toUpperCase() : ""), tipo: "perspectiva", persp: pz, pv: pv, grupo: "perspectivas", ambiente: am.id });
+        });
+      });
+    }
+    /* 14/11/2026: ESQUEMA ISOMÉTRICO (planta chapada + linha única + altura dos pontos): um por ambiente x sistema (água | esgoto) */
+    if (CJ.isometricos) pavsA.forEach(function (pv) {
+      ambientes.forEach(function (am) {
+        if (!ambienteDoPav(ctx0, am, pv)) return;   /* 17/11/2026: ambiente fantasma (BANHEIRO - PLATIBANDA) não tem folha */
+        if (temCaderno && ambCoberto(am, pv)) { omit.esqIso++; return; }
+        [["ÁGUA", ["agua_fria", "agua_quente"]], [EXISTE && !EXISTE.sis.ventilacao ? "ESGOTO" : "ESGOTO E VENTILAÇÃO", ["esgoto", "ventilacao"]]].forEach(function (g) {
+          var sl = g[1].filter(function (x) { return sistemas.indexOf(x) >= 0 || (x === "ventilacao" && sistemas.indexOf("esgoto") >= 0); }); if (!sl.length) return;
+          var pzE = null; try { pzE = esquemaIsoDe(ctx0, am, pv, sl); } catch (eE) { pzE = null; avisos.push("Esquema isométrico " + txt(am.nome) + ": " + (eE && eE.message || eE)); }
+          if (pzE && perspVazia(pzE)) { avisos.push("Esquema isométrico " + txt(am.nome) + " - " + g[0] + ": só um toco de tubo (folha quase vazia) - suprimido."); pzE = null; }
+          if (pzE) defs.push({ id: "esquemaiso-" + am.id + "-" + g[0].charAt(0) + "-" + defs.length, titulo: "ESQUEMA ISOMÉTRICO - " + g[0] + " - " + txt(am.nome).toUpperCase() + (pavsA.length > 1 ? " - " + pv.nome.toUpperCase() : ""), tipo: "esquemaIso", persp: pzE, pv: pv, grupo: "isometricos", ambiente: am.id });
+        });
+      });
+    });
+    if (temCaderno && (omit.iso || omit.persp || omit.esqIso || omit.fora)) avisos.push("Isométrico por ambiente já mostra planta, vista cotada e isométrico de cada ambiente: não repeti " + [omit.iso ? omit.iso + " isométrico(s) por ambiente" : "", omit.persp ? omit.persp + " perspectiva(s)" : "", omit.esqIso ? omit.esqIso + " esquema(s) isométrico(s)" : "", omit.fora ? omit.fora + " isométrico(s) \"fora dos ambientes\" só com toco de tubo (< " + K2.compacta.foraAmbMinM + " m)" : ""].filter(Boolean).join(", ") + ".");
     /* 15/11/2026: ISOMÉTRICOS (PRANCHA ÚNICA): por pavimento, uma folha grande (A0/A1) com o GERAL, o AF e o ES de cada ambiente e a caixa d'água, numerados */
-    if (CJ.isoprancha) {
+    var molhados = ambientes.filter(function (am) { return pavsA.some(function (pv) { return ambienteDoPav(ctx0, am, pv); }); }).length, obraPequena = pavsA.length <= K2.compacta.pavMax && molhados <= K2.compacta.ambMax;
+    if (CJ.isoprancha && obraPequena && (temCaderno || CJ.isometricos)) avisos.push("Obra pequena (" + pavsA.length + " pavimento, " + molhados + " ambiente(s) molhado(s)): a prancha única de isométricos não foi gerada (repetiria o isométrico por ambiente).");
+    else if (CJ.isoprancha) {
       var geoI = P.geometria(cfg.isoFormato, "paisagem", "RA");
       pavsA.forEach(function (pv) {
         var vsI = []; try { vsI = vistasIsos(ctx0, pv, ambientes, sistemas, pavsA); } catch (eV) { vsI = []; avisos.push("Isométricos (prancha única) " + pv.nome + ": " + (eV && eV.message || eV)); }
@@ -3823,12 +3964,14 @@
     var HPZp = dep("HidPressao", "./hidpressao.js");
     if (CJ.detalhes && HPZp && HPZp.temNoModelo && HPZp.temNoModelo(modelo)) defs.push({ id: "detalhe-pressurizador", titulo: "DETALHE DO PRESSURIZADOR", tipo: "pressurizador", grupo: "detalhes" });
     if (CJ.detalhes) { var lay = layoutDetalhes(geo, resultado); for (var pd = 0; pd < lay.folhas; pd++) defs.push({ id: "detalhes" + (pd ? "-" + (pd + 1) : ""), titulo: "DETALHES TÍPICOS" + (lay.folhas > 1 ? " (" + (pd + 1) + "/" + lay.folhas + ")" : ""), tipo: "detalhes", parte: pd, grupo: "detalhes" }); }
+    var lq = null;
     if (CJ.quadro) {
-      var lq = linhasQuadro(ctx0);
+      lq = linhasQuadro(ctx0);
       arr(lq).forEach(function (l) { if (PROIBIDA_QUADRO.test(txt(l.descricao))) pecaProibidaQuadro = true; if (PROIBIDA_QUADRO.test(txt(l.descricao))) avisos.push("PEÇA PROIBIDA no quadro de materiais: \"" + txt(l.descricao) + "\" - no esgoto a derivação de redução é junção 45° do catálogo, nunca tê de redução."); });
-      if (lq && lq.length) { var pq = paginarQuadro(ctx0, lq); pq.paginas.forEach(function (pg, k) { defs.push({ id: "quadro" + (k ? "-" + (k + 1) : ""), titulo: "QUADRO DE MATERIAIS" + (pq.paginas.length > 1 ? " (" + (k + 1) + "/" + pq.paginas.length + ")" : ""), tipo: "quadro", pagina: pg, nCol: pq.nCol, linha: pq.linha, grupo: "quadro" }); }); }
+      if (lq && lq.length) { var pq = paginarQuadro(ctx0, lq); pq.paginas.forEach(function (pg, k) { defs.push({ id: "quadro" + (k ? "-" + (k + 1) : ""), titulo: "QUADRO DE MATERIAIS" + (pq.paginas.length > 1 ? " (" + (k + 1) + "/" + pq.paginas.length + ")" : ""), tipo: "quadro", pagina: pg, nCol: pq.nCol, linha: pq.linha, larg: pq.larg, grupo: "quadro" }); }); }
       else defs.push({ id: "quadro", titulo: "QUADRO DE MATERIAIS", tipo: "quadro", pagina: null, nCol: 1, grupo: "quadro" });
     }
+    if (CJ.esquema && CJ.quadro) defs = juntarEsquemaQuadro(defs, { geo: geo, cfg: cfg, rede: rede, ix: ix, colunas: colunas, modelo: modelo, resultado: resultado, pavs: pavs }, lq, avisos);
     /* ETAPA 2: o que a folha tem de pouco desenho se junta (plantas de vários pavimentos; isométricos pequenos em mosaico) e a folha duplicada sai */
     defs = tirarDuplicadas(defs, avisos); defs = juntarPoucoOcupadas(defs, geo, cfg, avisos); defs = montarMosaicos(defs, geo, cfg, avisos);
     if (!defs.length) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhum conjunto de folhas escolhido (ou nada a desenhar nos sistemas escolhidos)."]) };
@@ -3844,8 +3987,8 @@
     defs.forEach(function (df, i) {
       var D = marcarCamadas(new A.Desenho(E, [])), chk = { tubos: [], cotas: [] };
       var geoF = df.geo || geo, c = { D: D, geo: geoF, r: resultado, rede: rede, ix: ix, colunas: colunas, pavs: pavs, avisos: avisos, n: i + 1, AP: A, titulo: df.titulo, sis: df.sis, trs: df.trs, iso: df.iso, pv: df.pv, prims: prims, offs: offs,
-                cfg: cfg, modelo: modelo, ambientes: ambientes, nomeAp: nomeAp, chk: chk, cortes: df.cortes, parte: df.parte, quadroPagina: df.pagina, quadroNCol: df.nCol, quadroLinha: df.linha, blocosExtra: plano.saem }, res = {};
-      var nS0 = D.s.length;
+                cfg: cfg, modelo: modelo, ambientes: ambientes, nomeAp: nomeAp, chk: chk, cortes: df.cortes, parte: df.parte, quadroPagina: df.pagina, quadroNCol: df.nCol, quadroLinha: df.linha, quadroLarg: df.larg, blocosExtra: plano.saem }, res = {};
+      var nS0 = D.s.length; DEF_ATUAL = df;
       try {
         if (df.vistas) { c.vistas = df.vistas; res = folhaVistas(c); }
         else if (df.tipo === "incendio") res = folhaIncendio(c);
@@ -3859,6 +4002,7 @@
         }
         else if (df.tipo === "reservatorio") res = folhaReservatorio(c);
         else if (df.tipo === "quadro") res = folhaQuadro(c);
+        else if (df.tipo === "esqquadro") res = folhaEsqQuadro(c, df);
         else if (df.tipo === "notas") res = folhaNotas(c);
         else if (df.tipo === "esquemaIso") { c.persp = df.persp; res = folhaEsquemaIso(c); }
         else if (df.tipo === "perspectiva") { c.persp = df.persp; c.raster = rasterDe(df.persp); res = folhaPerspectiva(c); c.raster = null; }
@@ -3869,7 +4013,7 @@
         else res = folhaDetalhes(c);
         /* DWG POR VIEWPORTS: a folha que não marcou as próprias vistas vira UM bloco (escala = a do rótulo da folha; "SEM ESCALA" = sem) */
         if (res && D.s.length > nS0 && !D.s.slice(nS0).some(function (q) { return /^<g data-bloco=/.test(q); })) {
-          D.s.splice(nS0, 0, blocoAbre(D, txt(df.tipo) || "vista", res.escala, geoF.area)); D.s.push("</g>");
+          D.s.splice(nS0, 0, blocoAbre(D, txt(df.tipo) || "vista", res.escala, geoF.area, df.persp && df.persp.chave ? df.persp.chave : "")); D.s.push("</g>");
           arr(D._rot).forEach(function (rc) { if (rc.i >= nS0) rc.i++; });   /* o posicionador guarda o índice do texto no SVG: a abertura do bloco desloca tudo 1 */
         }
       } catch (e) { avisos.push("Folha " + dois(i + 1) + " (" + df.titulo + "): " + (e && e.message ? e.message : String(e))); D.texto(geo.area.x + K2.erroX, geo.area.y + K2.erroY, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: K2.vermelho }); }
@@ -3895,7 +4039,7 @@
     var folhas = feitas.map(function (f, i) {
       var gF = f.geo || geo, plF = gF === geo ? plano : planejarColuna(gF, blocos, resultado, !!qrTxt), D = f.D, fl = pr.folhas[i], W = gF.papel.w, Hp = gF.papel.h, M = gF.moldura, Fd = marcarCamadas(new A.Desenho(E, null));
       if (D.resolverRotulos) verif.rotulosMovidos = (verif.rotulosMovidos || 0) + D.resolverRotulos(f.chk);   /* POSICIONADOR: uma vez por folha, com cotas e rótulos já criados, ANTES de montar o SVG */
-      var corpoSvg = D.svg(), aud = auditarFolha(f.def, corpoSvg, gF, ctxAud), marcasAud = aud.problemas.filter(function (q) { return q.marca; }).map(function (q) { return q.texto; });
+      var corpoBase = D.svg(), corpoSvg = corpoBase, aud = auditarFolha(f.def, corpoBase, gF, ctxAud), marcasAud = aud.problemas.filter(function (q) { return q.marca; }).map(function (q) { return q.texto; });
       audFolhas.push({ numero: prefixo + "-" + f.rotulo, titulo: f.def.titulo, tipo: f.def.tipo, ocupacao: aud.ocupacao, oculto: aud.oculto, problemas: aud.problemas });
       aud.problemas.forEach(function (q) { avisos.push("Auditor da folha " + prefixo + "-" + f.rotulo + ": " + q.texto + (q.marca ? " - folha marcada NÃO LIBERADO." : ".")); });
       Fd.ret(M.x, M.y, M.w, M.h, "HID-MOLDURA");
@@ -3906,9 +4050,13 @@
       if (!colunaLegenda(Fd, gF, plF, { qr: qrF, qrAmb: ambF ? ambF.nomes : null, folhaNotas: nNotas, folhaDef: f.def, primeira: i === 0, r: resultado }) && i === 0) avisos.push("Legenda e notas não cabem na coluna com a letra mínima do padrão: conferir.");
       A.carimbo(Fd, pr, fl, gF, empObj, opcoes.logo || null, f.rotulo + "/" + dois(nPrinc));
       var numero = prefixo + "-" + f.rotulo;
-      var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(Hp) + 'mm" viewBox="0 0 ' + n(W) + " " + n(Hp) + '" font-family="' + FONTE + '" data-folha="' + esc(f.def.id) + '" data-numero="' + esc(numero) + '"' + (qrF ? ' data-qr="' + esc(qrF) + '"' + (ambF ? ' data-qr-ambiente="' + esc(ambF.ids.join(K2.qrSep)) + '"' : "") : "") + '>' +
+      /* ETAPA 3: o AJUSTE MANUAL (viewport, rótulos movidos, camadas escondidas) entra por cima do desenho automático; svgBase = a folha SEM ele (o "voltar ao automático" da tela e o que se guarda no projeto) */
+      var EDX = EDT(), temAj = !!(EDX && AJ && Object.keys(AJ.vistas).length), moldura = Fd.svg();
+      if (temAj) corpoSvg = EDX.aplicarSvg(corpoBase, AJ);
+      var montarSvg = function (corpo) { return '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(Hp) + 'mm" viewBox="0 0 ' + n(W) + " " + n(Hp) + '" font-family="' + FONTE + '" data-folha="' + esc(f.def.id) + '" data-numero="' + esc(numero) + '"' + (qrF ? ' data-qr="' + esc(qrF) + '"' + (ambF ? ' data-qr-ambiente="' + esc(ambF.ids.join(K2.qrSep)) + '"' : "") : "") + '>' +
         "<title>" + esc(numero + " - " + f.def.titulo + " - " + rev) + "</title>" +
-        '<rect x="0" y="0" width="' + n(W) + '" height="' + n(Hp) + '" fill="#fff"/>' + '<g data-corpo="1">' + corpoSvg + "</g>" + '<g data-folha-moldura="1">' + Fd.svg() + "</g></svg>";
+        '<rect x="0" y="0" width="' + n(W) + '" height="' + n(Hp) + '" fill="#fff"/>' + '<g data-corpo="1">' + corpo + "</g>" + '<g data-folha-moldura="1">' + moldura + "</g></svg>"; };
+      var svg = montarSvg(corpoSvg), svgBase = corpoSvg === corpoBase ? svg : montarSvg(corpoBase);
       var cx = D.caixas || [], pares = A.sobreposicoes(cx), cf = conferirFolha(cx, f.chk);
       verif.folhas.push({ numero: numero, tipo: f.def.tipo, textos: cx.length, sobreposicoes: pares.length, pares: pares.slice(0, K2.parEx), rotuloTubo: cf.rotuloTubo.length, rotuloCota: cf.rotuloCota.length, exTubo: cf.rotuloTubo.slice(0, K2.parEx), exCota: cf.rotuloCota.slice(0, K2.parEx) });
       verif.sobreposicoes += pares.length; verif.rotuloTubo += cf.rotuloTubo.length; verif.rotuloCota += cf.rotuloCota.length;
@@ -3916,7 +4064,8 @@
       if (cf.rotuloTubo.length) avisos.push("Folha " + numero + ": " + cf.rotuloTubo.length + " rótulo(s) sobre tubo (ex.: " + cf.rotuloTubo.slice(0, K2.parAviso).map(function (q) { return q[0]; }).join("; ") + ").");
       if (cf.rotuloCota.length) avisos.push("Folha " + numero + ": " + cf.rotuloCota.length + " rótulo(s) sobre cota (ex.: " + cf.rotuloCota.slice(0, K2.parAviso).map(function (q) { return q[0]; }).join("; ") + ").");
       return { id: f.def.id, rotulo: f.rotulo, numero: numero, titulo: f.def.titulo, tipo: f.def.tipo, grupo: f.def.grupo, formato: f.def.geo ? cfg.isoFormato : formato, escala: f.escala, svg: svg, caixasTexto: cx,
-               naoLiberado: motivoNL, qr: qrF || "", qrAmbientes: ambF ? ambF.ids : [], vistas: arr(f.def.vistas).map(function (it) { return it.titulo; }), ocupacao: f.def.ocupacao == null ? null : Math.round(f.def.ocupacao * 100) / 100 };
+               naoLiberado: motivoNL, qr: qrF || "", qrAmbientes: ambF ? ambF.ids : [], vistas: arr(f.def.vistas).map(function (it) { return it.titulo; }), ocupacao: f.def.ocupacao == null ? null : Math.round(f.def.ocupacao * 100) / 100,
+               svgBase: svgBase, editaveis: EDX ? EDX.blocosDoSvg(corpoBase) : [], ajustada: svg !== svgBase };
     });
     folhas.forEach(function (f) { if (/NaN|undefined/.test(f.svg)) avisos.push("Folha " + f.numero + ": há valor inválido (NaN/undefined) no desenho."); });
     var auditoria = (function () {
@@ -3924,8 +4073,8 @@
       return { folhas: audFolhas, nFolhas: audFolhas.length, ocupacaoMedia: oc.length ? oc.reduce(function (a0, q) { return a0 + q.ocupacao; }, 0) / oc.length : null, ocultoMedio: ov.length ? ov.reduce(function (a0, q) { return a0 + q.oculto; }, 0) / ov.length : null,
         vazias: audFolhas.filter(function (q) { return q.problemas.some(function (p0) { return p0.codigo === "QUASE_VAZIA"; }); }).length, reprovadas: audFolhas.filter(function (q) { return q.problemas.some(function (p0) { return p0.marca; }); }).length };
     })();
-    var imgsR = IMAGENS || {}; FOTO3D = null; IMAGENS = null; ICONES = null; EXISTE = null;
-    return { ok: true, folhas: folhas, avisos: avisos, verificacao: verif, isometricos: iso.desenhos, fixture: !!resultado.fixture, config: cfg, ambientes: ambientes, prefixo: prefixo, revisao: rev, imagensPorChave: imgsR, auditoria: auditoria, liberado: auditoria.reprovadas === 0 && !temErroCalc };   /* liberado = o auditor não reprovou folha E não há erro de cálculo pendente */
+    var imgsR = IMAGENS || {}, vistasMod = VISTAS_GER; FOTO3D = null; IMAGENS = null; ICONES = null; EXISTE = null; AJ = null; DEF_ATUAL = null; VISTAS_GER = {};
+    return { ok: true, folhas: folhas, avisos: avisos, verificacao: verif, isometricos: iso.desenhos, fixture: !!resultado.fixture, config: cfg, ambientes: ambientes, prefixo: prefixo, revisao: rev, imagensPorChave: imgsR, vistasModelo: vistasMod, auditoria: auditoria, liberado: auditoria.reprovadas === 0 && !temErroCalc };   /* liberado = o auditor não reprovou folha E não há erro de cálculo pendente */
   }
   /* as colunas de AF (mesmo critério do isométrico) */
   function colunasPublicas(H, trAF, opcoes) {
@@ -3962,7 +4111,7 @@
     var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
     return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
   }
-  var _int = { paginarQuadro: paginarQuadro, auditarFolha: auditarFolha, ocupacaoSvg: ocupacaoSvg, caixaDoSvg: caixaDoSvg, gradeMosaico: gradeMosaico, escalaCelula: escalaCelula, montarMosaicos: montarMosaicos, juntarPoucoOcupadas: juntarPoucoOcupadas, tirarDuplicadas: tirarDuplicadas, ocultoDaVista: ocultoDaVista, setFoto3d: function (f) { FOTO3D = typeof f === "function" ? f : null; }, oclusaoVista: oclusaoVista, vistaAuto: vistaAuto, trechosDaVista: trechosDaVista, pavsEfetivos: pavsEfetivos, pavsDosAmbientes: pavsDosAmbientes, pavDoAmbiente: pavDoAmbiente, ambienteMolhado: ambienteMolhado, ambienteDoPav: ambienteDoPav, perspVazia: perspVazia, plantaComConteudo: plantaComConteudo, assinaturaCorte: assinaturaCorte, PROIBIDA_QUADRO: PROIBIDA_QUADRO, clipSegCaixa: clipSegCaixa, produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+  var _int = { paginarQuadro: paginarQuadro, largurasQuadro: largurasQuadro, juntarEsquemaQuadro: juntarEsquemaQuadro, letraQuadro: letraQuadro, auditarFolha: auditarFolha, ocupacaoSvg: ocupacaoSvg, caixaDoSvg: caixaDoSvg, gradeMosaico: gradeMosaico, escalaCelula: escalaCelula, montarMosaicos: montarMosaicos, juntarPoucoOcupadas: juntarPoucoOcupadas, tirarDuplicadas: tirarDuplicadas, ocultoDaVista: ocultoDaVista, setFoto3d: function (f) { FOTO3D = typeof f === "function" ? f : null; }, oclusaoVista: oclusaoVista, vistaAuto: vistaAuto, trechosDaVista: trechosDaVista, pavsEfetivos: pavsEfetivos, pavsDosAmbientes: pavsDosAmbientes, pavDoAmbiente: pavDoAmbiente, ambienteMolhado: ambienteMolhado, ambienteDoPav: ambienteDoPav, perspVazia: perspVazia, plantaComConteudo: plantaComConteudo, assinaturaCorte: assinaturaCorte, PROIBIDA_QUADRO: PROIBIDA_QUADRO, clipSegCaixa: clipSegCaixa, produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
     paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };

@@ -205344,6 +205344,7 @@ var sel = this._sel && this._sel.id === id ? this._sel.ix : -1;
 if (sel >= 0) this._marcarSel(id, sel);
 this._ajustar(id);
 t.el.scrollLeft = sl; t.el.scrollTop = sc;
+var HE = global.HidPranchasEditUI; if (HE) { try { HE.aoPintar(this, id, a, t); } catch (eHe) { } }
 return true;
 },
 _marcarSel: function (id, ix) {
@@ -206131,6 +206132,18 @@ if (!FPd) { toast("O módulo de PDF não carregou.", "erro"); return Promise.res
 arr(ids).forEach(function (id) { var a = self.achar(id); if (a) itens.push(a); });
 if (!itens.length) { toast("Nenhuma folha para gerar o PDF.", "aviso"); return Promise.resolve(null); }
 var nome = itens.length === 1 ? PR().nomeArquivo(itens[0].pr, itens[0].folha, projeto, "pdf") : PR().nomeArquivoLote(itens[0].pr, itens.map(function (a) { return a.folha; }), "pdf");
+var HEp = global.HidPranchasEditUI;
+if (HEp && HEp.pdfVetorial && itens.every(function (a) { return /^hidsvg:/.test(a.folha.imagemInteira || ""); })) {
+var rh = null; try { rh = HEp.pdfVetorial(self, itens, nome); } catch (eP) { rh = null; }
+if (rh && rh.bytes) {
+var dh = rh.bytes;
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wH = TesteModulo.marcarArquivo(nome, dh, "application/pdf", ""); if (!wH) return Promise.resolve(null); nome = wH.nome; dh = wH.dados; }
+self._ultimoArquivo = { nome: nome, bytes: dh, tamanho: dh.length, vetorial: true, paginas: rh.paginas, imagens: 0 };
+try { var urlH = URL.createObjectURL(new Blob([dh], { type: "application/pdf" })), elH = document.createElement("a"); elH.href = urlH; elH.download = nome; document.body.appendChild(elH); elH.click(); elH.remove(); setTimeout(function () { URL.revokeObjectURL(urlH); }, 60000); } catch (eB) {}
+toast("PDF vetorial: " + nome + " (" + rh.paginas + " folha" + (rh.paginas > 1 ? "s" : "") + ", " + Math.round(dh.length / 1024) + " KB) — igual à tela, com o seu ajuste.", "ok");
+return Promise.resolve({ nome: nome, tamanho: dh.length, paginas: rh.paginas, avisos: [] });
+}
+}
 var lista = itens.map(function (a) { var rec = self.recursos(a, false); rec.projeto = projeto; return { pr: a.pr, folha: a.folha, rec: rec, geo: a.geo }; });
 status("Gerando o PDF vetorial…");
 return Promise.resolve(self._garantir3d(itens)).then(function () {

@@ -35,6 +35,10 @@
   var NOME_SIS = { agua_fria: "Água fria", agua_quente: "Água quente", esgoto: "Esgoto e ventilação", pluvial: "Águas pluviais", incendio: "Incêndio", industrial: "Fluidos / gás", gas: "Gás GLP (abrigo e rede embutida)", tratamento: "Tratamento" };
   var ESCALAS = ["auto", "20", "25", "50", "75", "100", "125"];   // hid:ok escalas de desenho oferecidas na tela (as mesmas do K2.escalas)
   var ULTIMO = { r: null, ctx: null };
+  /* ETAPA 3: as fotos do 3D da geração (parte cara) ficam guardadas na SESSÃO: regerar para aplicar o ajuste de UMA vista só refaz a foto cuja entrada mudou.
+     O botão "Gerar pranchas" (e o Gerar documentos) começam do zero — o modelo pode ter mudado desde a última vez. */
+  var CACHE_FOTOS = {};
+  function limparCacheFotos() { Object.keys(CACHE_FOTOS).forEach(function (k) { delete CACHE_FOTOS[k]; }); }
 
   /* ------------------------------------------------------------ puro */
   function chave(obraKey) { return CHAVE + (txt(obraKey) || "geral"); }
@@ -84,7 +88,9 @@
              obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null,
              ambientes: arr(ctx && ctx.ambientes).length ? ctx.ambientes : undefined,
              /* 14/11/2026: perspectiva e isométrico = FOTO da cena do BIM (a peça como está na tela), não um desenho refeito */
-             foto3d: global.BIM && global.BIM.fotoIso ? function (o) { return global.BIM.fotoIso(o); } : undefined, icones: ICONES_J };
+             foto3d: global.BIM && global.BIM.fotoIso ? function (o) { return global.BIM.fotoIso(o); } : undefined, icones: ICONES_J,
+             /* ETAPA 3: o ajuste manual por vista (js/hidpranchasedit.js) vale em TODA geração (a tela, o Gerar documentos, o regerar da edição) */
+             ajustes: global.HidPranchasEdit ? global.HidPranchasEdit.ler(ctx && ctx.obraKey) : undefined, cacheFotos: CACHE_FOTOS };
   }
   /* o registro das folhas no BIM (Store bim_pranchas): as folhas prontas entram como IMAGEM INTEIRA (a folha gerada fora,
      com carimbo); o desenho em si fica só na sessão (refeito pelo Gerar — a folha nunca guarda uma cópia velha) */
@@ -172,6 +178,7 @@
     var P = HP(); saida = saida || { pdf: true, dxf: true, abas: true };
     if (!P) return { ok: false, avisos: ["js/hidpranchas.js não carregou."] };
     if (!ctx || !ctx.resultado) return { ok: false, avisos: ["Dimensione primeiro: sem resultado não há o que apresentar."] };
+    if (!saida.manterCache) limparCacheFotos();
     var c = P.normalizarConfig(cfg), r = P.gerar(ctx.resultado, ctx.modelo, opcoesDe(ctx, c));
     ULTIMO.r = r; ULTIMO.ctx = ctx;
     if (!r || !r.ok) return r || { ok: false, avisos: [] };
@@ -196,6 +203,7 @@
     var P = HP(); if (!P) return { ok: false, folhas: [], avisos: ["js/hidpranchas.js não carregou."] };
     if (!ctx || !ctx.resultado) return { ok: false, folhas: [], avisos: ["Dimensione primeiro: sem resultado não há o que apresentar."] };
     var base = lerMemoria(ctx.obraKey), c; Object.keys(cfg || {}).forEach(function (k) { base[k] = cfg[k]; }); c = P.normalizarConfig(base);
+    limparCacheFotos();
     return P.gerar(ctx.resultado, ctx.modelo, opcoesDe(ctx, c));
   }
   /* as folhas nas ABAS DE FOLHA do BIM: um registro só por obra (o Gerar de novo SUBSTITUI as folhas — idempotente) */
@@ -209,8 +217,21 @@
     BF._imagensExternas = BF._imagensExternas || {};
     r.folhas.forEach(function (f) { BF._imagensExternas["hidsvg:" + f.id] = dataUrlSvg(f.svg); });
     var id = BF.idFolha(salvo.id, "hid-" + r.folhas[0].id);
-    try { if (BF.ativo && BF.ativo()) BF.abrir(id); } catch (e) { /* sem a casca do BIM: fica no registro */ }
+    /* ETAPA 3: o desenho AUTOMÁTICO de cada folha fica guardado no projeto (IndexedDB, por obra): a folha reabre depois de recarregar o app e o ajuste manual
+       (viewport, rótulos, camadas) se aplica por cima dele sem refazer nada. Só o conjunto principal (a perspectiva avulsa de um ambiente não substitui o conjunto). */
+    if ((!o.origem || o.origem === "hidro") && !o.mesclar && global.HidPranchasEditUI) { try { global.HidPranchasEditUI.registrar(r, txt(ctx && ctx.obraKey) || "geral"); } catch (eR) { /* sem a edição: a folha segue como imagem */ } }
+    try { if (!o.semAbrir && BF.ativo && BF.ativo()) BF.abrir(id); } catch (e) { /* sem a casca do BIM: fica no registro */ }
     return { registro: salvo.id, primeira: id, folhas: r.folhas.length };
+  }
+
+  /* ETAPA 3: refaz a geração com o ajuste manual atual (o da edição de folha), SEM baixar nada e SEM tirar o foco da aba; o cache de fotos faz refazer só o que mudou.
+     Contexto: o que está aberto agora (modelo e resultado vivos); sem Dimensionar depois de recarregar o app devolve null (o ajuste fica guardado e entra na próxima geração). */
+  function regerar() {
+    var ctx = null; try { ctx = ctxAtual(); } catch (e) { ctx = null; }
+    if (!ctx || !ctx.resultado || !ctx.modelo) ctx = ULTIMO.ctx;
+    if (!ctx || !ctx.resultado || !ctx.modelo) return null;
+    var r = null; try { r = gerar(ctx, lerMemoria(ctx.obraKey), { pdf: false, dxf: false, abas: true, manterCache: true, registro: { semAbrir: true } }); } catch (e2) { r = null; }
+    return r && r.ok ? r : null;
   }
 
   /* ------------------------------------------------------------ prévia 3D do ambiente na modelagem */
@@ -332,8 +353,8 @@
     return true;
   }
 
-  var HidPranchasUI = { abrir: abrir, gerar: gerar, montar: montar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
-    _int: { nIcones: function () { return Object.keys(ICONES_J).length; }, ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
+  var HidPranchasUI = { abrir: abrir, gerar: gerar, montar: montar, regerar: regerar, abrir3dAmbiente: abrir3dAmbiente, reabrir3d: reabrir3d, secaoAmbiente: secaoAmbiente, paraPrancha: paraPrancha, ultimo: function () { return ULTIMO; },
+    _int: { cacheFotos: function () { return CACHE_FOTOS; }, nIcones: function () { return Object.keys(ICONES_J).length; }, ambienteBim: ambienteBim, ctxAtual: ctxAtual, salvarVista3d: salvarVista3d, chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, sistemasDoResultado: sistemasDoResultado, ambientesDoCtx: ambientesDoCtx, configDaTela: configDaTela, html: html, dataUrlSvg: dataUrlSvg } };
   global.HidPranchasUI = HidPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = HidPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -1733,6 +1733,19 @@ if (o.instalacoes !== false && !bk.inst) setVistaInst(true);
 grid.visible = false; scene.background = new THREE.Color(0xffffff);
 if (o.semArquitetura || o.soLinhas) { bk.grp = []; scene.children.forEach(function (g0) { if (g0.name && /^(p4-pinturas|acab-pisos|p10-fases|p2d-ambientes|p11-divisa-linha|pag-paginacao)$/.test(g0.name) && g0.visible !== false) { bk.grp.push([g0, g0.visible]); g0.visible = false; } }); }
 var mn = o.min, mx = o.max;
+if (o.ocultar) {
+var OC = o.ocultar, FM = focoMotor(), ocC = {}, ocD = {}, ocU = {}, nOc = 0;
+(OC.cats || []).forEach(function (k) { ocC[k] = 1; }); (OC.discs || []).forEach(function (k) { ocD[k] = 1; }); (OC.uids || []).forEach(function (k) { ocU[k] = 1; });
+bk.esc = bk.esc || [];
+todasMalhas(function (m) {
+if (!m.isMesh) return;
+var ud = m.userData || {}, uid = ud.mid + ':' + ud.expressID, dp = FOCO.dIdx ? FOCO.dIdx[uid] : null, esc = !!ocU[uid];
+if (!esc && FM && ud.tipo) { var ct = FM.categoriaDe(ud.tipo, dp); if (ct && ocC[ct.id]) esc = true; else if (ocD[FM.disciplinaDe(ud.tipo, dp)]) esc = true; }
+if (esc && m.visible !== false) { bk.esc.push([m, m.visible]); m.visible = false; nOc++; }
+});
+if (nOc) { try { sincronizarAgregado(); } catch (_) {} bk.ocultou = true; }
+window.__fotoOcultas = nOc;
+}
 renderer.clippingPlanes = [new THREE.Plane(_V3(1, 0, 0), -mn[0]), new THREE.Plane(_V3(-1, 0, 0), mx[0]), new THREE.Plane(_V3(0, 1, 0), -mn[1]),
 new THREE.Plane(_V3(0, -1, 0), mx[1]), new THREE.Plane(_V3(0, 0, 1), -mn[2]), new THREE.Plane(_V3(0, 0, -1), mx[2])];
 renderer.localClippingEnabled = false;
@@ -1851,6 +1864,7 @@ finally {
 uiV();
 renderer.clippingPlanes = bk.clip; renderer.localClippingEnabled = bk.loc; grid.visible = bk.g; scene.background = bk.bg;
 if (bk.esc) for (var ie0 = bk.esc.length - 1; ie0 >= 0; ie0--) bk.esc[ie0][0].visible = bk.esc[ie0][1];
+if (bk.ocultou) { try { sincronizarAgregado(); } catch (_) {} }
 if (bk.ctr) bk.ctr.forEach(function (t) { try { t[0].remove(t[1]); t[1].geometry.dispose(); } catch (_) {} });
 if (bk.grp) bk.grp.forEach(function (t) { t[0].visible = t[1]; });
 if (bk.ln) bk.ln.forEach(function (t) { try { t[0].remove(t[1]); } catch (_) {} });
@@ -1860,6 +1874,20 @@ if (o.instalacoes !== false && !bk.inst) try { setVistaInst(false); } catch (_) 
 renderer.setPixelRatio(bk.pr); renderer.setSize(tam.x, tam.y, false); renderer.setScissorTest(bk.sc);
 try { renderer.render(scene, camera); } catch (_) {}
 }
+return out;
+};
+S._pecasNaCaixa = function (min, max, lim) {
+var out = [], vistos = {}, FM = focoMotor(), bx = new THREE.Box3(_V3(+min[0], +min[1], +min[2]), _V3(+max[0], +max[1], +max[2]));
+lim = lim || 300;
+todasMalhas(function (m) {
+if (out.length >= lim || !m.isMesh || m.userData.expressID == null) return;
+var ud = m.userData, uid = ud.mid + ':' + ud.expressID; if (vistos[uid]) return;
+var b; try { b = new THREE.Box3().setFromObject(m); } catch (_) { return; }
+if (b.isEmpty() || !b.intersectsBox(bx)) return;
+vistos[uid] = 1;
+var mo = modeloDe(ud.mid), e = mo ? catElemento(mo, ud.expressID) : null, dp = FOCO.dIdx ? FOCO.dIdx[uid] : null, ct = FM && ud.tipo ? FM.categoriaDe(ud.tipo, dp) : null;
+out.push({ uid: uid, nome: (e && e.nome) || String(ud.tipo || 'peça'), tipo: String(ud.tipo || ''), cat: ct ? ct.id : 'outros', catRotulo: ct ? ct.rotulo : 'Outros elementos' });
+});
 return out;
 };
 S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
@@ -16216,6 +16244,7 @@ caixasDe: function (uids) { return (S && S._caixasDe) ? S._caixasDe(uids) : {}; 
 linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
 linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
 fotoIso: function (o) { return (S && S._fotoIso) ? S._fotoIso(o || {}) : { ok: false, erro: 'o 3D do BIM não abriu' }; },
+pecasNaCaixa: function (min, max, lim) { return (S && S._pecasNaCaixa) ? S._pecasNaCaixa(min, max, lim) : []; },
 caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },
 three: function () { return THREE; },
 materiaisRealistas: function (on) {

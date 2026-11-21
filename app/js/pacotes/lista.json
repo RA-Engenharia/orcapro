@@ -1,21 +1,21 @@
 {
  "gerador": "tools/construir-pacotes-js.js",
- "fonte": "52e36b31249bc5c8c7370e6195ce8186",
+ "fonte": "d69cae35971856475dd9a4d7b5f66c94",
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=d63544f618",
-  "js/bim-pacote.js?v=fbf59b8f55",
+  "js/pacotes/bim.js?v=5f493655f4",
+  "js/bim-pacote.js?v=6ab9b10f2a",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
-  "js/pacotes/hidro.js?v=1b91b58fe2"
+  "js/pacotes/hidro.js?v=3761a9af1d"
  ],
  "tamanhos": {
   "js/pacotes/nucleo-1.js": 5653116,
   "js/pacotes/nucleo-2.js": 5632160,
-  "js/pacotes/bim.js?v=d63544f618": 24675389,
-  "js/bim-pacote.js?v=fbf59b8f55": 1081814,
+  "js/pacotes/bim.js?v=5f493655f4": 24676660,
+  "js/bim-pacote.js?v=6ab9b10f2a": 1083693,
   "js/metalcalcvista-pacote.js?v=122abc30d5": 174083,
-  "js/pacotes/hidro.js?v=1b91b58fe2": 8796320
+  "js/pacotes/hidro.js?v=3761a9af1d": 8852616
  },
  "pulados": [
   "venda/perfis-clientes.js"

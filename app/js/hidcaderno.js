@@ -351,7 +351,9 @@
 
   /* os pontos do ambiente com a ALTURA (m do piso acabado) de cada ligação */
   /* DWG POR VIEWPORTS: grupo data-bloco/data-escala da vista (o contrato está em HidPranchas._int.blocoVista); sem D.s (outro tipo de desenho) só executa */
-  function blocoV(D, tipo, esc0, r, fn) { var II = I(); return D && D.s && II && II.blocoVista ? II.blocoVista(D, tipo, esc0, r, fn) : fn(); }
+  function blocoV(D, tipo, esc0, r, fn, chave) { var II = I(); return D && D.s && II && II.blocoVista ? II.blocoVista(D, tipo, esc0, r, fn, chave) : fn(); }
+  /* ETAPA 3: a chave ESTÁVEL da vista do ambiente (ambiente × grupo × pavimento): o ajuste manual a acha de novo depois de regerar */
+  function chaveAmb(pref, am, c, pv, extra) { var X = dep("HidPranchasEdit", "./hidpranchasedit.js"); return X ? X.chaveVista(am, c && c.grupo, pv, pref + (extra || "")) : ""; }
   function nomePonto(c, id) {
     var II = I(), base = txt(id).split(":")[0], f = null, nm = c.nomeAp(id);
     arr(c.modelo && c.modelo.estado && c.modelo.estado.familias).forEach(function (q) { if (q.id === base) f = q; });
@@ -682,7 +684,7 @@
         vistosDt[t] = 1; nDt++; return t;
       };
       cp.codigoConexao = function (obj) { return obj && obj.peca ? tb.codigoDe(obj, "peca") : tb.codigoDe(obj, "cx"); };
-      D.texto(R2.x + 1, R2.y + 3.2, "ISOMÉTRICO 30° - SEM ESCALA (vista " + pz.vista + ")", 2.6, { peso: 0.2, cor: K.cor.tinta });
+      D.texto(R2.x + 1, R2.y + 3.2, "ISOMÉTRICO 30° - SEM ESCALA (vista " + (pz.vistaNome || pz.vista) + ")", 2.6, { peso: 0.2, cor: K.cor.tinta });
       II.folhaPerspectiva(cp);
       chk.nBaloes = cp.nBaloes; chk.nBaloesPecas = cp.nBaloesPecas;
       if (cp.vistaRes) { chk.vistaRes = cp.vistaRes; chk.nBaloes = cp.vistaRes.itens.filter(function (q) { return q.tipo === "codigo"; }).length; chk.kUsado = cp.kUsado; }
@@ -844,7 +846,7 @@
     if (am.semRede) {
       /* R02: ambiente com ponto de utilização lançado mas SEM rede traçada: planta + lista dos pontos a ligar + a pendência por escrito (nada inventado) */
       var Rp = { x: R1.x, y: R1.y, w: R1.w + cw[1] * 0.35, h: R1.h * 0.9 };
-      blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, Rp, function () { return plantaAmbiente(c, D, Rp, am, pv, d, [], chk); });
+      blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, Rp, function () { return plantaAmbiente(c, D, Rp, am, pv, d, [], chk); }, chaveAmb("planta", am, c, pv));
       var xT = R1.x + R1.w + cw[1] * 0.35 + gap, wT = body.x + body.w - xT, yT = R1.y;
       D.texto(xT, yT + 3, "PONTOS DE UTILIZAÇÃO A LIGAR", 3.2, { peso: 0.25, cor: "#c00000" }); yT += 8;
       arr(am.pendentes).forEach(function (q) {
@@ -859,7 +861,7 @@
     var phsV = o.semVista ? [] : paredesDoAmbiente(c, am, pv);
     var fPl = phsV.length ? (DT ? DT.fPlanta : 0.36) : 0.62, fVi = phsV.length ? (DT ? DT.fVista : 0.42) : 0;
     var R1p = { x: R1.x, y: R1.y, w: R1.w, h: R1.h * fPl };
-    var pl = blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, R1p, function () { return plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk); });
+    var pl = blocoV(D, "planta", function (r0) { return r0 && r0.den ? "1:" + r0.den : "sem"; }, R1p, function () { return plantaAmbiente(c, D, R1p, am, pv, d, pontos, chk); }, chaveAmb("planta", am, c, pv));
     var yP = R1.y + R1p.h + 3;
     if (phsV.length) {
       /* 13/11/2026: a cadeia de cotas da vista sai ABAIXO do desenho (yFundo + 5) e passava do retângulo reservado: o título
@@ -879,7 +881,7 @@
     });
     if (pontos.length > maxP) c.avisos.push("Ambiente " + am.nome + ": " + (pontos.length - maxP) + " ponto(s) a mais que a lista cabe (ver planta).");
     /* coluna 2: o isométrico 30° com o balão de código */
-    blocoV(D, "iso", "sem", R2, function () { isoAmbiente(c, D, R2, am, pv, tb, chk, DT); });
+    blocoV(D, "iso", "sem", R2, function () { isoAmbiente(c, D, R2, am, pv, tb, chk, DT); }, chaveAmb("persp", am, c, pv));
     /* coluna 3: tabelas e notas */
     var yy = R3.y;
     yy += tabelaCaderno(c, D, R3.x, yy, R3.w, "TUBOS - " + (am.nomeBase || am.nome), ["Descrição", "Abrev.", "DN (mm)", "Compr. (m)"], d.trs.length ? tb.linhasTb : [], [0.52, 0.12, 0.16, 0.20], { al: ["E", "C", "C", "C"], fs: 1.9 }) + 3;
