@@ -43,9 +43,11 @@
     R.arquivos.forEach(function (f) { if (f.tipo !== "leiame") L.push(" - " + f.nome); });
     arr(R.naoGerados).forEach(function (t) { L.push(" - NÃO GERADO: " + t); });
     L.push("");
-    L.push("O QUE FICOU PENDENTE — EM VERMELHO (" + v.length + "): sem fonte lida ou a decidir pelo responsável técnico; o projeto não pode ser assinado como está.");
-    v.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto + (p.secao ? " (seção " + p.secao + " do memorial)" : "")); });
-    L.push("");
+    if (v.length) {
+      L.push("O QUE FICOU PENDENTE — EM VERMELHO (" + v.length + "): sem fonte lida ou a decidir pelo responsável técnico; o projeto não pode ser assinado como está.");
+      v.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto + (p.secao ? " (seção " + p.secao + " do memorial)" : "")); });
+      L.push("");
+    }
     L.push("AVISOS E CRITÉRIOS RA — EM AMARELO (" + a.length + "): conferir com o responsável técnico.");
     a.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto); });
     if (R.avisos.length) { L.push(""); L.push("AVISOS DA GERAÇÃO"); R.avisos.forEach(function (t) { L.push(" - " + t); }); }

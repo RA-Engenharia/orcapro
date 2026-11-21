@@ -234,9 +234,9 @@
     add("amarelo", "Caixa de medição, poste e afastamentos: capítulo 7 e desenhos da ND-5.1 não transcritos — conferir com a CEMIG.", "3");
     add("amarelo", "Simbologia: a NBR 5444:1989 está cancelada sem norma substituta; os símbolos das pranchas são os de uso corrente e todos levam texto.", "2");
     /* o que só o RT define */
-    if (!opc.esquemaAterramento) add("vermelho", "Esquema de aterramento: o cálculo do DPS e do PE parte do TN-S (premissa de fábrica); a definição formal (NR-10 10.4.4) e a interligação neutro/PE são do RT — a definir pelo RT.", "10");
-    add("vermelho", "Equipotencialização: ligação equipotencial principal e suplementar (banheiros) a detalhar pelo RT — o item da norma não foi transcrito.", "10");
-    add("vermelho", "NBR 5410:2004 lida em cópia NÃO licenciada à RA e sem a Errata 1/2008: conferir cada valor no exemplar licenciado da edição vigente antes de assinar.", "2");
+    /* v2.3 (20/11/2026): esquema de aterramento e equipotencialização ESPECIFICADOS na seção 10 (TN-S, BEP e suplementar) — viraram critério RA a validar, não pendência */
+    if (!opc.esquemaAterramento) add("amarelo", "Esquema de aterramento adotado: TN-S a partir do quadro (critério RA, seção 10) — confirmar com a concessionária na ligação.", "10");
+    add("amarelo", "NBR 5410:2004 lida em cópia NÃO licenciada à RA e sem a Errata 1/2008: conferir cada valor no exemplar licenciado da edição vigente antes de assinar.", "2");
     /* dados do RT e da obra */
     if (!txt(opc.responsavel)) add("vermelho", "Responsável técnico não informado: nome, título e registro no conselho (placeholders no memorial).", "1");
     else if (!txt(opc.registro)) add("vermelho", "Registro do responsável técnico (CREA/CAU) não informado.", "1");
@@ -395,10 +395,12 @@
   }
   function sAterramento(A, opc) {
     var C = A.criterios, en = A.demanda.entrada, s = new Sec("aterramento", "10. Aterramento e equipotencialização");
-    s.p("Esquema de aterramento considerado no cálculo: " + (opc.esquemaAterramento ? txt(opc.esquemaAterramento) + " (informado pelo usuário)" : "TN-S a partir do quadro (premissa de fábrica do dimensionamento do DPS e do PE, critério RA) — a definir pelo RT com a CEMIG") + ". Tensão fase-neutro de referência " + C.tensaoFN.valor + " V.");
+    s.p("Esquema de aterramento considerado no cálculo: " + (opc.esquemaAterramento ? txt(opc.esquemaAterramento) + " (informado pelo usuário)" : "TN-S a partir do quadro (adotado, critério RA — base do dimensionamento do DPS e do PE)") + ". Tensão fase-neutro de referência " + C.tensaoFN.valor + " V.");
     s.p(en ? "Entrada (" + en.tabela + ", faixa " + en.faixa + "): aterramento em cobre nu " + sec(en.aterramento_mm2) + " mm², " + en.hastes + " haste(s), condutor de proteção " + sec(en.pe_mm2) + " mm². Valores mínimos da CEMIG." : "Entrada: padrão não verificado.");
     s.p("Condutor de proteção (PE) de cada circuito: seção pela " + TB().T58.item + " (seção 7). Todo circuito leva PE e as tomadas e luminárias são ligadas a ele.");
-    s.alerta("Esquema de aterramento (NR-10 10.4.4), interligação neutro/PE e equipotencialização principal e suplementar (banheiros): a definir e detalhar pelo RT. Os itens da norma correspondentes não foram transcritos neste sistema.");
+    s.p("Esquema TN-S: neutro e condutor de proteção separados a partir do quadro de distribuição; o neutro é ligado à terra só no padrão de entrada e não volta a ser ligado ao PE dentro da instalação (critério RA, confirmar com a concessionária).");
+    s.p("Equipotencialização principal (NBR 5410, 6.4.2.1): barramento de equipotencialização principal (BEP) junto ao padrão de entrada, ao qual se ligam o condutor de aterramento, o PE do alimentador, as tubulações metálicas de água e de gás que entram na edificação e as armaduras do concreto acessíveis. Condutor da ligação equipotencial principal com seção não inferior à metade da do maior condutor de proteção (6.4.4.1.1, por fonte secundária).");
+    s.p("Equipotencialização suplementar nos banheiros (critério RA): os elementos condutivos acessíveis do banheiro — tubulação metálica, ralo e esquadria metálica do box, banheira ou hidromassagem metálica — ligados ao PE do circuito do banheiro por condutor de cobre de 2,5 mm², em caixa de equipotencialização local.");
     return s;
   }
   function sNr10(A) {

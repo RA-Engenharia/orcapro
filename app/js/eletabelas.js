@@ -140,7 +140,7 @@
 
   /* ------------------------------------------------------------------ 5.3.4.1 — coordenação condutor × disjuntor (PDF p. 71, na imagem) */
   var COORD = { item: "5.3.4.1", fonte: FONTES.NBR, conferido: "imagem PDF p. 71 (norma p. 63)", texto: "a) IB ≤ In ≤ Iz; b) I2 ≤ 1,45 Iz",
-    i2: { valor: 1.45, nivel: "X", fonte: "I2 = 1,45 In do disjuntor da NBR NM 60898 (norma do produto, NÃO lida — conferir): com ele, a condição b) se reduz a In ≤ Iz" } };
+    i2: { valor: 1.45, nivel: "S", fonte: "IEC 60898-1 / NBR NM 60898 (norma do produto): corrente convencional de atuação I2 = 1,45 In em 1 h, a 30 °C — lido em fonte secundária (Schneider Electric, FAQ FA369327, disjuntor Acti 9 iC60, 20/11/2026); com ele, a condição b) se reduz a In ≤ Iz" } };
 
   /* ------------------------------------------------------------------ 5.1.3.2.2 — DR ≤ 30 mA obrigatório (texto corrido) */
   var DR = { item: "5.1.3.2.2", fonte: FONTES.NBR,
@@ -196,7 +196,7 @@
   /* LAPP T11 — resistência máxima do condutor de cobre nu classe 5 a 20 °C (Ω/km), na imagem */
   var RESISTENCIA = { fonte: FONTES.LAPP, url: "docs/eletrica/pesquisa (endereço público do documento; fora do pacote — test-privacidade)", nivel: "A",
     r20: { 1.5: 13.3, 2.5: 7.98, 4: 4.95, 6: 3.30, 10: 1.91, 16: 1.21, 25: 0.780, 35: 0.554, 50: 0.386, 70: 0.272, 95: 0.206 },
-    alfa: { valor: 0.00393, nivel: "X", fonte: "coeficiente de temperatura do cobre recozido, valor usual (não lido) — conferir" },
+    alfa: { valor: 0.00393, nivel: "S", fonte: "cobre recozido: α20 = 0,00393 /°C (IEC 60228, Anexo B — fator 254,5/(234,5 + t)), lido em fonte secundária (mycableengineering.com, \"Conductor resistance\", 20/11/2026)" },
     tCondutor: 70 };
   /* resistência a 70 °C (temperatura máxima do PVC em regime, conservador) em Ω/km */
   function r70(S) { var r = RESISTENCIA.r20[Number(S)]; return r == null ? null : r * (1 + RESISTENCIA.alfa.valor * (RESISTENCIA.tCondutor - 20)); }

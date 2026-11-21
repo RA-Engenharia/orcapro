@@ -40,7 +40,7 @@
   var NIVEIS = {
     A: "fonte primária lida (SINAPI MG 06/2026 / CEMIG ND-5.1 / NBR 9050:2020)",
     N: "NBR 5410:2004, item lido (cópia não licenciada à RA — só o valor)",
-    S: "NBR 5410 por fonte secundária — conferir na NBR 5410",
+    S: "fonte secundária lida — conferir no texto da norma",
     C: "critério RA (prática de projeto, editável)",
     X: "sem fonte lida — conferir"
   };
@@ -86,7 +86,7 @@
     raioVolume1: { valor: 0.60, nivel: "N", item: "NBR 5410 9.1.2.1, Figura 18", rotulo: "Chuveiro sem box modelado: volume 1 = raio em volta da saída do chuveiro (m)", fonte: F_NBR },
     saidaChuveiro: { valor: 0.30, nivel: "C", rotulo: "Saída do chuveiro: afastamento da parede (m)", fonte: "critério RA (o crivo usual fica a 0,30 m da parede)" },
     intVizinha: { valor: 0.60, nivel: "C", rotulo: "Interruptor na parede ao lado da porta (cômodo estreito): até esta distância do batente (m)", fonte: "critério RA (revisão 21/10/2026: lavabo, closet, depósito e corredor de 1 m com a porta no meio da parede curta não têm parede do lado da maçaneta)" },
-    distBatente: { valor: 0.10, nivel: "X", rotulo: "Interruptor: do batente (vão) à borda da placa (m)", fonte: F_ENG360 + " (10–15 cm do batente, do lado da maçaneta)" },
+    distBatente: { valor: 0.10, nivel: "C", rotulo: "Interruptor: do batente (vão) à borda da placa (m)", fonte: "critério RA: 10 cm do batente, do lado da maçaneta (prática corrente — nenhuma norma fixa essa distância; referência: " + F_ENG360 + ", 10–15 cm)" },
     folgaVao: { valor: 0.10, nivel: "C", rotulo: "Ponto: folga mínima do vão de porta/janela (m)", fonte: "decisão RA da pesquisa" },
     folgaCanto: { valor: 0.10, nivel: "C", rotulo: "Ponto: folga mínima do canto (m)", fonte: "critério RA" },
     atrasPorta: { valor: 0.40, nivel: "C", rotulo: "Faixa atrás da folha aberta, do lado da dobradiça (m)", fonte: "decisão RA da pesquisa (nenhuma tomada atrás da folha aberta)" },
@@ -95,8 +95,8 @@
     afastAgua: { valor: 0.60, nivel: "C", rotulo: "Tomada sobre a pia: longe do ponto d'água (m)", fonte: "decisão RA da pesquisa" },
     entrePontos: { valor: 0.30, nivel: "C", rotulo: "Distância mínima entre dois pontos na mesma parede (m)", fonte: "critério RA" },
     vaoTugMax: { valor: 5, nivel: "C", rotulo: "Trecho de perímetro sem tomada (alerta acima de, m)", fonte: "decisão RA da pesquisa (\"tão uniformemente quanto possível\", NBR 5410 9.5.2.2.1 d; o número 5 m é decisão RA)" },
-    correnteT10: { valor: 10, nivel: "X", rotulo: "Aparelho até esta corrente: tomada 10 A (A)", fonte: "decisão RA da pesquisa (NBR 14136 não lida)" },
-    correnteT20: { valor: 20, nivel: "X", rotulo: "Até esta corrente: tomada 20 A; acima, ligação direta (A)", fonte: "decisão RA da pesquisa (NBR 14136 não lida)" }
+    correnteT10: { valor: 10, nivel: "C", rotulo: "Aparelho até esta corrente: tomada 10 A (A)", fonte: "critério RA sobre o padrão brasileiro de plugues e tomadas (NBR 14136: tomadas de 10 A e de 20 A): aparelho de até 10 A em tomada de 10 A" },
+    correnteT20: { valor: 20, nivel: "C", rotulo: "Até esta corrente: tomada 20 A; acima, ligação direta (A)", fonte: "critério RA sobre o padrão NBR 14136 (a maior tomada do padrão é de 20 A): até 20 A em tomada de 20 A; acima, ligação direta" }
   };
   function criterios(sobre) {
     var out = copia(CRITERIOS);

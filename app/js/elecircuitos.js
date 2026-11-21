@@ -750,6 +750,50 @@
       var A2 = analisar({ estado: estN, avaliarFam: o.avaliarFam, criterios: o.criterios, quadro: qdFinal(estN, o.avaliarFam, qd), atribuicao: tr.atribuicao, projetoBase: A0.projeto });
       if (A2.ok) A = A2;
     }
+    /* 3c) v2.6 (21/11/2026, Reforma Casa 487 — pedido do Rogério "faz a divisão dos eletrodutos lotados"): eletroduto do lançador
+       (elec-/lig-) com mais condutores do que cabe num DN 32 ganha eletroduto(s) PARALELO(s) no MODELO, 8 mm por paralelo, até 2,5 cm (dentro da
+       tolerância de encontro de pontas: liga nas mesmas caixas), e os circuitos se dividem entre eles pela contagem real de condutores
+       — o orçamento e a planilha contam cada um. O feito à mão não é tocado (o auditor acusa). Até 3 voltas. */
+    var usadosP = {}; arr(estN.instalacoes && estN.instalacoes.trechos).forEach(function (t0) { if (t0) usadosP[String(t0.id)] = 1; });
+    var divididos = [];
+    for (var voltaP = 0; voltaP < 3 && A.ok && o.dividirLotados !== false; voltaP++) {
+      var trs = {}; arr(estN.instalacoes && estN.instalacoes.trechos).forEach(function (t0) { if (t0) trs[String(t0.id)] = t0; });
+      var lotP = Object.keys(A.eletrodutos).filter(function (t) { var e = A.eletrodutos[t]; return e && e.dnMinimo == null && /^(elec|lig)-/.test(t) && trs[t] && trs[t].p1 && trs[t].p2; });
+      if (!lotP.length) break;
+      lotP.forEach(function (t) {
+        var e = A.eletrodutos[t], t0 = trs[t], byC = {};
+        A.circuitos.forEach(function (c) { byC[c.id] = c; });
+        /* o circuito com fiação da ligação neste tubo fica no original (a ligação sabe os retornos dela) */
+        var ordem = e.circuitos.slice().sort(function (a, b) { var la = byC[a] && byC[a].condLig ? 0 : 1, lb = byC[b] && byC[b].condLig ? 0 : 1; return la - lb || (a < b ? -1 : 1); });
+        var grupos = [], semCond = [];
+        ordem.forEach(function (cid) {
+          var c = byC[cid], o2 = c && c.cond[t]; if (!o2) { semCond.push(cid); return; } var n = nCond(o2), s = c.dim.secao;
+          var g = grupos.filter(function (g0) { return TB().dnMinimo(g0.n + n, Math.max(g0.s, s)) != null; })[0];
+          if (!g) { g = { ids: [], n: 0, s: 0 }; grupos.push(g); }
+          g.ids.push(cid); g.n += n; g.s = Math.max(g.s, s);
+        });
+        if (grupos.length < 2) return;
+        grupos[0].ids = grupos[0].ids.concat(semCond);   /* circuito sem condutor contado aqui fica no tubo original (não perde a rota) */
+        var dx = t0.p2.x - t0.p1.x, dz = t0.p2.z - t0.p1.z, dh = Math.sqrt(dx * dx + dz * dz), nx = dh > 1e-6 ? -dz / dh : 1, nz = dh > 1e-6 ? dx / dh : 0;
+        tr.atribuicao[t] = grupos[0].ids.slice();
+        grupos.forEach(function (g, gi) {
+          if (!gi) return;
+          var k0 = gi + 1, idP = t + "-p" + k0; while (usadosP[idP]) idP = t + "-p" + (++k0); usadosP[idP] = 1;
+          var nP = gi + voltaP * 3, off = (nP % 2 ? 1 : -1) * Math.min(0.024, 0.008 * Math.ceil(nP / 2)), dnP = TB().dnMinimo(g.n, g.s);   /* alterna o lado: até 3 de cada lado dentro de 2,4 cm */
+          if (dnP == null) { dnP = 32; pend.push({ texto: "Eletroduto " + idP + ": " + g.n + " condutores (" + g.ids.join(", ") + ") não cabem num DN 32 nem sozinhos — passe esse circuito em eletroduto exclusivo de DN maior." }); }
+          var opP = { op: "trecho", id: idP, sistema: "eletrica", material: t0.material || "elet_corrugado", dn: dnP,
+            p1: { x: r4(t0.p1.x + nx * off), y: r4(t0.p1.y), z: r4(t0.p1.z + nz * off) }, p2: { x: r4(t0.p2.x + nx * off), y: r4(t0.p2.y), z: r4(t0.p2.z + nz * off) } };
+          if (t0.aplicacao) opP.aplicacao = t0.aplicacao;
+          tr.ops.push(opP); tr.atribuicao[idP] = g.ids.slice();
+        });
+        divididos.push(t + " (" + e.condutores + " condutores → " + grupos.length + " eletrodutos: " + grupos.map(function (g) { return g.ids.join("+"); }).join(" | ") + ")");
+      });
+      estN = baseMaisOps(est, ops.concat(ligOps).concat(tr.ops));
+      var A4 = analisar({ estado: estN, avaliarFam: o.avaliarFam, criterios: o.criterios, quadro: qdFinal(estN, o.avaliarFam, qd), atribuicao: tr.atribuicao, projetoBase: A0.projeto });
+      if (!A4.ok) break;
+      A = A4;
+    }
+    if (divididos.length) avisos.push(divididos.length + " eletroduto(s) que não cabiam num DN 32 divididos em eletrodutos paralelos no modelo: " + divididos.join("; ") + ".");
     if (caixasDer.length) { tr.caixas = arr(tr.caixas).concat(caixasDer); avisos.push(caixasDer.length + " caixa(s) de derivação postas onde os condutores se dividem ou trocam de eletroduto (" + TB().n5410("6.2.11.1.9") + ")."); }
     /* o DN dos eletrodutos NOVOS pelo número de condutores (fabricante); o que não cabe num DN 32 fica DN 32 e vira pendência
        (o auditor acusa "eletroduto lotado" com a solução) */

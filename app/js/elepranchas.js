@@ -196,7 +196,9 @@
   var PL = { escalas: [50, 75, 100, 125, 150, 200, 250], escalasU: [50, 75, 100, 125, 150, 200, 250], hPonto: 2.0, rLuz: 2.0, tri: 1.8, legW: 92, folgaTit: 14, rotMin: 14 };
   function pavimentosDe(Z) {
     var L = Z.leitura || {}, ps = {}, nomes = arr(L.pavimentos);
-    arr(Z.pontos).forEach(function (p) { ps[p.pav || 0] = 1; });
+    /* v2.3: só vira folha o pavimento com ponto LIGADO a circuito; ponto solto (ambiente sem nome em outro nível, como o da Reforma Casa 487) fica no relatório */
+    var noCirc = {}; arr(Z.circuitos).forEach(function (ci) { arr(ci.pontos).forEach(function (id) { noCirc[id] = 1; }); });
+    arr(Z.pontos).forEach(function (p) { if (noCirc[p.id]) ps[p.pav || 0] = 1; });
     return Object.keys(ps).map(Number).sort().map(function (k) { return { k: k, nome: (nomes[k] && nomes[k].nome) || ("Pavimento " + (k + 1)) }; });
   }
   function folhaPlanta(c, pav) {
@@ -865,7 +867,7 @@
     }
     /* fios por papel da ligação (tetos de marcas por tipo; o número real vem do ci.cond do modelo): tronco e tomada = fase, neutro, terra; interruptor-luz = fase e retorno; luz-luz = neutro, terra e retorno */
     var CAP_FNP = { F: 2, N: 2, PE: 2 };
-    var simbolos = [], nodes = {}, nodeAmbId = {}, gruposParede = {}, porCirc = {}, rotPts = [], qdTexto = null;
+    var coinc = [], simbolos = [], nodes = {}, nodeAmbId = {}, gruposParede = {}, porCirc = {}, rotPts = [], qdTexto = null;
     /* os símbolos: posição na face (ou livre), forma (para as linhas não atravessarem) e nó do grafo */
     arr(Z.pontos).forEach(function (p) {
       if ((p.pav || 0) !== pav.k || !p.caixaP || !circDe[p.id]) return;
@@ -873,7 +875,15 @@
       var hh1 = fin(p.h) ? p.h - (fin(cota) ? cota : 0) : 0.3, parede = p.kind === "luz" && !!(amb0 && fin(amb0.pe) && fin(p.h) && hh1 < amb0.pe - 0.3);
       var sm = { p: p, cid: cid, am: am, parede: parede, nrm: [1, 0], ang: 0, caixa: false, t: 0, edge: -1, real: Pp, piso: false };
       (porCirc[cid] = porCirc[cid] || { amb: {} }).amb[p.amb] = 1;
-      if (p.kind === "luz" && !parede) { sm.q = Pp; sm.o = Pp; sm.cen = Pp; sm.forma = { t: "c", c: Pp, r: 4.2 }; }
+      if (p.kind === "luz" && !parede) {
+        /* v2.3: duas luminárias no MESMO lugar (ambientes sobrepostos no modelo — o CLOSET em dobro da Reforma Casa 487) saem UMA vez na planta;
+           o aviso vai para o relatório (diag.coincidentes), nunca para a folha */
+        var dup = simbolos.filter(function (o) { return o.p.kind === "luz" && !o.parede && o.p.caixaP && Math.hypot(o.p.caixaP[0] - px, o.p.caixaP[2] - pz) < 0.03; })[0];   /* < 3 cm NO MODELO: a mesma luminária em dobro; spots de sanca a 10 cm continuam dois */
+        if (dup) { nodes[p.id] = nodes[dup.p.id]; coinc.push([dup.p.id, p.id]); return; }
+        /* luminária real a menos de um símbolo de outra no papel: desenha as duas, a segunda deslocada ao lado (nenhum ponto some) */
+        for (var vz = 0; vz < 6 && simbolos.some(function (o) { return o.p.kind === "luz" && !o.parede && Math.hypot(o.q[0] - Pp[0], o.q[1] - Pp[1]) < 8.6; }); vz++) Pp = [Pp[0] + 8.8, Pp[1]];
+        sm.q = Pp; sm.o = Pp; sm.cen = Pp; sm.forma = { t: "c", c: Pp, r: 4.2 };
+      }
       else {
         var fc = face(px, pz, am), cs = p.kind === "interruptor" ? 3.0 : 2.8;
         if (fc) { sm.caixa = true; sm.q = P(fc.fx, fc.fz); sm.ang = Math.atan2(fc.nz, fc.nx); sm.nrm = [fc.nx, fc.nz]; sm.t = fc.t; sm.edge = arestas.indexOf(fc.ed); }
@@ -1000,6 +1010,41 @@
       }
       return [p1, p2];
     }
+    /* v2.3: sem arco livre de símbolo, o arco leve passa por cima dele. O desvio por rota (rota + suave) dava voltas em ponto apertado — o
+       "novelo" da Reforma Casa 487 (20/11/2026). Um eletroduto representativo nunca faz laço. */
+    function rotaSemLaco(e, p1, p2) {
+      var r0 = null; try { r0 = suave(rota(p1, p2, 0, e.a, e.b)); } catch (er) { return null; }
+      if (!r0 || r0.length < 2) return null;
+      /* corta cada laço: onde a linha cruza a si mesma, emenda no cruzamento e joga a volta fora (o "novelo" da Reforma Casa 487) */
+      for (var guarda = 0; guarda < 50; guarda++) {
+        var achou = false;
+        for (var a = 0; a + 1 < r0.length && !achou; a++) for (var b = a + 2; b + 1 < r0.length && !achou; b++) {
+          var X = segPt(r0[a], r0[a + 1], r0[b], r0[b + 1]); if (!X) continue;
+          r0 = r0.slice(0, a + 1).concat([X], r0.slice(b + 1)); achou = true;
+        }
+        if (!achou) break;
+      }
+      var Lr = 0; for (var k = 0; k + 1 < r0.length; k++) Lr += dist2(r0[k], r0[k + 1]);
+      return Lr > 4 * dist2(p1, p2) ? null : r0;
+    }
+    function segPt(a, b, c, d) {
+      var r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-12) return null;
+      var tt = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, uu = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+      return tt > 1e-6 && tt < 1 - 1e-6 && uu > 1e-6 && uu < 1 - 1e-6 ? [a[0] + tt * r[0], a[1] + tt * r[1]] : null;
+    }
+    function segX(a, b, c, d) { function o(p, q, r) { return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); } return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0; }
+    function arcoLivre(e, p1, p2) {
+      /* entre arcos leves dos dois lados (flecha 6 a 25 %), o que encosta em menos símbolos alheios */
+      var Lc = dist2(p1, p2), ux = (p2[0] - p1[0]) / Lc, uy = (p2[1] - p1[1]) / Lc, n0 = Math.max(10, Math.min(28, Math.ceil(Lc / 2.2))), best = null, bh = 1e9;
+      [0.06, -0.06, 0.12, -0.12, 0.18, -0.18, 0.25, -0.25].forEach(function (fl) {
+        var q = [(p1[0] + p2[0]) / 2 - uy * 2 * fl * Lc, (p1[1] + p2[1]) / 2 + ux * 2 * fl * Lc], pts = [], h = 0;
+        for (var i = 0; i <= n0; i++) { var s = i / n0; pts.push([(1 - s) * (1 - s) * p1[0] + 2 * (1 - s) * s * q[0] + s * s * p2[0], (1 - s) * (1 - s) * p1[1] + 2 * (1 - s) * s * q[1] + s * s * p2[1]]); }
+        pts.forEach(function (pt, k) { if (k < 2 || k > pts.length - 3) return; Object.keys(nodes).forEach(function (id) { var N = nodes[id]; if (id !== e.a && id !== e.b && N.R > 0 && dentroF(pt, N.f, 0.4)) h++; }); });
+        h += Math.abs(fl) * 4;   /* a curva mais leve desempata */
+        if (h < bh) { bh = h; best = pts; }
+      });
+      return best;
+    }
     function suave(pts) {
       if (pts.length < 3) return pts;
       for (var it = 0; it < 2; it++) {
@@ -1009,7 +1054,7 @@
       }
       return pts;
     }
-    var diag = { legs: [], simbolos: [], numeros: [], paredes: [], ambs: {}, k: k, semMarca: 0, setas: 0, nTrechos: 0, ints: [], semChamada: [], marcas: [], chamadas: [], nos: {}, paredesPoly: walls.map(function (w0) { return w0.pts.map(function (q0) { return P(q0[0], q0[1]); }); }) }, rotLig = [], segsLig = [];
+    var diag = { legs: [], simbolos: [], numeros: [], paredes: [], ambs: {}, k: k, semMarca: 0, setas: 0, nTrechos: 0, ints: [], semChamada: [], marcas: [], chamadas: [], nos: {}, paredesPoly: walls.map(function (w0) { return w0.pts.map(function (q0) { return P(q0[0], q0[1]); }); }), coincidentes: coinc }, rotLig = [], segsLig = [];
     arestas.forEach(function (e) { diag.paredes.push([P(e[0][0], e[0][1]), P(e[1][0], e[1][1])]); }); ambs.forEach(function (x) { diag.ambs[x.id] = arr(x.pts).map(function (q) { return P(q[0], q[1]); }); });
     /* ARCO LEVE em cada ligação (curvatura suave e constante, flecha de 10% do comprimento, como os arcos do modelo): o arco sai da ponta de MAIOR grau virando sempre para o mesmo lado (os arcos vizinhos
        do mesmo nó abrem em leque, sem se cruzar perto dele); se o lado escolhido bate num símbolo, tenta o outro lado e depois flechas menores; sem lugar, o caminho com desvio */
@@ -1037,8 +1082,10 @@
     function posEm(it, s) { var a1 = ptS(it, s - 0.8), b1 = ptS(it, s + 0.8), d0 = dist2(a1, b1) || 1; return { p: ptS(it, s), u: [(b1[0] - a1[0]) / d0, (b1[1] - a1[1]) / d0] }; }
     /* desenha as ligações: UMA linha por par de nós, mais fina que a de antes (0,34 mm, a do modelo), com UMA seta pequena no meio */
     var arqN = D.sg.length;   /* os traços da arquitetura (paredes, vãos, portas) vêm antes dos eletrodutos: a chamada pode passar sobre a folha da porta, nunca sobre eletroduto, símbolo ou texto */
+    var parFeito = {};
     Object.keys(edges).sort().forEach(function (kk) {
       var e = edges[kk], A = nodes[e.a], B = nodes[e.b], Lq = dist2(A.c, B.c); if (Lq < 1e-6) return;
+      var kPar = [A.id, B.id].sort().join("|"); if (parFeito[kPar]) return; parFeito[kPar] = 1;   /* ponto repetido no modelo: a ligação sai uma vez */
       var ux0 = (B.c[0] - A.c[0]) / Lq, uy0 = (B.c[1] - A.c[1]) / Lq, sA = saidaF(A.f, A.c, [ux0, uy0]), sB = saidaF(B.f, B.c, [-ux0, -uy0]);
       var p1 = [A.c[0] + ux0 * sA, A.c[1] + uy0 * sA], p2 = [B.c[0] - ux0 * sB, B.c[1] - uy0 * sB];
       /* o eletroduto TERMINA na caixinha embutida (o do modelo passa por dentro do símbolo até ela); entre símbolos da mesma parede encadeados, para na borda como antes */
@@ -1047,7 +1094,7 @@
       var retaFim = false;
       if ((dist2(p1, p2) < 3 || Lq < 8) && A.fim && B.fim) { p1 = A.fim; p2 = B.fim; retaFim = true; if (dist2(p1, p2) < 1.5) return; }   /* caixinhas coladas: a ligação vai de caixinha a caixinha, reta, dentro da parede */
       if (dist2(p1, p2) < 3) return;
-      var caminho = retaFim ? [p1, p2] : (arcoLig(e, p1, p2, 0.7, mesmaP ? A.sm.nrm : null) || arcoLig(e, p1, p2, 0.15, mesmaP ? A.sm.nrm : null) || suave(rota(p1, p2, 0, e.a, e.b))), cum = [0], Ltot = 0; nLig++;
+      var caminho = retaFim ? [p1, p2] : (arcoLig(e, p1, p2, 0.7, mesmaP ? A.sm.nrm : null) || arcoLig(e, p1, p2, 0.15, mesmaP ? A.sm.nrm : null) || rotaSemLaco(e, p1, p2) || arcoLivre(e, p1, p2)), cum = [0], Ltot = 0; nLig++;
       if (e.a === "QD" || e.b === "QD") nTronco++;
       for (var i6 = 0; i6 + 1 < caminho.length; i6++) { L(D, caminho[i6][0], caminho[i6][1], caminho[i6 + 1][0], caminho[i6 + 1][1], "ELE-ELETRODUTO"); segsLig.push({ k: kk, a: caminho[i6], b: caminho[i6 + 1] }); Ltot += dist2(caminho[i6], caminho[i6 + 1]); cum.push(Ltot); }
       diag.legs.push({ pts: caminho.slice(), a: e.a, b: e.b, k: kk });
@@ -1306,7 +1353,8 @@
         }
         if (!feito) { it.semChamada = true; diag.semMarca++; diag.semChamada.push(it.k); }
       });
-      planos.filter(function (p0) { return p0.vivo; }).forEach(desenhaPlano);
+      var vistoPl = {};   /* a mesma chamada (mesmo lugar, mesmos circuitos) só uma vez: trechos repetidos no modelo davam o número empilhado */
+      planos.filter(function (p0) { if (!p0.vivo) return false; var kp = p0.T[0].toFixed(1) + "," + p0.T[1].toFixed(1) + ":" + p0.linhas.map(function (r0) { return r0.gs.map(function (gp) { return gp.g.c.lab; }).join("+"); }).join("/"); if (vistoPl[kp]) return false; vistoPl[kp] = 1; return true; }).forEach(desenhaPlano);
     }
     /* textos: blocos dos ambientes, depois os rótulos - cada um no lugar livre mais perto (nada sobreposto) */
     function janela(q, r) { return [Math.max(areaD[0], q[0] - r), Math.max(areaD[1], q[1] - r), Math.min(areaD[2], q[0] + r), Math.min(areaD[3], q[1] + r)]; }
@@ -1350,7 +1398,9 @@
       return best;
     }
     indexaSg();
+    var ambVisto = {};
     ambs.forEach(function (x) {
+      var kA = txt(x.nome).toUpperCase() + "|" + (fin(x.area) ? x.area.toFixed(1) : "") + "|" + (fin(x.cx) ? x.cx.toFixed(1) : "") + "|" + (fin(x.cz) ? x.cz.toFixed(1) : ""); if (ambVisto[kA]) return; ambVisto[kA] = 1;   /* ambiente em dobro no modelo: um bloco só */
       var g0 = x.cls && x.cls.grupo || "demais", linhas = [txt(x.nome).toUpperCase(), "Área=" + br(x.area, 2) + " m²", "Perímetro=" + br(x.perimetro, 2) + " m",
         "Quant. mín. de TUGs=" + (ER0 && fin(x.area) && fin(x.perimetro) ? ER0.nTug(g0, x.area, x.perimetro, C0) : "-"), "Pot. de iluminação=" + (ER0 && fin(x.area) ? br(ER0.vaIluminacao(x.area, C0), 0) + " VA" : "-")];
       var hh = 1.45, wB = Math.max.apply(null, linhas.map(function (l1) { return A0.largTexto(l1, hh); })), hB = linhas.length * hh * 1.4, pref = P(x.cx, x.cz), cc = null, rr = [10, 20, 35, 60, 90, 130];
@@ -1471,18 +1521,23 @@
     var yL = legendaDiagramas(D, A0, x3 + 100, yC, Math.min(W3 - 100, 130), Z), yE = entradaDiagrama(D, A0, x1, yA + 8, W1, Z);
     var topo = Math.max(yE, yB, yQ, yL);
     if (topo - a.y > a.h * 0.56) return { ok: false, motivo: "as tabelas do topo passam de " + Math.round(topo - a.y) + " mm" };
-    var xP = x1 + KU.legW + 6, reg = { x: xP, y: topo + 4, w: a.x + a.w - 3 - xP, h: a.y + a.h - 2 - (topo + 4) };
-    var esc = escalaPlanta(Z, pav, reg.w - 16, reg.h - 24);
-    if (!esc || esc > 100) return { ok: false, motivo: "a planta não cabe até 1:100 (" + (esc ? "1:" + esc : "nem 1:250") + ")" };
-    c.leg = { x: x1, y: topo + 4, w: KU.legW, baixo: a.y + a.h - 3 }; c.tituloPlanta = c.tituloPlanta || "Planta Baixa";
-    var rp = folhaPlantaRef(c, pav, reg);
-    if (!c.leg.fim || c.leg.yReal < topo + 2) return { ok: false, motivo: "a legenda da planta não cabe" };
+    var xP = x1 + KU.legW + 6, reg = { x: xP, y: topo + 4, w: a.x + a.w - 3 - xP, h: a.y + a.h - 2 - (topo + 4) }, rp = null;
+    if (!c.semPlanta) {
+      var esc = escalaPlanta(Z, pav, reg.w - 16, reg.h - 24);
+      if (!esc || esc > 100) return { ok: false, dividir: true, motivo: "a planta não cabe até 1:100 ao lado das tabelas (" + (esc ? "1:" + esc : "nem 1:250") + ")" };
+      /* v2.3 (20/11/2026, projeto real da Reforma Casa 487): abaixo de 1:50 os símbolos e textos (tamanho fixo no papel) se amontoam
+         — 294 textos sobrepostos e fios em novelo. A planta vai sozinha numa folha a 1:50 e as tabelas, o quadro e o unifilar na seguinte. */
+      if (esc > 50 && !c.aceitaReduzida) return { ok: false, dividir: true, motivo: "a planta só cabe a 1:" + esc + " ao lado das tabelas: vai sozinha numa folha" };
+      c.leg = { x: x1, y: topo + 4, w: KU.legW, baixo: a.y + a.h - 3 }; c.tituloPlanta = c.tituloPlanta || "Planta Baixa";
+      rp = folhaPlantaRef(c, pav, reg);
+      if (!c.leg.fim || c.leg.yReal < topo + 2) return { ok: false, motivo: "a legenda da planta não cabe" };
+    }
     var yU = unifilarRef(D, A0, col.x + 3, col.y + 3, col.w - 6, Z), yR = yU + 2;
     var rs = resumoTextos(Z), wR = col.w - 8;
     T(D, col.x + 4, yR + 3, "DEMANDA E PADRÃO DE ENTRADA", 3.0, { peso: 0.2 }); yR += 5.5;
     rs.esq.concat(rs.dir).forEach(function (s0) { A0.quebrar(s0, KU.h, wR).forEach(function (q0) { T(D, col.x + 4, yR + KU.h, q0, KU.h, { cor: /não verificado|PROVISÓRIO/.test(q0) ? K2.vermelho : undefined }); yR += KU.h * 1.4; }); yR += 0.8; });
     if (yR > g.carimbo.y - 40) return { ok: false, motivo: "o unifilar e o resumo não deixam lugar para as notas" };
-    return { ok: true, escala: "1:" + rp.esc, colY: yR + 2, pend: pend, esc: rp.esc, diag: rp.diag };
+    return { ok: true, escala: rp ? "1:" + rp.esc : "SEM ESCALA", colY: yR + 2, pend: pend, esc: rp ? rp.esc : null, diag: rp ? rp.diag : null };
   }
 
   /* ------------------------------------------------------------ COLUNA (notas, normas, pendências) */
@@ -1537,17 +1592,25 @@
       return res;
     }
     /* v2.0: a FOLHA ÚNICA "PROJETO ELÉTRICO" (modelo de referência) quando cabe; senão, o modo de várias folhas (v1.1) */
-    var pavs = !opcoes.semPlanta && Z.leitura ? pavimentosDe(Z) : [], unica = null, motivoUnica = "", tri = null;
+    var pavs = !opcoes.semPlanta && Z.leitura ? pavimentosDe(Z) : [], unica = null, motivoUnica = "", tri = null, dividida = false;
     if (opcoes.folhaUnica !== false && pavs.length) {
       tri = { D: new A.Desenho(E, []), geo: geo, A: Z, qdNome: qdNome, qdAmb: qdAmb, op: opcoes, pav: pavs[0], tituloPlanta: "Planta Baixa" };
       try { unica = folhaUnica(tri); } catch (e0) { unica = { ok: false, motivo: e0 && e0.message ? e0.message : String(e0) }; }
       if (unica.ok && !coluna(new A.Desenho(E, null), geo, blocosDe(Z, unica.pend), unica.colY)) unica = { ok: false, motivo: "as notas e pendências não cabem na coluna" };
+      if (!unica.ok && unica.dividir && opcoes.dividir !== false) {
+        /* a planta vai para a folha 01 (1:50); as tabelas, o quadro, o unifilar e as notas ficam na 02, no mesmo desenho da folha única */
+        var tri2 = { D: new A.Desenho(E, []), geo: geo, A: Z, qdNome: qdNome, qdAmb: qdAmb, op: opcoes, pav: pavs[0], semPlanta: true };
+        var u2; try { u2 = folhaUnica(tri2); } catch (e2) { u2 = { ok: false, motivo: e2 && e2.message ? e2.message : String(e2) }; }
+        if (u2.ok && !coluna(new A.Desenho(E, null), geo, blocosDe(Z, u2.pend), u2.colY)) u2 = { ok: false, motivo: "as notas e pendências não cabem na coluna" };
+        if (u2.ok) { unica = u2; tri = tri2; dividida = true; }
+      }
       if (!unica.ok) { motivoUnica = unica.motivo; unica = null; }
     }
     var juntas = false;
     if (unica) {
       /* o desenho de teste, já pronto e aprovado, é o da folha (não desenha duas vezes) */
-      nova({ id: "projeto-eletrico", titulo: "PROJETO ELÉTRICO", tipo: "unica" }, function () { return unica; }, tri.D);
+      if (dividida) pavs.forEach(function (pv) { plantaRef(pv); });
+      nova({ id: "projeto-eletrico", titulo: dividida ? "QUADRO, DIAGRAMAS E TABELAS" : "PROJETO ELÉTRICO", tipo: "unica" }, function () { return unica; }, tri.D);
     } else {
       if (opcoes.folhaUnica !== false && pavs.length) avisos.push("Folha única não coube (" + motivoUnica + "): saiu no modo de várias folhas.");
       nova({ id: "quadro-cargas", titulo: "QUADRO DE CARGAS E DIAGRAMA UNIFILAR", tipo: "quadro" }, function (c) {
@@ -1558,8 +1621,15 @@
       if (!juntas) { feitas[0].def.titulo = "QUADRO DE CARGAS"; nova({ id: "unifilar", titulo: "DIAGRAMA UNIFILAR", tipo: "unifilar" }, function (c) { return folhaUnifilar(c); }); }
     }
     /* a planta de pontos e eletrodutos, uma folha por pavimento (opcoes.semPlanta tira); na folha única o 1º pavimento já está nela */
+    function plantaRef(pv) {
+      nova({ id: "planta-" + pv.k, titulo: "PLANTA DE PONTOS E ELETRODUTOS - " + txt(pv.nome).toUpperCase(), tipo: "planta" }, function (c) {
+        var ar = c.geo.area, xP = ar.x + 4 + KU.legW + 6;
+        c.op = opcoes; c.tituloPlanta = "Planta Baixa - " + txt(pv.nome); c.leg = { x: ar.x + 4, y: ar.y + 4, w: KU.legW, baixo: ar.y + ar.h - 3 };
+        return folhaPlantaRef(c, pv, { x: xP, y: ar.y + 2, w: ar.x + ar.w - 3 - xP, h: ar.h - 4 });
+      });
+    }
     pavs.forEach(function (pv, ip) {
-      if (unica && ip === 0) return;
+      if (dividida || (unica && ip === 0)) return;
       nova({ id: "planta-" + pv.k, titulo: "PLANTA DE PONTOS E ELETRODUTOS - " + txt(pv.nome).toUpperCase(), tipo: "planta" }, function (c) {
         if (!unica) return folhaPlanta(c, pv);
         /* v2.1: os pavimentos além do primeiro no MESMO estilo da folha única (bloco do ambiente, etiquetas, legenda em coluna embaixo-esquerda) */

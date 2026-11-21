@@ -207868,7 +207868,7 @@ function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite
 var NIVEIS = {
 A: "fonte primária lida (SINAPI MG 06/2026 / CEMIG ND-5.1 / NBR 9050:2020)",
 N: "NBR 5410:2004, item lido (cópia não licenciada à RA — só o valor)",
-S: "NBR 5410 por fonte secundária — conferir na NBR 5410",
+S: "fonte secundária lida — conferir no texto da norma",
 C: "critério RA (prática de projeto, editável)",
 X: "sem fonte lida — conferir"
 };
@@ -207911,7 +207911,7 @@ afastBox: { valor: 0.60, nivel: "N", item: "NBR 5410 9.1.4.3.1 + 9.1.2.1 (Figura
 raioVolume1: { valor: 0.60, nivel: "N", item: "NBR 5410 9.1.2.1, Figura 18", rotulo: "Chuveiro sem box modelado: volume 1 = raio em volta da saída do chuveiro (m)", fonte: F_NBR },
 saidaChuveiro: { valor: 0.30, nivel: "C", rotulo: "Saída do chuveiro: afastamento da parede (m)", fonte: "critério RA (o crivo usual fica a 0,30 m da parede)" },
 intVizinha: { valor: 0.60, nivel: "C", rotulo: "Interruptor na parede ao lado da porta (cômodo estreito): até esta distância do batente (m)", fonte: "critério RA (revisão 21/10/2026: lavabo, closet, depósito e corredor de 1 m com a porta no meio da parede curta não têm parede do lado da maçaneta)" },
-distBatente: { valor: 0.10, nivel: "X", rotulo: "Interruptor: do batente (vão) à borda da placa (m)", fonte: F_ENG360 + " (10–15 cm do batente, do lado da maçaneta)" },
+distBatente: { valor: 0.10, nivel: "C", rotulo: "Interruptor: do batente (vão) à borda da placa (m)", fonte: "critério RA: 10 cm do batente, do lado da maçaneta (prática corrente — nenhuma norma fixa essa distância; referência: " + F_ENG360 + ", 10–15 cm)" },
 folgaVao: { valor: 0.10, nivel: "C", rotulo: "Ponto: folga mínima do vão de porta/janela (m)", fonte: "decisão RA da pesquisa" },
 folgaCanto: { valor: 0.10, nivel: "C", rotulo: "Ponto: folga mínima do canto (m)", fonte: "critério RA" },
 atrasPorta: { valor: 0.40, nivel: "C", rotulo: "Faixa atrás da folha aberta, do lado da dobradiça (m)", fonte: "decisão RA da pesquisa (nenhuma tomada atrás da folha aberta)" },
@@ -207920,8 +207920,8 @@ correnteExclusivo: { valor: 10, nivel: "N", item: "NBR 5410 9.5.3.1", rotulo: "A
 afastAgua: { valor: 0.60, nivel: "C", rotulo: "Tomada sobre a pia: longe do ponto d'água (m)", fonte: "decisão RA da pesquisa" },
 entrePontos: { valor: 0.30, nivel: "C", rotulo: "Distância mínima entre dois pontos na mesma parede (m)", fonte: "critério RA" },
 vaoTugMax: { valor: 5, nivel: "C", rotulo: "Trecho de perímetro sem tomada (alerta acima de, m)", fonte: "decisão RA da pesquisa (\"tão uniformemente quanto possível\", NBR 5410 9.5.2.2.1 d; o número 5 m é decisão RA)" },
-correnteT10: { valor: 10, nivel: "X", rotulo: "Aparelho até esta corrente: tomada 10 A (A)", fonte: "decisão RA da pesquisa (NBR 14136 não lida)" },
-correnteT20: { valor: 20, nivel: "X", rotulo: "Até esta corrente: tomada 20 A; acima, ligação direta (A)", fonte: "decisão RA da pesquisa (NBR 14136 não lida)" }
+correnteT10: { valor: 10, nivel: "C", rotulo: "Aparelho até esta corrente: tomada 10 A (A)", fonte: "critério RA sobre o padrão brasileiro de plugues e tomadas (NBR 14136: tomadas de 10 A e de 20 A): aparelho de até 10 A em tomada de 10 A" },
+correnteT20: { valor: 20, nivel: "C", rotulo: "Até esta corrente: tomada 20 A; acima, ligação direta (A)", fonte: "critério RA sobre o padrão NBR 14136 (a maior tomada do padrão é de 20 A): até 20 A em tomada de 20 A; acima, ligação direta" }
 };
 function criterios(sobre) {
 var out = copia(CRITERIOS);
@@ -220691,7 +220691,7 @@ var ELETRODUTO = { item: "6.2.11.1.6 e 6.2.11.1.7", fonte: FONTES.NBR,
 taxa_pct: { 1: 53, 2: 31, 3: 40 }, trechoInterno_m: 15, trechoExterno_m: 30, reducaoPorCurva_m: 3, curvasMax: 3,
 texto: "taxa de ocupação ≤ 53 % (1 condutor), 31 % (2), 40 % (3 ou mais) — a); trecho contínuo sem caixa ≤ 15 m interno / 30 m externo, menos 3 m por curva de 90° — b); no máximo 3 curvas de 90° entre caixas (6.2.11.1.7); caixa em toda emenda/derivação (6.2.11.1.9 b, 6.2.11.1.11)" };
 var COORD = { item: "5.3.4.1", fonte: FONTES.NBR, conferido: "imagem PDF p. 71 (norma p. 63)", texto: "a) IB ≤ In ≤ Iz; b) I2 ≤ 1,45 Iz",
-i2: { valor: 1.45, nivel: "X", fonte: "I2 = 1,45 In do disjuntor da NBR NM 60898 (norma do produto, NÃO lida — conferir): com ele, a condição b) se reduz a In ≤ Iz" } };
+i2: { valor: 1.45, nivel: "S", fonte: "IEC 60898-1 / NBR NM 60898 (norma do produto): corrente convencional de atuação I2 = 1,45 In em 1 h, a 30 °C — lido em fonte secundária (Schneider Electric, FAQ FA369327, disjuntor Acti 9 iC60, 20/11/2026); com ele, a condição b) se reduz a In ≤ Iz" } };
 var DR = { item: "5.1.3.2.2", fonte: FONTES.NBR,
 casos: {
 a: "circuitos que sirvam a pontos de utilização em locais contendo banheira ou chuveiro (ver 9.1)",
@@ -220734,7 +220734,7 @@ return k > L.length ? null : L[k - 1];
 }
 var RESISTENCIA = { fonte: FONTES.LAPP, url: "docs/eletrica/pesquisa (endereço público do documento; fora do pacote — test-privacidade)", nivel: "A",
 r20: { 1.5: 13.3, 2.5: 7.98, 4: 4.95, 6: 3.30, 10: 1.91, 16: 1.21, 25: 0.780, 35: 0.554, 50: 0.386, 70: 0.272, 95: 0.206 },
-alfa: { valor: 0.00393, nivel: "X", fonte: "coeficiente de temperatura do cobre recozido, valor usual (não lido) — conferir" },
+alfa: { valor: 0.00393, nivel: "S", fonte: "cobre recozido: α20 = 0,00393 /°C (IEC 60228, Anexo B — fator 254,5/(234,5 + t)), lido em fonte secundária (mycableengineering.com, \"Conductor resistance\", 20/11/2026)" },
 tCondutor: 70 };
 function r70(S) { var r = RESISTENCIA.r20[Number(S)]; return r == null ? null : r * (1 + RESISTENCIA.alfa.valor * (RESISTENCIA.tCondutor - 20)); }
 var SINAPI = { fonte: FONTES.SINAPI,
@@ -224169,6 +224169,45 @@ estN = baseMaisOps(est, ops.concat(ligOps).concat(tr.ops));
 var A2 = analisar({ estado: estN, avaliarFam: o.avaliarFam, criterios: o.criterios, quadro: qdFinal(estN, o.avaliarFam, qd), atribuicao: tr.atribuicao, projetoBase: A0.projeto });
 if (A2.ok) A = A2;
 }
+var usadosP = {}; arr(estN.instalacoes && estN.instalacoes.trechos).forEach(function (t0) { if (t0) usadosP[String(t0.id)] = 1; });
+var divididos = [];
+for (var voltaP = 0; voltaP < 3 && A.ok && o.dividirLotados !== false; voltaP++) {
+var trs = {}; arr(estN.instalacoes && estN.instalacoes.trechos).forEach(function (t0) { if (t0) trs[String(t0.id)] = t0; });
+var lotP = Object.keys(A.eletrodutos).filter(function (t) { var e = A.eletrodutos[t]; return e && e.dnMinimo == null && /^(elec|lig)-/.test(t) && trs[t] && trs[t].p1 && trs[t].p2; });
+if (!lotP.length) break;
+lotP.forEach(function (t) {
+var e = A.eletrodutos[t], t0 = trs[t], byC = {};
+A.circuitos.forEach(function (c) { byC[c.id] = c; });
+var ordem = e.circuitos.slice().sort(function (a, b) { var la = byC[a] && byC[a].condLig ? 0 : 1, lb = byC[b] && byC[b].condLig ? 0 : 1; return la - lb || (a < b ? -1 : 1); });
+var grupos = [], semCond = [];
+ordem.forEach(function (cid) {
+var c = byC[cid], o2 = c && c.cond[t]; if (!o2) { semCond.push(cid); return; } var n = nCond(o2), s = c.dim.secao;
+var g = grupos.filter(function (g0) { return TB().dnMinimo(g0.n + n, Math.max(g0.s, s)) != null; })[0];
+if (!g) { g = { ids: [], n: 0, s: 0 }; grupos.push(g); }
+g.ids.push(cid); g.n += n; g.s = Math.max(g.s, s);
+});
+if (grupos.length < 2) return;
+grupos[0].ids = grupos[0].ids.concat(semCond);
+var dx = t0.p2.x - t0.p1.x, dz = t0.p2.z - t0.p1.z, dh = Math.sqrt(dx * dx + dz * dz), nx = dh > 1e-6 ? -dz / dh : 1, nz = dh > 1e-6 ? dx / dh : 0;
+tr.atribuicao[t] = grupos[0].ids.slice();
+grupos.forEach(function (g, gi) {
+if (!gi) return;
+var k0 = gi + 1, idP = t + "-p" + k0; while (usadosP[idP]) idP = t + "-p" + (++k0); usadosP[idP] = 1;
+var nP = gi + voltaP * 3, off = (nP % 2 ? 1 : -1) * Math.min(0.024, 0.008 * Math.ceil(nP / 2)), dnP = TB().dnMinimo(g.n, g.s);
+if (dnP == null) { dnP = 32; pend.push({ texto: "Eletroduto " + idP + ": " + g.n + " condutores (" + g.ids.join(", ") + ") não cabem num DN 32 nem sozinhos — passe esse circuito em eletroduto exclusivo de DN maior." }); }
+var opP = { op: "trecho", id: idP, sistema: "eletrica", material: t0.material || "elet_corrugado", dn: dnP,
+p1: { x: r4(t0.p1.x + nx * off), y: r4(t0.p1.y), z: r4(t0.p1.z + nz * off) }, p2: { x: r4(t0.p2.x + nx * off), y: r4(t0.p2.y), z: r4(t0.p2.z + nz * off) } };
+if (t0.aplicacao) opP.aplicacao = t0.aplicacao;
+tr.ops.push(opP); tr.atribuicao[idP] = g.ids.slice();
+});
+divididos.push(t + " (" + e.condutores + " condutores → " + grupos.length + " eletrodutos: " + grupos.map(function (g) { return g.ids.join("+"); }).join(" | ") + ")");
+});
+estN = baseMaisOps(est, ops.concat(ligOps).concat(tr.ops));
+var A4 = analisar({ estado: estN, avaliarFam: o.avaliarFam, criterios: o.criterios, quadro: qdFinal(estN, o.avaliarFam, qd), atribuicao: tr.atribuicao, projetoBase: A0.projeto });
+if (!A4.ok) break;
+A = A4;
+}
+if (divididos.length) avisos.push(divididos.length + " eletroduto(s) que não cabiam num DN 32 divididos em eletrodutos paralelos no modelo: " + divididos.join("; ") + ".");
 if (caixasDer.length) { tr.caixas = arr(tr.caixas).concat(caixasDer); avisos.push(caixasDer.length + " caixa(s) de derivação postas onde os condutores se dividem ou trocam de eletroduto (" + TB().n5410("6.2.11.1.9") + ")."); }
 tr.trechos.forEach(function (t) {
 var e = A.eletrodutos[t.id]; if (!e) return;
@@ -224623,7 +224662,8 @@ return { escala: "SEM ESCALA" };
 var PL = { escalas: [50, 75, 100, 125, 150, 200, 250], escalasU: [50, 75, 100, 125, 150, 200, 250], hPonto: 2.0, rLuz: 2.0, tri: 1.8, legW: 92, folgaTit: 14, rotMin: 14 };
 function pavimentosDe(Z) {
 var L = Z.leitura || {}, ps = {}, nomes = arr(L.pavimentos);
-arr(Z.pontos).forEach(function (p) { ps[p.pav || 0] = 1; });
+var noCirc = {}; arr(Z.circuitos).forEach(function (ci) { arr(ci.pontos).forEach(function (id) { noCirc[id] = 1; }); });
+arr(Z.pontos).forEach(function (p) { if (noCirc[p.id]) ps[p.pav || 0] = 1; });
 return Object.keys(ps).map(Number).sort().map(function (k) { return { k: k, nome: (nomes[k] && nomes[k].nome) || ("Pavimento " + (k + 1)) }; });
 }
 function folhaPlanta(c, pav) {
@@ -225228,14 +225268,19 @@ if (Math.abs(dv) > 1e-9) t = Math.min(t, ((dv > 0 ? f.hv : -f.hv) - ov) / dv);
 return Math.max(0, t) + 0.3;
 }
 var CAP_FNP = { F: 2, N: 2, PE: 2 };
-var simbolos = [], nodes = {}, nodeAmbId = {}, gruposParede = {}, porCirc = {}, rotPts = [], qdTexto = null;
+var coinc = [], simbolos = [], nodes = {}, nodeAmbId = {}, gruposParede = {}, porCirc = {}, rotPts = [], qdTexto = null;
 arr(Z.pontos).forEach(function (p) {
 if ((p.pav || 0) !== pav.k || !p.caixaP || !circDe[p.id]) return;
 var cid = circDe[p.id], px = p.caixaP[0], pz = p.caixaP[2], Pp = P(px, pz), am = ambDe(px, pz, p.amb), amb0 = ambs.filter(function (x0) { return x0.id === p.amb; })[0];
 var hh1 = fin(p.h) ? p.h - (fin(cota) ? cota : 0) : 0.3, parede = p.kind === "luz" && !!(amb0 && fin(amb0.pe) && fin(p.h) && hh1 < amb0.pe - 0.3);
 var sm = { p: p, cid: cid, am: am, parede: parede, nrm: [1, 0], ang: 0, caixa: false, t: 0, edge: -1, real: Pp, piso: false };
 (porCirc[cid] = porCirc[cid] || { amb: {} }).amb[p.amb] = 1;
-if (p.kind === "luz" && !parede) { sm.q = Pp; sm.o = Pp; sm.cen = Pp; sm.forma = { t: "c", c: Pp, r: 4.2 }; }
+if (p.kind === "luz" && !parede) {
+var dup = simbolos.filter(function (o) { return o.p.kind === "luz" && !o.parede && o.p.caixaP && Math.hypot(o.p.caixaP[0] - px, o.p.caixaP[2] - pz) < 0.03; })[0];
+if (dup) { nodes[p.id] = nodes[dup.p.id]; coinc.push([dup.p.id, p.id]); return; }
+for (var vz = 0; vz < 6 && simbolos.some(function (o) { return o.p.kind === "luz" && !o.parede && Math.hypot(o.q[0] - Pp[0], o.q[1] - Pp[1]) < 8.6; }); vz++) Pp = [Pp[0] + 8.8, Pp[1]];
+sm.q = Pp; sm.o = Pp; sm.cen = Pp; sm.forma = { t: "c", c: Pp, r: 4.2 };
+}
 else {
 var fc = face(px, pz, am), cs = p.kind === "interruptor" ? 3.0 : 2.8;
 if (fc) { sm.caixa = true; sm.q = P(fc.fx, fc.fz); sm.ang = Math.atan2(fc.nz, fc.nx); sm.nrm = [fc.nx, fc.nz]; sm.t = fc.t; sm.edge = arestas.indexOf(fc.ed); }
@@ -225351,6 +225396,37 @@ return a1.concat(b1.slice(1));
 }
 return [p1, p2];
 }
+function rotaSemLaco(e, p1, p2) {
+var r0 = null; try { r0 = suave(rota(p1, p2, 0, e.a, e.b)); } catch (er) { return null; }
+if (!r0 || r0.length < 2) return null;
+for (var guarda = 0; guarda < 50; guarda++) {
+var achou = false;
+for (var a = 0; a + 1 < r0.length && !achou; a++) for (var b = a + 2; b + 1 < r0.length && !achou; b++) {
+var X = segPt(r0[a], r0[a + 1], r0[b], r0[b + 1]); if (!X) continue;
+r0 = r0.slice(0, a + 1).concat([X], r0.slice(b + 1)); achou = true;
+}
+if (!achou) break;
+}
+var Lr = 0; for (var k = 0; k + 1 < r0.length; k++) Lr += dist2(r0[k], r0[k + 1]);
+return Lr > 4 * dist2(p1, p2) ? null : r0;
+}
+function segPt(a, b, c, d) {
+var r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-12) return null;
+var tt = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, uu = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+return tt > 1e-6 && tt < 1 - 1e-6 && uu > 1e-6 && uu < 1 - 1e-6 ? [a[0] + tt * r[0], a[1] + tt * r[1]] : null;
+}
+function segX(a, b, c, d) { function o(p, q, r) { return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); } return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0; }
+function arcoLivre(e, p1, p2) {
+var Lc = dist2(p1, p2), ux = (p2[0] - p1[0]) / Lc, uy = (p2[1] - p1[1]) / Lc, n0 = Math.max(10, Math.min(28, Math.ceil(Lc / 2.2))), best = null, bh = 1e9;
+[0.06, -0.06, 0.12, -0.12, 0.18, -0.18, 0.25, -0.25].forEach(function (fl) {
+var q = [(p1[0] + p2[0]) / 2 - uy * 2 * fl * Lc, (p1[1] + p2[1]) / 2 + ux * 2 * fl * Lc], pts = [], h = 0;
+for (var i = 0; i <= n0; i++) { var s = i / n0; pts.push([(1 - s) * (1 - s) * p1[0] + 2 * (1 - s) * s * q[0] + s * s * p2[0], (1 - s) * (1 - s) * p1[1] + 2 * (1 - s) * s * q[1] + s * s * p2[1]]); }
+pts.forEach(function (pt, k) { if (k < 2 || k > pts.length - 3) return; Object.keys(nodes).forEach(function (id) { var N = nodes[id]; if (id !== e.a && id !== e.b && N.R > 0 && dentroF(pt, N.f, 0.4)) h++; }); });
+h += Math.abs(fl) * 4;
+if (h < bh) { bh = h; best = pts; }
+});
+return best;
+}
 function suave(pts) {
 if (pts.length < 3) return pts;
 for (var it = 0; it < 2; it++) {
@@ -225360,7 +225436,7 @@ o.push(pts[pts.length - 1]); pts = o;
 }
 return pts;
 }
-var diag = { legs: [], simbolos: [], numeros: [], paredes: [], ambs: {}, k: k, semMarca: 0, setas: 0, nTrechos: 0, ints: [], semChamada: [], marcas: [], chamadas: [], nos: {}, paredesPoly: walls.map(function (w0) { return w0.pts.map(function (q0) { return P(q0[0], q0[1]); }); }) }, rotLig = [], segsLig = [];
+var diag = { legs: [], simbolos: [], numeros: [], paredes: [], ambs: {}, k: k, semMarca: 0, setas: 0, nTrechos: 0, ints: [], semChamada: [], marcas: [], chamadas: [], nos: {}, paredesPoly: walls.map(function (w0) { return w0.pts.map(function (q0) { return P(q0[0], q0[1]); }); }), coincidentes: coinc }, rotLig = [], segsLig = [];
 arestas.forEach(function (e) { diag.paredes.push([P(e[0][0], e[0][1]), P(e[1][0], e[1][1])]); }); ambs.forEach(function (x) { diag.ambs[x.id] = arr(x.pts).map(function (q) { return P(q[0], q[1]); }); });
 Object.keys(nodes).forEach(function (id) { diag.nos[id] = nodes[id].c; });
 var grau = {};
@@ -225384,8 +225460,10 @@ return null;
 function ptS(it, s) { s = Math.max(0, Math.min(it.L, s)); var i = 1; while (i < it.pts.length - 1 && it.cum[i] < s) i++; var sg = (it.cum[i] - it.cum[i - 1]) || 1e-9, t = (s - it.cum[i - 1]) / sg; return [it.pts[i - 1][0] + (it.pts[i][0] - it.pts[i - 1][0]) * t, it.pts[i - 1][1] + (it.pts[i][1] - it.pts[i - 1][1]) * t]; }
 function posEm(it, s) { var a1 = ptS(it, s - 0.8), b1 = ptS(it, s + 0.8), d0 = dist2(a1, b1) || 1; return { p: ptS(it, s), u: [(b1[0] - a1[0]) / d0, (b1[1] - a1[1]) / d0] }; }
 var arqN = D.sg.length;
+var parFeito = {};
 Object.keys(edges).sort().forEach(function (kk) {
 var e = edges[kk], A = nodes[e.a], B = nodes[e.b], Lq = dist2(A.c, B.c); if (Lq < 1e-6) return;
+var kPar = [A.id, B.id].sort().join("|"); if (parFeito[kPar]) return; parFeito[kPar] = 1;
 var ux0 = (B.c[0] - A.c[0]) / Lq, uy0 = (B.c[1] - A.c[1]) / Lq, sA = saidaF(A.f, A.c, [ux0, uy0]), sB = saidaF(B.f, B.c, [-ux0, -uy0]);
 var p1 = [A.c[0] + ux0 * sA, A.c[1] + uy0 * sA], p2 = [B.c[0] - ux0 * sB, B.c[1] - uy0 * sB];
 var mesmaP = A.sm && B.sm && A.sm.caixa && B.sm.caixa && A.sm.edge >= 0 && A.sm.edge === B.sm.edge && A.sm.p.amb === B.sm.p.amb;
@@ -225393,7 +225471,7 @@ if (A.fim && !mesmaP) p1 = A.fim; if (B.fim && !mesmaP) p2 = B.fim;
 var retaFim = false;
 if ((dist2(p1, p2) < 3 || Lq < 8) && A.fim && B.fim) { p1 = A.fim; p2 = B.fim; retaFim = true; if (dist2(p1, p2) < 1.5) return; }
 if (dist2(p1, p2) < 3) return;
-var caminho = retaFim ? [p1, p2] : (arcoLig(e, p1, p2, 0.7, mesmaP ? A.sm.nrm : null) || arcoLig(e, p1, p2, 0.15, mesmaP ? A.sm.nrm : null) || suave(rota(p1, p2, 0, e.a, e.b))), cum = [0], Ltot = 0; nLig++;
+var caminho = retaFim ? [p1, p2] : (arcoLig(e, p1, p2, 0.7, mesmaP ? A.sm.nrm : null) || arcoLig(e, p1, p2, 0.15, mesmaP ? A.sm.nrm : null) || rotaSemLaco(e, p1, p2) || arcoLivre(e, p1, p2)), cum = [0], Ltot = 0; nLig++;
 if (e.a === "QD" || e.b === "QD") nTronco++;
 for (var i6 = 0; i6 + 1 < caminho.length; i6++) { L(D, caminho[i6][0], caminho[i6][1], caminho[i6 + 1][0], caminho[i6 + 1][1], "ELE-ELETRODUTO"); segsLig.push({ k: kk, a: caminho[i6], b: caminho[i6 + 1] }); Ltot += dist2(caminho[i6], caminho[i6 + 1]); cum.push(Ltot); }
 diag.legs.push({ pts: caminho.slice(), a: e.a, b: e.b, k: kk });
@@ -225636,7 +225714,8 @@ if (okU) feito = true; else unicos.forEach(function (u0) { u0.vivo = false; });
 }
 if (!feito) { it.semChamada = true; diag.semMarca++; diag.semChamada.push(it.k); }
 });
-planos.filter(function (p0) { return p0.vivo; }).forEach(desenhaPlano);
+var vistoPl = {};
+planos.filter(function (p0) { if (!p0.vivo) return false; var kp = p0.T[0].toFixed(1) + "," + p0.T[1].toFixed(1) + ":" + p0.linhas.map(function (r0) { return r0.gs.map(function (gp) { return gp.g.c.lab; }).join("+"); }).join("/"); if (vistoPl[kp]) return false; vistoPl[kp] = 1; return true; }).forEach(desenhaPlano);
 }
 function janela(q, r) { return [Math.max(areaD[0], q[0] - r), Math.max(areaD[1], q[1] - r), Math.min(areaD[2], q[0] + r), Math.min(areaD[3], q[1] + r)]; }
 var omitidos = 0;
@@ -225677,7 +225756,9 @@ if (ok && livreExtra(bx, self)) { bd = d2; best = [xx, yy]; }
 return best;
 }
 indexaSg();
+var ambVisto = {};
 ambs.forEach(function (x) {
+var kA = txt(x.nome).toUpperCase() + "|" + (fin(x.area) ? x.area.toFixed(1) : "") + "|" + (fin(x.cx) ? x.cx.toFixed(1) : "") + "|" + (fin(x.cz) ? x.cz.toFixed(1) : ""); if (ambVisto[kA]) return; ambVisto[kA] = 1;
 var g0 = x.cls && x.cls.grupo || "demais", linhas = [txt(x.nome).toUpperCase(), "Área=" + br(x.area, 2) + " m²", "Perímetro=" + br(x.perimetro, 2) + " m",
 "Quant. mín. de TUGs=" + (ER0 && fin(x.area) && fin(x.perimetro) ? ER0.nTug(g0, x.area, x.perimetro, C0) : "-"), "Pot. de iluminação=" + (ER0 && fin(x.area) ? br(ER0.vaIluminacao(x.area, C0), 0) + " VA" : "-")];
 var hh = 1.45, wB = Math.max.apply(null, linhas.map(function (l1) { return A0.largTexto(l1, hh); })), hB = linhas.length * hh * 1.4, pref = P(x.cx, x.cz), cc = null, rr = [10, 20, 35, 60, 90, 130];
@@ -225787,18 +225868,21 @@ var yC = cabosTabela(D, A0, x3, y0, W3, Z, pend) + 6, yQ = tituloSub(D, x3, quad
 var yL = legendaDiagramas(D, A0, x3 + 100, yC, Math.min(W3 - 100, 130), Z), yE = entradaDiagrama(D, A0, x1, yA + 8, W1, Z);
 var topo = Math.max(yE, yB, yQ, yL);
 if (topo - a.y > a.h * 0.56) return { ok: false, motivo: "as tabelas do topo passam de " + Math.round(topo - a.y) + " mm" };
-var xP = x1 + KU.legW + 6, reg = { x: xP, y: topo + 4, w: a.x + a.w - 3 - xP, h: a.y + a.h - 2 - (topo + 4) };
+var xP = x1 + KU.legW + 6, reg = { x: xP, y: topo + 4, w: a.x + a.w - 3 - xP, h: a.y + a.h - 2 - (topo + 4) }, rp = null;
+if (!c.semPlanta) {
 var esc = escalaPlanta(Z, pav, reg.w - 16, reg.h - 24);
-if (!esc || esc > 100) return { ok: false, motivo: "a planta não cabe até 1:100 (" + (esc ? "1:" + esc : "nem 1:250") + ")" };
+if (!esc || esc > 100) return { ok: false, dividir: true, motivo: "a planta não cabe até 1:100 ao lado das tabelas (" + (esc ? "1:" + esc : "nem 1:250") + ")" };
+if (esc > 50 && !c.aceitaReduzida) return { ok: false, dividir: true, motivo: "a planta só cabe a 1:" + esc + " ao lado das tabelas: vai sozinha numa folha" };
 c.leg = { x: x1, y: topo + 4, w: KU.legW, baixo: a.y + a.h - 3 }; c.tituloPlanta = c.tituloPlanta || "Planta Baixa";
-var rp = folhaPlantaRef(c, pav, reg);
+rp = folhaPlantaRef(c, pav, reg);
 if (!c.leg.fim || c.leg.yReal < topo + 2) return { ok: false, motivo: "a legenda da planta não cabe" };
+}
 var yU = unifilarRef(D, A0, col.x + 3, col.y + 3, col.w - 6, Z), yR = yU + 2;
 var rs = resumoTextos(Z), wR = col.w - 8;
 T(D, col.x + 4, yR + 3, "DEMANDA E PADRÃO DE ENTRADA", 3.0, { peso: 0.2 }); yR += 5.5;
 rs.esq.concat(rs.dir).forEach(function (s0) { A0.quebrar(s0, KU.h, wR).forEach(function (q0) { T(D, col.x + 4, yR + KU.h, q0, KU.h, { cor: /não verificado|PROVISÓRIO/.test(q0) ? K2.vermelho : undefined }); yR += KU.h * 1.4; }); yR += 0.8; });
 if (yR > g.carimbo.y - 40) return { ok: false, motivo: "o unifilar e o resumo não deixam lugar para as notas" };
-return { ok: true, escala: "1:" + rp.esc, colY: yR + 2, pend: pend, esc: rp.esc, diag: rp.diag };
+return { ok: true, escala: rp ? "1:" + rp.esc : "SEM ESCALA", colY: yR + 2, pend: pend, esc: rp ? rp.esc : null, diag: rp ? rp.diag : null };
 }
 function coluna(D, g, blocos, yIni) {
 var A0 = AP(), col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, y = yIni != null ? yIni : col.y + 5, yMax = car.y - 3, h = K2.hPeq;
@@ -225847,16 +225931,23 @@ catch (e) { avisos.push("Folha " + dois(i + 1) + " (" + df.titulo + "): " + (e &
 feitas.push({ def: df, D: D, escala: (res && res.escala) || "SEM ESCALA", rotulo: dois(i + 1), res: res });
 return res;
 }
-var pavs = !opcoes.semPlanta && Z.leitura ? pavimentosDe(Z) : [], unica = null, motivoUnica = "", tri = null;
+var pavs = !opcoes.semPlanta && Z.leitura ? pavimentosDe(Z) : [], unica = null, motivoUnica = "", tri = null, dividida = false;
 if (opcoes.folhaUnica !== false && pavs.length) {
 tri = { D: new A.Desenho(E, []), geo: geo, A: Z, qdNome: qdNome, qdAmb: qdAmb, op: opcoes, pav: pavs[0], tituloPlanta: "Planta Baixa" };
 try { unica = folhaUnica(tri); } catch (e0) { unica = { ok: false, motivo: e0 && e0.message ? e0.message : String(e0) }; }
 if (unica.ok && !coluna(new A.Desenho(E, null), geo, blocosDe(Z, unica.pend), unica.colY)) unica = { ok: false, motivo: "as notas e pendências não cabem na coluna" };
+if (!unica.ok && unica.dividir && opcoes.dividir !== false) {
+var tri2 = { D: new A.Desenho(E, []), geo: geo, A: Z, qdNome: qdNome, qdAmb: qdAmb, op: opcoes, pav: pavs[0], semPlanta: true };
+var u2; try { u2 = folhaUnica(tri2); } catch (e2) { u2 = { ok: false, motivo: e2 && e2.message ? e2.message : String(e2) }; }
+if (u2.ok && !coluna(new A.Desenho(E, null), geo, blocosDe(Z, u2.pend), u2.colY)) u2 = { ok: false, motivo: "as notas e pendências não cabem na coluna" };
+if (u2.ok) { unica = u2; tri = tri2; dividida = true; }
+}
 if (!unica.ok) { motivoUnica = unica.motivo; unica = null; }
 }
 var juntas = false;
 if (unica) {
-nova({ id: "projeto-eletrico", titulo: "PROJETO ELÉTRICO", tipo: "unica" }, function () { return unica; }, tri.D);
+if (dividida) pavs.forEach(function (pv) { plantaRef(pv); });
+nova({ id: "projeto-eletrico", titulo: dividida ? "QUADRO, DIAGRAMAS E TABELAS" : "PROJETO ELÉTRICO", tipo: "unica" }, function () { return unica; }, tri.D);
 } else {
 if (opcoes.folhaUnica !== false && pavs.length) avisos.push("Folha única não coube (" + motivoUnica + "): saiu no modo de várias folhas.");
 nova({ id: "quadro-cargas", titulo: "QUADRO DE CARGAS E DIAGRAMA UNIFILAR", tipo: "quadro" }, function (c) {
@@ -225866,8 +225957,15 @@ return r1;
 });
 if (!juntas) { feitas[0].def.titulo = "QUADRO DE CARGAS"; nova({ id: "unifilar", titulo: "DIAGRAMA UNIFILAR", tipo: "unifilar" }, function (c) { return folhaUnifilar(c); }); }
 }
+function plantaRef(pv) {
+nova({ id: "planta-" + pv.k, titulo: "PLANTA DE PONTOS E ELETRODUTOS - " + txt(pv.nome).toUpperCase(), tipo: "planta" }, function (c) {
+var ar = c.geo.area, xP = ar.x + 4 + KU.legW + 6;
+c.op = opcoes; c.tituloPlanta = "Planta Baixa - " + txt(pv.nome); c.leg = { x: ar.x + 4, y: ar.y + 4, w: KU.legW, baixo: ar.y + ar.h - 3 };
+return folhaPlantaRef(c, pv, { x: xP, y: ar.y + 2, w: ar.x + ar.w - 3 - xP, h: ar.h - 4 });
+});
+}
 pavs.forEach(function (pv, ip) {
-if (unica && ip === 0) return;
+if (dividida || (unica && ip === 0)) return;
 nova({ id: "planta-" + pv.k, titulo: "PLANTA DE PONTOS E ELETRODUTOS - " + txt(pv.nome).toUpperCase(), tipo: "planta" }, function (c) {
 if (!unica) return folhaPlanta(c, pv);
 var ar = c.geo.area, xP = ar.x + 4 + KU.legW + 6;
@@ -226189,9 +226287,8 @@ if (A.criterios.dpsAQ2 && A.criterios.dpsAQ2.valor >= 1) add("amarelo", "DPS ado
 add("amarelo", "Temperatura de referência " + A.criterios.tempAmbiente.valor + " °C (Tabela 40): no entreforro sob telhado sem ventilação a temperatura pode passar disso — conferir e, se passar, ajustar nos critérios.", "7");
 add("amarelo", "Caixa de medição, poste e afastamentos: capítulo 7 e desenhos da ND-5.1 não transcritos — conferir com a CEMIG.", "3");
 add("amarelo", "Simbologia: a NBR 5444:1989 está cancelada sem norma substituta; os símbolos das pranchas são os de uso corrente e todos levam texto.", "2");
-if (!opc.esquemaAterramento) add("vermelho", "Esquema de aterramento: o cálculo do DPS e do PE parte do TN-S (premissa de fábrica); a definição formal (NR-10 10.4.4) e a interligação neutro/PE são do RT — a definir pelo RT.", "10");
-add("vermelho", "Equipotencialização: ligação equipotencial principal e suplementar (banheiros) a detalhar pelo RT — o item da norma não foi transcrito.", "10");
-add("vermelho", "NBR 5410:2004 lida em cópia NÃO licenciada à RA e sem a Errata 1/2008: conferir cada valor no exemplar licenciado da edição vigente antes de assinar.", "2");
+if (!opc.esquemaAterramento) add("amarelo", "Esquema de aterramento adotado: TN-S a partir do quadro (critério RA, seção 10) — confirmar com a concessionária na ligação.", "10");
+add("amarelo", "NBR 5410:2004 lida em cópia NÃO licenciada à RA e sem a Errata 1/2008: conferir cada valor no exemplar licenciado da edição vigente antes de assinar.", "2");
 if (!txt(opc.responsavel)) add("vermelho", "Responsável técnico não informado: nome, título e registro no conselho (placeholders no memorial).", "1");
 else if (!txt(opc.registro)) add("vermelho", "Registro do responsável técnico (CREA/CAU) não informado.", "1");
 if (!txt(opc.obra)) add("vermelho", "Nome da obra não informado.", "1");
@@ -226345,10 +226442,12 @@ return s;
 }
 function sAterramento(A, opc) {
 var C = A.criterios, en = A.demanda.entrada, s = new Sec("aterramento", "10. Aterramento e equipotencialização");
-s.p("Esquema de aterramento considerado no cálculo: " + (opc.esquemaAterramento ? txt(opc.esquemaAterramento) + " (informado pelo usuário)" : "TN-S a partir do quadro (premissa de fábrica do dimensionamento do DPS e do PE, critério RA) — a definir pelo RT com a CEMIG") + ". Tensão fase-neutro de referência " + C.tensaoFN.valor + " V.");
+s.p("Esquema de aterramento considerado no cálculo: " + (opc.esquemaAterramento ? txt(opc.esquemaAterramento) + " (informado pelo usuário)" : "TN-S a partir do quadro (adotado, critério RA — base do dimensionamento do DPS e do PE)") + ". Tensão fase-neutro de referência " + C.tensaoFN.valor + " V.");
 s.p(en ? "Entrada (" + en.tabela + ", faixa " + en.faixa + "): aterramento em cobre nu " + sec(en.aterramento_mm2) + " mm², " + en.hastes + " haste(s), condutor de proteção " + sec(en.pe_mm2) + " mm². Valores mínimos da CEMIG." : "Entrada: padrão não verificado.");
 s.p("Condutor de proteção (PE) de cada circuito: seção pela " + TB().T58.item + " (seção 7). Todo circuito leva PE e as tomadas e luminárias são ligadas a ele.");
-s.alerta("Esquema de aterramento (NR-10 10.4.4), interligação neutro/PE e equipotencialização principal e suplementar (banheiros): a definir e detalhar pelo RT. Os itens da norma correspondentes não foram transcritos neste sistema.");
+s.p("Esquema TN-S: neutro e condutor de proteção separados a partir do quadro de distribuição; o neutro é ligado à terra só no padrão de entrada e não volta a ser ligado ao PE dentro da instalação (critério RA, confirmar com a concessionária).");
+s.p("Equipotencialização principal (NBR 5410, 6.4.2.1): barramento de equipotencialização principal (BEP) junto ao padrão de entrada, ao qual se ligam o condutor de aterramento, o PE do alimentador, as tubulações metálicas de água e de gás que entram na edificação e as armaduras do concreto acessíveis. Condutor da ligação equipotencial principal com seção não inferior à metade da do maior condutor de proteção (6.4.4.1.1, por fonte secundária).");
+s.p("Equipotencialização suplementar nos banheiros (critério RA): os elementos condutivos acessíveis do banheiro — tubulação metálica, ralo e esquadria metálica do box, banheira ou hidromassagem metálica — ligados ao PE do circuito do banheiro por condutor de cobre de 2,5 mm², em caixa de equipotencialização local.");
 return s;
 }
 function sNr10(A) {
@@ -226971,9 +227070,11 @@ L.push("ARQUIVOS DESTE PACOTE");
 R.arquivos.forEach(function (f) { if (f.tipo !== "leiame") L.push(" - " + f.nome); });
 arr(R.naoGerados).forEach(function (t) { L.push(" - NÃO GERADO: " + t); });
 L.push("");
+if (v.length) {
 L.push("O QUE FICOU PENDENTE — EM VERMELHO (" + v.length + "): sem fonte lida ou a decidir pelo responsável técnico; o projeto não pode ser assinado como está.");
 v.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto + (p.secao ? " (seção " + p.secao + " do memorial)" : "")); });
 L.push("");
+}
 L.push("AVISOS E CRITÉRIOS RA — EM AMARELO (" + a.length + "): conferir com o responsável técnico.");
 a.forEach(function (p, i) { L.push(" " + (i + 1) + ". " + p.texto); });
 if (R.avisos.length) { L.push(""); L.push("AVISOS DA GERAÇÃO"); R.avisos.forEach(function (t) { L.push(" - " + t); }); }
