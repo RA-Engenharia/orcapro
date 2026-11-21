@@ -46,7 +46,7 @@
     if (typeof require === "function") { try { return require(arq); } catch (e) {} }
     return null;
   }
-  function Cat() { return dep("AcoCatalogoBr", "./acocatalogobr.js"); }
+  function Cat() { return global.AcoCatalogoBR || dep("AcoCatalogoBr", "./acocatalogobr.js"); }   /* 21/11/2026: no navegador o global é AcoCatalogoBR (com R maiúsculo) — sem isto a fixação saía sem catálogo (sem massa nem norma) na tela */
   function Nor() { return dep("BimMetalNorma", "./metalnorma.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function fin(v) { return typeof v === "number" && isFinite(v); }

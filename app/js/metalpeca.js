@@ -319,11 +319,16 @@
     var ap = num(o.aperto, 0); if (!(ap > 0.001 && ap < 1.5)) return { erro: "Aperto do parafuso entre 1 mm e 1,5 m." };
     var ch = o.chumbador && typeof o.chumbador === "object" ? { ancoragem: Math.max(0, num(o.chumbador.ancoragem, 0.4)) } : null;
     var arrC = ch ? 0 : (o.arrCabeca === 1 || o.arrCabeca === true ? 1 : 0), arrP = o.arrPorca === 0 || o.arrPorca === false ? 0 : 1;
-    var Lc = N.comprimento({ id: p.id, aperto: ap * 1000 + arrC * p.arr.h, arruelas: arrP, ancoragem: ch ? ch.ancoragem * 1000 : 0 });
+    /* 21/11/2026 (js/metalparafusos.js): CHUMBADOR com a 2ª porca, de NIVELAMENTO, sob a placa (o comprimento soma a altura dela);
+       soPorca = n: só a arruela e n porcas na ponta roscada de uma BARRA (o contravento em barra redonda: porca e contraporca) */
+    var nivel = ch && (o.porcaNivel === true || o.porcaNivel === 1 || (o.chumbador && o.chumbador.porcaNivel)) ? 1 : 0, soP = !ch && num(o.soPorca, 0) > 0 ? Math.round(num(o.soPorca, 0)) : 0;
+    var Lc = soP ? { L: 0 } : N.comprimento({ id: p.id, aperto: ap * 1000 + arrC * p.arr.h + nivel * p.m, arruelas: arrP, ancoragem: ch ? ch.ancoragem * 1000 : 0 });
     var classe = N.CLASSES[o.classe] ? o.classe : (ch ? "F1554-36" : (p.sistema === "POL" ? "A325" : "8.8"));
     var m = { v: 1, kind: "parafuso", papel: ch ? "Chumbador" : "Parafuso", id: p.id, db: p.d, sistema: p.sistema, classe: classe, aperto: r6(ap),
               arrCabeca: arrC, arrPorca: arrP, Lmm: Lc.L, ex: null, ey: null, o: null };
     if (ch) m.chumbador = ch;
+    if (nivel) m.porcaNivel = 1;
+    if (soP) { m.soPorca = soP; m.papel = "Porca da barra"; m.arrCabeca = 0; }
     var eixo = unit(V(o.eixo || [0, -1, 0])), ey = Math.abs(eixo[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     return montar(m, { origem: o.origem, ex: eixo, ey: ey, lig: o.lig, soldadaEm: null }, "IFCMECHANICALFASTENER");
   }
@@ -452,17 +457,33 @@
       var mm = function (v) { return v / 1000; }, X = q.X, Y = q.Y, Z = q.Z, O = q.O, ap = num(m.aperto, 0);
       var hexa = function (sAF) { var r = mm(sAF) / Math.sqrt(3); return circ(0, 0, r, 6); };
       var hC = m.arrCabeca ? mm(p.arr.h) : 0, hP = m.arrPorca ? mm(p.arr.h) : 0, L = mm(num(m.Lmm, 0));
-      if (m.chumbador) {
-        /* porca e arruela EM CIMA (lado −eixo), a barra atravessa o aperto e desce a ancoragem */
+      /* ROSCA VISÍVEL (21/11/2026): anéis no diâmetro externo a cada 2 passos, só no trecho roscado além da porca (os fios de
+         projeção) — no máximo 6 por peça, para não pesar a cena */
+      var det = function (sd0) { sd0.detalhe = 1; return sd0; };   /* rosca e arruelas: o 3D esconde de longe (js/bimparafusosver.js) */
+      var rosca = function (z0r, z1r) { var dz = mm(2 * p.passo), n = Math.min(6, Math.floor((z1r - z0r) / dz)); for (var ir = 0; ir < n; ir++) { var zr = z0r + (ir + 0.5) * dz; out.push(det(solido(circ(0, 0, mm(p.d) / 2 + mm(p.passo) * 0.18, 12), [], zr - mm(p.passo) * 0.25, zr + mm(p.passo) * 0.25, O, Y, Z, X))); } };
+      if (m.soPorca) {
+        /* arruela + n porcas na face de fora da chapa, e a ponta roscada da barra além delas (3 fios) */
+        var nP0 = Math.max(1, num(m.soPorca, 1)), zP = mm(p.arr.h);
+        out.push(det(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], 0, zP, O, Y, Z, X)));
+        for (var ip = 0; ip < nP0; ip++) out.push(solido(hexa(p.s), [circ(0, 0, mm(p.d) / 2, 16).reverse()], zP + ip * mm(p.m), zP + (ip + 1) * mm(p.m), O, Y, Z, X));
+        var zF = zP + nP0 * mm(p.m);
+        out.push(solido(circ(0, 0, mm(p.d) / 2, 16), [], -0.002, zF + mm(3 * p.passo), O, Y, Z, X));
+        rosca(zF, zF + mm(3 * p.passo));
+      } else if (m.chumbador) {
+        /* porca e arruela EM CIMA (lado −eixo), a barra atravessa o aperto e desce a ancoragem; a porca de NIVELAMENTO logo
+           abaixo da placa (de ap a ap + m) */
         out.push(solido(hexa(p.s), [circ(0, 0, mm(p.d) / 2, 16).reverse()], -hP - mm(p.m), -hP, O, Y, Z, X));
-        if (hP) out.push(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], -hP, 0, O, Y, Z, X));
+        if (hP) out.push(det(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], -hP, 0, O, Y, Z, X)));
+        if (m.porcaNivel) out.push(solido(hexa(p.s), [circ(0, 0, mm(p.d) / 2, 16).reverse()], ap, ap + mm(p.m), O, Y, Z, X));
         out.push(solido(circ(0, 0, mm(p.d) / 2, 16), [], -hP - mm(p.m) - mm(3 * p.passo), -hP - mm(p.m) - mm(3 * p.passo) + L, O, Y, Z, X));
+        rosca(-hP - mm(p.m) - mm(3 * p.passo), -hP - mm(p.m));
       } else {
         out.push(solido(hexa(p.s), [], -hC - mm(p.k), -hC, O, Y, Z, X));
-        if (hC) out.push(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], -hC, 0, O, Y, Z, X));
+        if (hC) out.push(det(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], -hC, 0, O, Y, Z, X)));
         out.push(solido(circ(0, 0, mm(p.d) / 2, 16), [], -hC, -hC + L, O, Y, Z, X));
-        if (hP) out.push(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], ap, ap + hP, O, Y, Z, X));
+        if (hP) out.push(det(solido(circ(0, 0, mm(p.arr.d2) / 2, 24), [circ(0, 0, mm(p.arr.d1) / 2, 16).reverse()], ap, ap + hP, O, Y, Z, X)));
         out.push(solido(hexa(p.s), [circ(0, 0, mm(p.d) / 2, 16).reverse()], ap + hP, ap + hP + mm(p.m), O, Y, Z, X));
+        rosca(ap + hP + mm(p.m), -hC + L);
       }
     } else if (m.kind === "mecanica") {
       var fu = m.tipoMec === "bucha" ? [circ(0, 0, num(m.d, 0) / 2, 32).reverse()] : [];
@@ -502,7 +523,8 @@
       if (p) {
         var mm = function (v) { return v / 1000; }, hx = function (sAF) { return Math.sqrt(3) / 2 * mm(sAF) * mm(sAF); };
         var arA = Math.PI / 4 * (mm(p.arr.d2) * mm(p.arr.d2) - mm(p.arr.d1) * mm(p.arr.d1)), haste = Math.PI / 4 * mm(p.d) * mm(p.d);
-        vol = haste * mm(m.Lmm) + (m.chumbador ? 0 : hx(p.s) * mm(p.k)) + (hx(p.s) - haste) * mm(p.m) + (num(m.arrCabeca, 0) + num(m.arrPorca, 0)) * arA * mm(p.arr.h);
+        if (m.soPorca) vol = num(m.soPorca, 1) * (hx(p.s) - haste) * mm(p.m) + arA * mm(p.arr.h);   /* a barra é do contravento: só as porcas e a arruela */
+        else vol = haste * mm(m.Lmm) + (m.chumbador ? 0 : hx(p.s) * mm(p.k)) + (1 + num(m.porcaNivel, 0)) * (hx(p.s) - haste) * mm(p.m) + (num(m.arrCabeca, 0) + num(m.arrPorca, 0)) * arA * mm(p.arr.h);
         comp = mm(m.Lmm); estimado = true;
       }
     } else if (m.kind === "mecanica") {

@@ -942,6 +942,7 @@ SAUDE.nQ++; if (cameraSa()) guardarCameraBoa();
 var cpE = camera.matrixWorld.elements, cpU = S._camUlt || (S._camUlt = new Float64Array(16)), cpM = false;
 for (var cpI = 0; cpI < 16; cpI++) if (cpU[cpI] !== cpE[cpI]) { cpM = true; cpU[cpI] = cpE[cpI]; }
 if (cpM) S._camMudouEm = performance.now();
+if (window.BimParafusosVer) BimParafusosVer.atualizar(camera, false);
 } catch (e) { quadroFalhou(e); }
 SAUDE.tCheca += dt;
 if (SAUDE.tCheca >= 1.5) { SAUDE.tCheca = 0; try { conferirTamanho(); conferirVazio(); } catch (_) {} }
@@ -4429,6 +4430,7 @@ var geos = {}, insts = [], porMat = [];
 for (var i = 0; i < mo.grupo.children.length; i++) {
 var m = mo.grupo.children[i];
 if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
+if (m.userData.parafuso) continue;
 if ((m.userData.matOrig || m.material) && (m.userData.matOrig || m.material).visible === false) continue;
 if (m.userData.decal || m.userData.instPorMat) { porMat.push(m); continue; }
 var pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
@@ -10957,6 +10959,7 @@ if (!S.meshPorUid['edit:' + id]) S.meshPorUid['edit:' + id] = m;
 mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
 }
 var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
+if (window.BimParafusosVer) BimParafusosVer.limpar();
 S._wfN = 0;
 st.caixas.forEach(function (c) {
 if (window.BimEmbutido && typeof BimDisciplinas !== 'undefined' && BimDisciplinas.atual && BimEmbutido.oculta(c, BimDisciplinas.atual())) return;
@@ -12308,6 +12311,14 @@ b2MatsAcab[k] = m;
 return b2MatsAcab[k];
 }
 S._b2MatAcab = b2MatAcab;
+function b2Juntar(gs) {
+if (gs.length === 1) return gs[0];
+var nP = 0; gs.forEach(function (g) { nP += g.attributes.position.count; });
+var P = new Float32Array(nP * 3), Nn = new Float32Array(nP * 3), I = [], o = 0;
+gs.forEach(function (g) { var pa = g.attributes.position.array, na = g.attributes.normal.array, ix = g.index.array; P.set(pa, o * 3); Nn.set(na, o * 3); for (var k = 0; k < ix.length; k++) I.push(ix[k] + o); o += g.attributes.position.count; g.dispose(); });
+var gJ = new THREE.BufferGeometry(); gJ.setAttribute('position', new THREE.BufferAttribute(P, 3)); gJ.setAttribute('normal', new THREE.BufferAttribute(Nn, 3)); gJ.setIndex(I); gJ.computeBoundingBox();
+return gJ;
+}
 function b2Geo(poli, furos, z0, z1, mapa) {
 var V2 = function (q) { return new THREE.Vector2(q[0], q[1]); };
 var cont = poli.map(V2), fur = (furos || []).map(function (f) { return f.map(V2); });
@@ -12482,10 +12493,15 @@ var chM = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY]), enM = metGeo.mapa
 if (!enM || enM.chave !== chM || !metGeo.ligado) {
 if (enM) metGeoDescartar(enM);
 enM = metGeo.mapa[c.id] = { chave: chM, geos: [] };
+if (c.metal.kind === 'parafuso') {
+var pfC = [], pfD = [];
+BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) (sd.detalhe ? pfD : pfC).push(b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto)); });
+[[pfC, false], [pfD, true]].forEach(function (pr) { if (!pr[0].length) return; var gJ = b2Juntar(pr[0]); gJ.userData.metGeo = true; gJ.userData.pfDet = pr[1]; enM.geos.push(gJ); metGeo.feitas++; });
+} else
 BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gM = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gM.userData.metGeo = true; enM.geos.push(gM); metGeo.feitas++; } });
 }
 enM.usado = metGeo.rodada;
-enM.geos.forEach(function (gM) { addMesh(new THREE.Mesh(gM, mM), c.id, c.ifc, mM); });
+enM.geos.forEach(function (gM) { var mPf = new THREE.Mesh(gM, mM); addMesh(mPf, c.id, c.ifc, mM); if (c.metal.kind === 'parafuso') { mPf.userData.parafuso = 1; if (window.BimParafusosVer) BimParafusosVer.registrar(mPf, gM.userData.pfDet); } });
 var mdM = c.medidas || {};
 return { qto: { comprimento: mdM.comprimento, area: mdM.area, volume: mdM.volume, contagem: 1, massa: c.massa } };
 }

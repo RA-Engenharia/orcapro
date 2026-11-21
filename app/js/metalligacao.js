@@ -136,7 +136,7 @@
   function boltCaixas(bolts, c, lig) {
     return bolts.map(function (b) {
       var o = { origem: b.P, eixo: b.D, aperto: b.aperto, id: c.id, classe: c.classe, arrPorca: 1, lig: lig };
-      if (b.chumbador) o.chumbador = b.chumbador;
+      if (b.chumbador) { o.chumbador = b.chumbador; o.porcaNivel = b.porcaNivel !== false; }   /* 21/11/2026: 2 porcas por chumbador (nivelamento + aperto) — Eletro Luminar, chumbador J (js/metalfixacao.js) */
       return M().parafuso(o);
     }).filter(function (x) { return !x.erro; });
   }

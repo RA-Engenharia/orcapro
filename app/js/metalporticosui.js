@@ -54,6 +54,8 @@
     if (t !== "coluna-trelicada" && t !== "tesoura-leve") c.push(["base", "Base dos pilares", "sel", SN]);   /* coluna de 2 banzos: banzos rotulados, engaste pelo binário */
     c.push(["fechamento", "Fechamento (laterais e oitões)", "sel", [["fechado", "Fechado — telha trapezoidal"], ["aberto", "Aberto"]]]);
     c.push(["contraventamento", "Contraventamento (vãos das pontas)", "sel", [["X-barra", "X de barra redonda"], ["X-cantoneira", "X de cantoneira"], ["nenhum", "Nenhum"]]]);
+    /* 21/11/2026 (js/metalparafusos.js): a ligação geral — parafusada põe parafuso, porca e arruela em todo nó com chapa e na mão-francesa */
+    c.push(["ligacao", "Ligações da estrutura", "sel", [["padrao", "Padrão (nós soldados, clip de terça parafusado)"], ["parafusada", "Parafusada (nós com chapa e parafusos, mão-francesa parafusada)"], ["soldada", "Soldada (sem parafusos; o cordão vai na lista)"]]]);
     if (t === "trelica-paralelos") c.push(["aguas", "Águas", "sel", [["2", "Duas águas"], ["1", "Uma água"]]]);
     if (t === "tesoura-leve") {
       c.push(["sistemaTrelica", "Sistema da treliça", "sel", [["tubo", "Tubo (nós soldados tubo-tubo)"], ["cantoneira", "Cantoneira (2L costas com costas e chapa de nó)"]]], ["chapaNo", "Chapa de nó / folga da 2L (mm)", "num"]);

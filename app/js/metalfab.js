@@ -135,7 +135,7 @@
         if (k === "chapa") pecas.push(chapaFab(c));
         else if (k === "perfil" && c.metal.perfil && c.metal.perfil.forma === "dobrada") { var cd = chapaDobradaFab(c); if (cd) pecas.push(cd); }
         else if (k === "perfil") { var pf = perfilFab(c); if (pf) pecas.push(pf); else avisos.push("peça " + c.id + " (" + txt(c.metal.papel) + "): perfil não reconhecido — ficou de fora da fabricação (sem marca, sem .nc1)"); }
-        else if (k === "parafuso") parafusos.push({ id: c.id, papel: c.metal.papel, idP: c.metal.id, Lmm: c.metal.Lmm, classe: c.metal.classe, sistema: c.metal.sistema, arruelas: num(c.metal.arrCabeca, 0) + num(c.metal.arrPorca, 0), porcas: 1, massa: num(c.massa, 0), lig: c.metal.lig || "" });
+        else if (k === "parafuso") parafusos.push({ id: c.id, papel: c.metal.papel, idP: c.metal.id, Lmm: c.metal.Lmm, classe: c.metal.classe, sistema: c.metal.sistema, arruelas: num(c.metal.arrCabeca, 0) + num(c.metal.arrPorca, 0), porcas: c.metal.soPorca ? num(c.metal.soPorca, 1) : 1 + num(c.metal.porcaNivel, 0), qtd: c.metal.soPorca ? 0 : 1, massa: num(c.massa, 0), lig: c.metal.lig || c.metal.ligMont || "", el: c.elemMetal ? c.elemMetal.el : "", slot: c.elemMetal ? c.elemMetal.slot : "", marcaEl: c.elemMetal ? c.elemMetal.tipo : "" });
         else if (k === "mecanica") pecas.push({ id: c.id, kind: "mec", papel: c.metal.papel, tipoMec: c.metal.tipoMec, D: mm(c.metal.D), d: mm(c.metal.d), L: mm(c.metal.L), aco: c.metal.aco, massa: num(c.massa, 0), area: num(c.area, 0), soldadaEm: c.metal.soldadaEm || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c) });
       } else if (ehAcoArq(c)) { var pa = perfilFab(c); if (pa) pecas.push(pa); else avisos.push("peça " + c.id + " (" + (c.tipo === "pilar" ? "pilar" : "viga") + " de aço): perfil não reconhecido — ficou de fora da fabricação (sem marca, sem .nc1)"); }
     }
@@ -525,7 +525,7 @@
     n.parafusos.forEach(function (b) {
       var k = b.papel + "|" + b.idP + "|" + b.Lmm + "|" + b.classe;
       if (!pg[k]) pg[k] = { tipo: b.papel, diametro: b.idP, comprimento: b.Lmm, classe: b.classe, norma: ((N() && N().CLASSES[b.classe]) || {}).norma || b.classe, quantidade: 0, porcas: 0, arruelas: 0, pesoTotal: 0 };
-      pg[k].quantidade++; pg[k].porcas += b.porcas; pg[k].arruelas += b.arruelas; pg[k].pesoTotal += b.massa;
+      pg[k].quantidade += b.qtd == null ? 1 : b.qtd; pg[k].porcas += b.porcas; pg[k].arruelas += b.arruelas; pg[k].pesoTotal += b.massa;
     });
     /* tirante: barra rosqueada nas pontas — 2 porcas e 2 arruelas por ponta (valor de partida) */
     n.pecas.filter(function (p) { return p.papel === "Tirante"; }).forEach(function (p) {

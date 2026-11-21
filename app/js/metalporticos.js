@@ -216,6 +216,9 @@
     Object.keys(par || {}).forEach(function (k) { if (par[k] != null && par[k] !== "") p[k] = clone(par[k]); });
     NUMS.forEach(function (k) { if (k in T.PADRAO || k in (par || {})) p[k] = num(p[k], num(T.PADRAO[k], 0)); });
     p.nPorticos = Math.max(2, Math.round(num(p.nPorticos, 5)));
+    /* 21/11/2026 (js/metalparafusos.js): LIGAÇÃO GERAL da estrutura — "parafusada" (nós da treliça em 2L com chapa e parafusos,
+       mão-francesa parafusada), "soldada" (nenhum parafuso nas ligações de aço; só o chumbador) ou "padrao" (o de sempre) */
+    p.ligacao = p.ligacao === "parafusada" || p.ligacao === "soldada" ? p.ligacao : "padrao";
     /* 21/11/2026: com "definirPor" (numero | espacamento) e o comprimento, as posições saem de posicoesPorticos; com uma lista
        `posicoes` (z de cada pórtico) a lista vale; sem nenhuma das duas, é o espaçamento uniforme de sempre (compatível) */
     var posIn = par && Array.isArray(par.posicoes) ? par.posicoes : null, rp = null;
@@ -1327,7 +1330,12 @@
     if (PA) {
       var acO = {}; ["acab", "telhaId", "telhaFechamento", "ligacoes", "vedacao", "corTelha"].forEach(function (k) { if (k in opG) acO[k] = opG[k]; });
       var ac = PA.completar(t, p, g, novoId, acO);
+      /* 21/11/2026: parafusos, porcas e arruelas das ligações parafusadas (js/metalparafusos.js) — o cálculo não muda (sem `lig`);
+         na ligação SOLDADA o completar tira do acabamento os parafusos do clip (antes de as ops entrarem no lote) */
+      var MPf = ac.ok && opG.ligacoes !== false ? dep("MetalParafusos", "./metalparafusos.js") : null, fx = null;
+      if (MPf) { g.acab = ac; fx = MPf.completar(t, p, g, novoId, {}); }
       if (ac.ok) { g.acab = ac; ac.ops.forEach(function (o) { ops.push(o); }); if (ac.resumo) g.resumo = g.resumo + " Acabamento: " + ac.resumo + "."; g.avisos = arr(g.avisos).concat(ac.avisos); }
+      if (fx && fx.ok) { g.fixacao = fx; fx.ops.forEach(function (o) { ops.push(o); }); g.avisos = arr(g.avisos).concat(fx.avisos); }
     }
     return g;
   }

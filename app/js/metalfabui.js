@@ -182,6 +182,51 @@
       toast("Relação formato fábrica em HTML — " + nome + ".", "ok", 7000);
     },
 
+    /* ============================================================ LISTA DE MONTAGEM (js/metalmontlista.js, 21/11/2026)
+     * Por marca de montagem, com fase e localização, e a fixação (= Relação fábrica, mesma conta). Geração com progresso. */
+    listaMontagem: function () {
+      var self = this, LM = global.MetalMontLista, st = this.estado();
+      if (!LM) { toast("A lista de montagem não carregou (js/metalmontlista.js).", "erro", 8000); return; }
+      if (!st || !arr(st.caixas).some(function (c) { return c && c.tipo === "metal"; })) { toast("Não há peça de aço no modelo para a lista de montagem.", "aviso"); return; }
+      var h = NAO_CALC + '<div style="' + CSS_CAMPOS + '">' + campo("lm_reserva", "Reserva de obra de parafusos, porcas e arruelas (%)", br(num(this.cfg().reservaMont, 5), 0), { num: true, partida: true }) + '</div><div data-mf="prog-montlista"></div><div data-mf="res-montlista"></div>';
+      UI.modal("Lista de montagem — marcas, fases e fixação", h, [
+        { texto: "Recalcular", onClick: function () { self._montListaCalc(true); } },
+        { texto: "Baixar .xlsx", classe: "primary", onClick: function () { self._montListaCalc(true, function (R) { self.montListaXlsx(R); }); } },
+        { texto: "Imprimir / PDF", onClick: function () { self._montListaCalc(true, function (R) { self.montListaPdf(R); }); } },
+        { texto: "Fechar", onClick: function () { UI.fecharModal(); } }]);
+      this._montListaCalc(false);
+    },
+    _montListaCalc: function (ler, depois) {
+      var self = this, LM = global.MetalMontLista, st = this.estado(); if (!LM || !st) return;
+      if (ler) { var rv = num(val("lm_reserva"), 5); this.gravar({ reservaMont: rv }); }
+      var res = num(this.cfg().reservaMont, 5) / 100, elP = q('[data-mf="prog-montlista"]'), elR = q('[data-mf="res-montlista"]');
+      var pg = elP && global.UI && UI.progresso ? UI.progresso(elP, { titulo: "Lista de montagem", etapas: [{ id: "marcas", peso: 2, rotulo: "Marcas e fases" }, { id: "fix", peso: 1, rotulo: "Fixação e conferência" }], texto: "Agrupando as marcas" }) : null;
+      setTimeout(function () {
+        var R; try { R = LM.montar(st, { reserva: res }); } catch (e) { if (pg) pg.erro(String(e && e.message || e)); return; }
+        if (pg) pg.etapa("marcas", 1, "Conferindo a fixação com a Relação fábrica");
+        setTimeout(function () {
+          var conf = null;
+          try { var n = self.numeracao(); if (n && RF()) { var L = F().listas(st, n), rel = RF().montar(L, CO().planoBarras(n, self.cfg()), self.cfg().relacao || {}); conf = LM.conferirRelacao(R, rel); } } catch (e2) { conf = null; }
+          if (pg) { pg.etapa("fix", 1, "Pronto"); pg.fim(); }
+          self.ultimo = { tipo: "montlista", lista: R };
+          if (elR) elR.innerHTML = (conf ? aviso(conf.ok ? "Fixação igual à Relação fábrica (" + conf.linhas + " linhas)." : "Fixação DIFERENTE da Relação fábrica: " + esc(conf.dif.slice(0, 4).join("; ")), conf.ok ? "ok" : "erro") : "") + LM.html(R, { obra: U() ? U().nomeObra() : "" });
+          status("Lista de montagem: " + R.totais.marcas + " marcas, " + R.totais.elementos + " elementos, " + R.totais.parafusos + " parafusos.");
+          if (depois) depois(R);
+        }, 0);
+      }, 30);
+    },
+    montListaXlsx: function (R) {
+      var LM = global.MetalMontLista, self = this; R = R || (this.ultimo && this.ultimo.lista); if (!R || !LM) return;
+      var nome = this.nomeArq("lista-de-montagem.xlsx");
+      this.excel(function (X) { return LM.xlsx(R, X, { obra: U() ? U().nomeObra() : "" }); }, nome, function () { self.ultimo = { tipo: "montlista", lista: R, xlsx: nome }; toast("Lista de montagem: " + R.totais.marcas + " marcas — " + nome + ".", "ok", 9000); });
+    },
+    montListaPdf: function (R) {
+      var LM = global.MetalMontLista; R = R || (this.ultimo && this.ultimo.lista); if (!R || !LM) return;
+      var w = global.open ? global.open("", "_blank") : null;
+      if (!w) { this.baixar(this.nomeArq("lista-de-montagem.html"), LM.htmlDocumento(R, { obra: U() ? U().nomeObra() : "" }), "text/html;charset=utf-8"); toast("O navegador bloqueou a janela de impressão: baixei a lista em HTML (abra e imprima em PDF).", "aviso", 9000); return; }
+      w.document.open(); w.document.write(LM.htmlDocumento(R, { obra: U() ? U().nomeObra() : "" })); w.document.close(); setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 300);
+    },
+
     /* ============================================================ PRANCHAS EXECUTIVAS (js/metalexecutivo.js)
      * Fiação fina: acha o pórtico paramétrico (porticoInfo da biblioteca de pórticos — o da peça selecionada, ou o
      * primeiro do modelo), refaz o modelo pela tipologia e grava o jogo em Navegador › Folhas (registro próprio,
