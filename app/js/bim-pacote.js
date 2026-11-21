@@ -1105,6 +1105,7 @@ if (ang.on) return;
 if (S._aoClicarPeca && !S._aoClicarPeca._grupo) return;
 if (S._aoMarcarPonto) return;
 try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
+try { if (window.MetalElementoUI && MetalElementoUI.duplo && S._uidEm) { var uE = S._uidEm(e.clientX, e.clientY); if (uE && /^edit:/.test(uE) && MetalElementoUI.duplo(uE)) return; } } catch (_) {}
 var vazioD = false; try { vazioD = !visitante && !raycastEm(e.clientX, e.clientY); } catch (_) {}
 selecionarEm(e.clientX, e.clientY);
 if (vazioD && S._fit) S._fit();
@@ -5684,7 +5685,11 @@ pav.manual = true;
 return n;
 };
 S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !m.userData._focoOc && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
-function compExp(u) { try { return window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { return [u]; } }
+function compExp(u) {
+var r; try { r = window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { r = [u]; }
+if (r.length <= 1) { try { if (window.MetalElementoUI && MetalElementoUI.expandir) r = MetalElementoUI.expandir(u); } catch (_) {} }
+return r;
+}
 S._compExp = compExp;
 function sel3Clique(e) {
 var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);

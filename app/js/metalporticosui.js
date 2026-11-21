@@ -60,7 +60,7 @@
       c.push(["forma", "Tesoura", "sel", [["paralelos", "Banzos paralelos (duas águas)"], ["trapezoidal", "Trapezoidal (banzo de baixo reto)"]]], ["padrao", "Alma", "sel", [["howe", "Montante em todo nó, diagonais descendo para o meio"], ["warren", "Warren (montante só nas terças: banzo de cima com painel dobrado)"]]],
              ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/15)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
              ["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_2L.concat(S_LEVE_U, S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["montante", "Perfil dos montantes (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
-             ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
+             ["secaoColuna", "Seção do pilar", "sel", [["plana", "Plana (2 banzos)"], ["espacial", "Espacial (4 montantes)"]]], ["profColuna", "Profundidade da coluna espacial (m, fora do plano; 0 = a largura)", "num"], ["montanteColuna", "Perfil dos montantes da coluna espacial (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO, S_TUBO)], ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
     }
     else if (/^trelica|^tesoura/.test(t)) {
       c.push(["padrao", "Treliça", "sel", [["pratt", "Pratt"], ["howe", "Howe"], ["warren", "Warren"]]]);
@@ -69,7 +69,7 @@
     }
     if (t === "shed") c.push(["dentes", "Número de dentes", "int"], ["vaoDente", "Vão de cada dente (m)", "num"], ["alturaDente", "Altura da face envidraçada (m)", "num"]);
     if (t === "multivao") c.push(["vaos", "Número de vãos", "int"], ["vaoCada", "Vão de cada módulo (m)", "num"], ["cobertura", "Cobertura", "sel", [["unica", "Única em duas águas"], ["geminada", "Geminada (duas águas por vão)"]]], ["ligInterna", "Pilar interno no topo", "sel", [["rigida", "Rígido com as vigas"], ["rotulada", "Rotulado (pendular)"]]], ["pilarInterno", "Perfil do pilar interno", "cat", S_PRINC]);
-    if (t === "coluna-trelicada") c.push(["larguraColuna", "Largura da coluna (m, entre eixos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_PRINC], ["travejamento", "Perfil do travejamento (tubo)", "cat", S_TUBO], ["escora", "Escora longitudinal da coluna", "cat", S_TUBO]);
+    if (t === "coluna-trelicada") c.push(["secaoColuna", "Seção do pilar", "sel", [["plana", "Plana (2 banzos)"], ["espacial", "Espacial (4 montantes)"]]], ["profColuna", "Profundidade da coluna espacial (m, fora do plano; 0 = a largura)", "num"], ["montanteColuna", "Perfil dos montantes da coluna espacial (cantoneira ou tubo)", "cat", S_TUBO.concat(S_L)], ["larguraColuna", "Largura da coluna (m, entre eixos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_PRINC], ["travejamento", "Perfil do travejamento (tubo)", "cat", S_TUBO], ["escora", "Escora longitudinal da coluna", "cat", S_TUBO]);
     else if (t !== "tesoura-leve") c.push(["pilar", "Perfil dos pilares", "cat", S_PRINC]);
     if (!/^trelica|^tesoura/.test(t)) c.push(["viga", "Perfil das vigas", "cat", S_PRINC]);
     if (t === "misula") c.push(["misulaComprimento", "Mísula: comprimento em planta (m; 0 = vão/10)", "num"], ["misulaAltura", "Mísula: altura acrescida no joelho (m; 0 = a da viga)", "num"], ["degraus", "Mísula: degraus do cálculo (2 a 6)", "int"]);
@@ -80,6 +80,9 @@
       ["uso", "Uso do piso (NBR 6120, Tabela 10)", "sel", usos()], ["qInformado", "Sobrecarga informada (kN/m²; só se o uso pede)", "num"], ["gPiso", "Permanente do piso (kN/m²)", "num"]);
     if (t === "tesoura-leve") c.push(["tercaBorda", "Terça das faixas de borda (vento local, NBR 6123)", "cat", S_TERCA.concat(["TUPER-TR"])]);
     c.push(["terca", t === "tesoura-leve" ? "Perfil das terças internas" : "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
+    /* 21/11/2026: terça treliçada (pórticos a mais de 9 m — Manual Gerdau de galpões); só na estrutura desenhada */
+    if (t !== "alma-cheia-1" && t !== "alma-cheia-2") c.push(["tipoTerca", "Tipo de terça", "sel", [["auto", "Automática (treliçada acima de 9 m entre pórticos)"], ["perfil", "Perfil (Ue / tubo)"], ["trelicada", "Treliçada (banzos + alma em barra redonda)"]]],
+      ["tercaTrelBanzo", "Terça treliçada: banzos", "cat", S_LEVE_TUBO.concat(S_LEVE_L, S_TUBO)], ["tercaTrelAlma", "Terça treliçada: alma (barra redonda)", "cat", S_BARRA], ["alturaTercaTrel", "Terça treliçada: altura (m; 0 = vão/20)", "num"]);
     c.push(["tapamento", "Coluna de tapamento (oitão fechado)", "cat", S_TUBO.concat(S_PRINC)]);
     if (true) c.push(["barraCv", "Barra do X (contraventamento)", "cat", S_BARRA], ["cantoneiraCv", "Cantoneira do X (contraventamento)", "cat", S_L]);
     c.push(["x0", "Origem X (m, largura)", "num"], ["z0", "Origem Z (m, comprimento)", "num"], ["cota", "Cota da base (m)", "num"]);
@@ -382,7 +385,7 @@
         }
         return rg;
       }
-      var g = M.gerar(tipo, p, function () { return self.novoId(); }, { porticoId: op.alvo ? op.alvo.id : null });
+      var g = M.gerar(tipo, p, function () { return self.novoId(); }, { porticoId: op.alvo ? op.alvo.id : null, edicoes: op.alvo && global.MetalElemento ? global.MetalElemento.edicoesDe(this.caixas(), op.alvo.id) : null });   /* 21/11: as edições por tipo voltam no pórtico refeito */
       if (!g.ok) { toast(T.rotulo + ": " + g.motivo, "aviso", 9000); status(g.motivo); return g; }
       if (op.alvo) { g.op.ops = op.alvo.pecas.map(function (id) { return { op: "apagar", id: id }; }).concat(g.op.ops); g.op.pedido = "Atualizar o pórtico (" + op.alvo.n + " peças refeitas)"; }
       if (!U.enviar(g.op)) { toast("O editor recusou o pórtico.", "erro"); g.ok = false; return g; }

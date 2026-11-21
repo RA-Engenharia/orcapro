@@ -440,7 +440,7 @@
     }
     /* tirantes (barra redonda): a barra que nunca traciona fica frouxa — informação */
     G.membros.filter(function (m) { return m.papel === "tirante"; }).forEach(function (m) {
-      var trac = elu.some(function (c) { var cb = res.combinacoes[c.id]; return cb && cb.ok && m.segs.some(function (s) { var b = cb.barras[s]; return b && !b.inativa && b.estacoes[0].N > 1e-6; }); });
+      var trac = elu.some(function (c) { var cb = res.combinacoes[c.id]; return cb && cb.ok && m.segs.some(function (s) { var b = cb.barras[s]; return b && !b.inativa && b.estacoes && b.estacoes[0] && b.estacoes[0].N > 1e-6;   /* 21/11: barra sem estação (terça treliçada) não derruba o cálculo */ }); });
       if (!trac) avisos.push(m.id + " (" + m.secao.nome + "): barra só de tração FROUXA em todas as combinações últimas — não trabalha (confira se o X está completo).");
     });
     /* ELS */

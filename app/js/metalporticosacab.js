@@ -97,7 +97,7 @@
           lote.ops.forEach(function (o) {
             if (o.op === "criar" && o.caixa) {
               if (atual[o.id]) { o.caixa.id = o.id; atual[o.id] = clone(o.caixa); }
-              else { o.caixa.id = o.id; o.caixa.portico = gid; if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
+              else { o.caixa.id = o.id; o.caixa.portico = gid; var h0 = sel[0] && cur(sel[0]); if (h0 && h0.elemMetal) { o.caixa.elemMetal = clone(h0.elemMetal); o.caixa.elemMetal.anexo = true; o.caixa.elemMetal.slot = "lig:" + tipo; delete o.caixa.elemMetal.mud; } if (acab) o.caixa.acab = clone(o.caixa.metal && o.caixa.metal.kind === "parafuso" ? ACAB_PARAFUSO : acab); novas.push(o.caixa); }
             }
             if (o.op === "metalFuros" && atual[o.id]) { var q = atual[o.id]; q.metalFuros = arr(q.metalFuros).filter(function (f) { return f.lig !== o.lig; }).concat(o.furos.map(function (f) { var h = clone(f); h.lig = o.lig; return h; })); }
             ops.push(o);
@@ -107,11 +107,16 @@
         };
         var cota = num(p.cota, 0);
         /* placa de base: toda barra vertical que nasce na cota da base (banzos da coluna, pilares, colunas de tapamento) */
+        /* 21/11/2026 (docs/alumetal/PADROES-METALICA-BR.md, item 15): os banzos/montantes da MESMA coluna treliçada (b.coluna) levam
+           UMA placa com um chumbador por montante — antes cada banzo levava a sua placa de 4 chumbadores */
+        var porCol = {}, ordCol = [];
         Mod.barras.forEach(function (b) {
           if (b.ferr !== "pilar") return;
           var a = nos[b.a], z = nos[b.b]; if (!a || !z || Math.abs(a[1] - cota) > 1e-6) return;
+          if (b.coluna) { if (!porCol[b.coluna]) { porCol[b.coluna] = []; ordCol.push(b.coluna); } porCol[b.coluna].push(b); return; }
           aplicar("placaBase", [cx(b)], { nChumb: 4 });
         });
+        ordCol.forEach(function (k) { var bs = porCol[k]; if (bs.length < 2) { aplicar("placaBase", [cx(bs[0])], { nChumb: 4 }); return; } if (aplicar("placaBaseColuna", bs.map(cx), {})) { cont.placaBase = (cont.placaBase || 0) + 1; cont.placaBaseColuna -= 1; } });
         /* clip de terça: em cada pórtico, cada linha de terça (as dos dois vãos vizinhos dividem o clip) sobre a viga/banzo de cima */
         var porK = {}, linhaDe = function (nm) { var m = /^t(\d+):(\d+)'?$/.exec(nm); return m ? { k: +m[1], j: +m[2] } : null; };
         var vigasK = {}, semClip = 0;

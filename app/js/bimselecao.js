@@ -337,7 +337,7 @@
     uids: function () { var b = B(); try { var s = b && b.selecao ? b.selecao() : null; return (s && s.uids) || []; } catch (e) { return []; } },
     selecionar: function (uids, modo) { var b = B(); if (!b || !b.selecionar) return []; return b.selecionar(uids || [], modo || "trocar") || []; },
     /* M5 (14/10/2026): o clique numa peça de PEÇA PRONTA pega o componente inteiro (o Tab entra na peça) */
-    _comp: function (u) { try { var C = global.MetalComponenteUI; return C && C.expandir ? C.expandir(u) : [u]; } catch (e) { return [u]; } },
+    _comp: function (u) { var r; try { var C = global.MetalComponenteUI; r = C && C.expandir ? C.expandir(u) : [u]; } catch (e) { r = [u]; } if (r.length <= 1) { try { var E = global.MetalElementoUI; if (E && E.expandir) r = E.expandir(u); } catch (e2) {} } return r; },   /* 21/11: o elemento do pórtico (js/metalelementoui.js) */
     /* alguma ferramenta da vista 2D armada (traçar corte, anotação, ambiente, modelar na planta, P6) */
     ferramenta2d: function () {
       try {

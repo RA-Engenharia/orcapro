@@ -873,7 +873,7 @@
         /* PLANTA: com a ferramenta de modelar armada o duplo clique é ponto, não "enquadrar" */
         if (global.BimPlantaModelar && global.BimPlantaModelar.ocupado && global.BimPlantaModelar.ocupado()) return;
         /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA abre o diálogo dela (js/metalcomponenteui.js) */
-        try { var SLd = global.BimSelecao, Cd = global.MetalComponenteUI, ud = SLd && SLd.pecaEm && ev ? SLd.pecaEm(id, self._ptSvg(id, ev)) : null; if (ud && Cd && Cd.duplo && Cd.duplo(ud)) return; } catch (eD) {}
+        try { var SLd = global.BimSelecao, Cd = global.MetalComponenteUI, ud = SLd && SLd.pecaEm && ev ? SLd.pecaEm(id, self._ptSvg(id, ev)) : null; if (ud && Cd && Cd.duplo && Cd.duplo(ud)) return; if (ud && global.MetalElementoUI && global.MetalElementoUI.duplo(ud)) return; } catch (eD) {}
         self.ajustar(id);
       });
     },

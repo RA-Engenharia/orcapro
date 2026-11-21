@@ -386,6 +386,8 @@
       var sAcL = this._secAcab(pre, cs); if (sAcL) sec.push(sAcL);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ELEVAR (js/bimelevarui.js): a mesma seção, com ‹vários› e o mesmo delta para todas (um Ctrl+Z) */
       try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
+      /* 21/11: o ELEMENTO inteiro do pórtico selecionado (js/metalelementoui.js) — o tipo dele e o "Separar este" */
+      try { var MEx = global.MetalElemento, EUx = global.MetalElementoUI; if (MEx && EUx && EUx.secao) { var ch0 = MEx.chave(cs[0]); if (ch0 && cs.every(function (c) { return MEx.chave(c) === ch0; })) { var secE = EUx.secao(cs[0].id, "mell:"); if (secE) sec.unshift(secE); } } } catch (eE) {}
       return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
         onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self.propsPeca(info, G); } };
     },
@@ -516,6 +518,7 @@
       sec.push({ nome: "Identidade", params: [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "(sem marca — Fabricação › Numerar)"), ro("id", "Identificador", id)]
         .concat(lig ? [ro("lig", "Ligações", "esta peça tem ligação: ao trocar perfil ou medida, as chapas e os furos da ligação NÃO acompanham — use Desfazer ligação e aplique de novo")] : [])
         .concat(MetalCriarUI._linhasVP(m, ro)) });
+      try { var secT = global.MetalElementoUI && global.MetalElementoUI.secao ? global.MetalElementoUI.secao(id) : null; if (secT) sec.unshift(secT); } catch (eT) {}   /* 21/11: Editando tipo TS-1 (n iguais) · Separar este */
       if (m.kind === "perfil") {
         var li = M.linhaAtual(c), vert = Math.abs(li.b[1] - li.a[1]) > 0.999 * Math.sqrt(Math.pow(li.b[0] - li.a[0], 2) + Math.pow(li.b[1] - li.a[1], 2) + Math.pow(li.b[2] - li.a[2], 2));
         var busca = this._buscaPeca && this._buscaPeca.id === id ? this._buscaPeca.texto : "";
@@ -672,9 +675,18 @@
       /* cota digitada (base, topo, cota da linha, Y): a peça passa a ficar nessa cota — deixa de acompanhar o nível */
       var soltou = (mud.base != null || mud.topo != null || mud.elevacao != null || (mud.dy && Math.abs(mud.dy) > 1e-9)) && mud.nivel === undefined && c.metal.cria && c.metal.cria.nivel;
       if (soltou) mud.nivel = null;
+      /* ELEMENTO DO PÓRTICO (js/metalelementoui.js, 21/11): perfil, aço e giro valem para o TIPO — a mesma peça em todos os
+         elementos iguais, num lote só (um Ctrl+Z); a edição fica guardada no modelo e auditada */
+      var EU = global.MetalElementoUI, rT = EU && EU.opsDaEdicao ? EU.opsDaEdicao(id, mud, M.editar) : null;
+      if (rT && rT.ids.length > 1) {
+        if (!enviarLote(rT.ops, "Tipo " + rT.tipo + ": " + k + " em " + rT.ids.length + " elementos")) { status("O editor recusou a mudança."); return false; }
+        if (k === "cat") this._buscaPeca = null;
+        status("Tipo " + rT.tipo + ": a mesma peça atualizada nos " + rT.ids.length + " elementos iguais (Ctrl+Z desfaz). Para mudar só este, Separar este nas Propriedades.");
+        return true;
+      }
       var r = M.editar(c, mud);
       if (r.erro) { status(r.erro); toast(r.erro, "aviso"); return false; }
-      if (!enviarLote([M.opAjustar(id, r.caixa)], "Propriedades da peça metálica")) { status("O editor recusou a mudança."); return false; }
+      if (!enviarLote([M.opAjustar(id, r.caixa)].concat(rT ? rT.ops.filter(function (o) { return o.op === "metalElemento"; }) : []), "Propriedades da peça metálica")) { status("O editor recusou a mudança."); return false; }
       if (k === "cat") this._buscaPeca = null;
       status(descricao(r.caixa) + " — atualizada" + (soltou ? "; com a cota digitada ela não acompanha mais o nível" : "") + " (Ctrl+Z desfaz).");
       return true;

@@ -661,7 +661,7 @@
         var c0 = ctx.caixas[o.id]; if (!c0 || c0.tipo !== "metal" || c0.fixo || !caixaMetalOk(o.caixa)) return false;
         var nv = clone(o.caixa);
         Object.keys(c0).forEach(function (k) { if (!GEOM_AJUSTAR[k] && !(k in nv)) nv[k] = c0[k]; });
-        ["lig", "soldadaEm", "solda", "nome"].forEach(function (k) { if (c0.metal && c0.metal[k] != null && nv.metal[k] == null) nv.metal[k] = c0.metal[k]; });
+        ["lig", "soldadaEm", "solda", "nome", "calc"].forEach(function (k) { if (c0.metal && c0.metal[k] != null && nv.metal[k] == null) nv.metal[k] = c0.metal[k]; });
         nv.id = o.id; ctx.caixas[o.id] = nv;
         return true;
       }

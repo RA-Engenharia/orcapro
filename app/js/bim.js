@@ -1786,6 +1786,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._aoMarcarPonto) return; // marcando a posição do equipamento: o clique simples é o ponto
     /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA (componente) abre o diálogo dela para editar no lugar (js/metalcomponenteui.js) */
     try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
+    try { if (window.MetalElementoUI && MetalElementoUI.duplo && S._uidEm) { var uE = S._uidEm(e.clientX, e.clientY); if (uE && /^edit:/.test(uE) && MetalElementoUI.duplo(uE)) return; } } catch (_) {}   /* 21/11: duplo clique entra na peça do elemento do pórtico */
     /* DUPLO CLIQUE NO VAZIO enquadra tudo (16/10/2026, #56); numa peça segue selecionando, como sempre */
     var vazioD = false; try { vazioD = !visitante && !raycastEm(e.clientX, e.clientY); } catch (_) {}
     selecionarEm(e.clientX, e.clientY);
@@ -7662,7 +7663,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
   S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !m.userData._focoOc && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
   /* M5 (14/10/2026, js/metalcomponenteui.js): a peça de uma PEÇA PRONTA é um COMPONENTE — o clique pega todas as peças dela (o Tab entra na peça) */
-  function compExp(u) { try { return window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { return [u]; } }
+  function compExp(u) {
+    var r; try { r = window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { r = [u]; }
+    /* 21/11/2026 (js/metalelementoui.js): peça de PÓRTICO da biblioteca → o ELEMENTO inteiro (pilar treliçado, tesoura, terça); Tab/duplo clique entram */
+    if (r.length <= 1) { try { if (window.MetalElementoUI && MetalElementoUI.expandir) r = MetalElementoUI.expandir(u); } catch (_) {} }
+    return r;
+  }
   S._compExp = compExp;
   function sel3Clique(e) {
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);

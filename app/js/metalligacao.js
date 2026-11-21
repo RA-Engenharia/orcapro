@@ -227,6 +227,54 @@
     return fechar(res, c);
   }
 
+  /* ============================================ 1b. PLACA DE BASE DA COLUNA TRELIÇADA (21/11/2026)
+   * docs/alumetal/PADROES-METALICA-BR.md, item 15 / R11: UMA placa por coluna (os 2 banzos da coluna plana ou os 4 montantes da
+   * espacial), com UM chumbador por montante — antes saía uma placa de 4 chumbadores em cada banzo (8 por coluna plana, 16 na
+   * espacial). Os pilares têm de ser verticais e nascer na mesma cota. A placa fica alinhada aos eixos do mundo (x no plano do
+   * pórtico, z ao longo do galpão); cada chumbador sai do lado de FORA do seu montante (do centro da coluna para o montante), a
+   * arruela + 5 mm da seção. Borda: a do motor (NBR 8800 Tabela 14 — valor de partida do js/metalnorma.js) e espaçamento
+   * conferido em 6.3.9 pela conferência da chapa. par: { t, parafuso, classe, furo, ancoragem, graute, bal (m, 0,075) } */
+  function placaBaseColuna(pilares, par) {
+    par = par || {};
+    var mbs = arr(pilares).map(function (c) { return M().membro(c); });
+    if (mbs.length < 2 || mbs.some(function (m) { return !m || Math.abs(m.X[1]) < 0.999; })) return erro("Placa da coluna: selecione os montantes VERTICAIS da coluna (2 ou mais).");
+    var y0 = Math.min.apply(null, mbs.map(function (m) { return Math.min(m.P0[1], m.P0[1] + m.X[1] * m.L); }));
+    if (mbs.some(function (m) { return Math.abs(Math.min(m.P0[1], m.P0[1] + m.X[1] * m.L) - y0) > 1e-4; })) return erro("Placa da coluna: os montantes não nascem na mesma cota.");
+    var c = comuns({ parafuso: par.parafuso || "3/4\"", classe: par.classe || "F1554-36", borda: par.borda, furo: par.furo || "alargado" });
+    var res = novoRes("placaBase", par, mbs), t = num(par.t, 0.025), bal = num(par.bal, 0.075);
+    var e = par.borda != null ? c.eP : Math.max(c.eP, cima5(N().bordaMin(c.db, "laminada").e) / 1000);
+    var folga = c.pf.arr.d2 / 2000 + 0.005;
+    /* o centro e a meia caixa de cada montante em x e z (pela seção girada) */
+    var cs = mbs.map(function (m) { var b0 = m.X[1] > 0 ? m.P0 : V().add(m.P0, V().mul(m.X, m.L)); return { x: b0[0], z: b0[2], hx: Math.abs(m.A[0]) * m.s.larg / 2 + Math.abs(m.B[0]) * m.s.alt / 2, hz: Math.abs(m.A[2]) * m.s.larg / 2 + Math.abs(m.B[2]) * m.s.alt / 2 }; });
+    var cx0 = cs.reduce(function (a, q) { return a + q.x; }, 0) / cs.length, cz0 = cs.reduce(function (a, q) { return a + q.z; }, 0) / cs.length;
+    var ch = cs.map(function (q) {
+      var dx = q.x - cx0, dz = q.z - cz0, L = Math.sqrt(dx * dx + dz * dz); if (L < 1e-9) { dx = 1; dz = 0; L = 1; }
+      dx /= L; dz /= L;
+      var ext = Math.abs(dx) * q.hx + Math.abs(dz) * q.hz;   /* a meia seção na direção do chumbador (caixa) */
+      var s = ext;   /* o centro + (ext + folga)·d sai da caixa com a folga (na diagonal, a folga até o canto) */
+      return [q.x + dx * (s + folga), q.z + dz * (s + folga)];
+    });
+    var xs = [], zs = []; cs.forEach(function (q) { xs.push(q.x - q.hx - bal, q.x + q.hx + bal); zs.push(q.z - q.hz - bal, q.z + q.hz + bal); });
+    ch.forEach(function (q) { xs.push(q[0] - e, q[0] + e); zs.push(q[1] - e, q[1] + e); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+    var Bp = Math.ceil((x1 - x0) * 100 - 1e-9) / 100, Np = Math.ceil((z1 - z0) * 100 - 1e-9) / 100;
+    x0 = (x0 + x1) / 2 - Bp / 2; z0 = (z0 + z1) / 2 - Np / 2;
+    /* a placa EMBAIXO dos montantes: u em +x, v em +z, espessura para baixo (x × z = −y) */
+    var ex = [1, 0, 0], ey = [0, 0, 1], O = [x0, y0, z0];
+    var pts = ch.map(function (q) { return [q[0] - x0, q[1] - z0]; });
+    var perim = mbs.reduce(function (a, m) { return a + 2 * (m.s.larg + m.s.alt); }, 0);
+    var pl = M().chapa({ origem: O, ex: ex, ey: ey, t: t, ret: { L: Bp, B: Np }, papel: "Placa de base", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: pilares[0].id,
+      solda: solda(pernaMin(t, Math.min.apply(null, mbs.map(function (m) { return Math.min(num(m.perfil.tf, t), num(m.perfil.tw, t), num(m.perfil.t, t), num(m.perfil.e, t)); }))), "contorno", perim, false),
+      furos: pts.map(function (q, i) { return { u: q[0], v: q[1], db: c.db, tipo: c.furo, id: "C" + (i + 1) }; }) });
+    if (pl.erro) return erro(pl.erro);
+    res.pecas.push(pl);
+    var anc = num(par.ancoragem, 0.4) + num(par.graute, 0.025), fx = N().furo(c.db, c.furo);
+    res.parafusos = boltCaixas(pts.map(function (q) { return { P: [O[0] + q[0], O[1], O[2] + q[1]], D: [0, -1, 0], aperto: t, chumbador: { ancoragem: anc }, furo: c.furo }; }), c, res.lig);
+    res.nMontantes = mbs.length;
+    res.resumo = "Placa de base da coluna " + Math.round(Bp * 1000) + " × " + Math.round(Np * 1000) + " × " + r1(t * 1000) + " mm sob " + mbs.length + " montantes, " + pts.length + " chumbadores " + c.pf.id + " (um por montante; furo " + (fx.tipo === "alargado" ? "alargado " : "") + "Ø" + fx.d + " mm)";
+    return fechar(res, c);
+  }
+
   /* =============================================== 2. CHAPA DE EXTREMIDADE
    * par: { t (m, partida 16 mm), parafuso, classe, linhas, gage (m), ext (m,
    *        chapa estendida além das mesas; partida 0 = faceada), largura (m),
@@ -1157,6 +1205,7 @@
 
   var MACROS = {
     placaBase: { rotulo: "Placa de base", pede: ["pilar"], fn: function (s, p) { return placaBase(s[0], p); } },
+    placaBaseColuna: { rotulo: "Placa de base da coluna treliçada", pede: ["montantes (2 ou mais)"], fn: function (s, p) { return placaBaseColuna(s, p); } },
     chapaExtremidade: { rotulo: "Chapa de extremidade", pede: ["viga", "apoio"], fn: function (s, p) { return chapaExtremidade(s[0], s[1], p); } },
     cantoneiraDupla: { rotulo: "Cantoneira dupla", pede: ["viga", "pilar"], fn: function (s, p) { return cantoneiraDupla(s[0], s[1], p); } },
     emendaCobrejunta: { rotulo: "Emenda por cobrejunta", pede: ["viga", "viga"], fn: function (s, p) { return emendaCobrejunta(s[0], s[1], p); } },
@@ -1177,7 +1226,7 @@
 
   var BimMetalLig = {
     MACROS: MACROS,
-    placaBase: placaBase, chapaExtremidade: chapaExtremidade, cantoneiraDupla: cantoneiraDupla, emendaCobrejunta: emendaCobrejunta,
+    placaBase: placaBase, placaBaseColuna: placaBaseColuna, chapaExtremidade: chapaExtremidade, cantoneiraDupla: cantoneiraDupla, emendaCobrejunta: emendaCobrejunta,
     clipTerca: clipTerca, contraventamento: contraventamento, noTrelica: noTrelica, enrijecedor: enrijecedor, chapaSimples: chapaSimples, assento: assento, talasMesa: talasMesa, barraRedonda: barraRedonda, soldadaDireta: soldadaDireta, reforcoAlma: reforcoAlma, prolongar: prolongar, misula: misula, consolo: consolo,
     aplicar: function (tipo, caixas, par) { var m = MACROS[tipo]; return m ? m.fn(caixas, par || {}) : erro("Ligação desconhecida: " + tipo + "."); },
     ops: ops, conferirChapa: conferirChapa, conferirMembro: conferirMembro, casca: casca
