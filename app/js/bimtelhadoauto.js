@@ -37,6 +37,8 @@
   function fin(v) { return typeof v === "number" && isFinite(v); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function r4(v) { return Math.round(v * 10000) / 10000; }
+  /* "T" ou "U" quando o contorno de 8 lados é um T/U ortogonal (a madeira calcula; só o rótulo da forma) — vazio nos outros casos */
+  function formaTU(P) { try { var M = dep("MadCobertura", "./madcobertura.js"), f = M && M.descreverForma ? M.descreverForma(P) : ""; return f === "T" || f === "U" ? f : ""; } catch (e) { return ""; } }
   function virg(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 
@@ -84,7 +86,7 @@
   function dadosContorno(r, extra) {
     var C = r.contorno.map(function (q) { return { x: q.x, z: q.z }; }), P = pts2(C), out = { ok: true, contorno: C, lados: C.length, area: r4(Math.abs(areaSinal(P))), perimetro: 0, alinhar: "externa", paredes: r.paredes || 0, ignoradas: r.ignoradas || 0 };
     var i; for (i = 0; i < P.length; i++) out.perimetro += dist(P[i], P[(i + 1) % P.length]); out.perimetro = r4(out.perimetro);
-    out.forma = C.length === 4 ? "retangular" : (C.length === 6 ? "em L (6 lados)" : C.length + " lados");
+    out.forma = C.length === 4 ? "retangular" : (C.length === 6 ? "em L (6 lados)" : (C.length === 8 && formaTU(P) ? "em " + formaTU(P) + " (8 lados)" : C.length + " lados"));
     if (extra) Object.keys(extra).forEach(function (k) { out[k] = extra[k]; });
     return out;
   }

@@ -203,7 +203,7 @@
   function ifc(res, opts) { var SA = dep("MadEngSaidas", "./madengsaidas.js"); return SA.gerarIfc(pecasModelo(res), { projeto: marcaPre(res) + ((opts && opts.projeto) || "Telhado de 4 águas em L"), opcao: res.opcao, semente: (opts && opts.semente) || "t3l:" + res.opcao, agora: opts && opts.agora }); }
   function dae(res, opts) { var EX = dep("MadEngExport", "./madengexport.js"); return EX.gerarDae(pecasModelo(res), { projeto: marcaPre(res) + ((opts && opts.projeto) || "Telhado de 4 águas em L") }); }
 
-  var MadT3LSaidas = { EXIGENCIA: EXIGENCIA, pecasMembros: pecasMembros, pecasModelo: pecasModelo, orcar: orcarT3L, rodar: rodar, memorial: memorial, manual: manual, ifc: ifc, dae: dae, FAIXA: FAIXA, gruposDe: gruposDe };
+  var MadT3LSaidas = { EXIGENCIA: EXIGENCIA, pecasMembros: pecasMembros, pecasModelo: pecasModelo, orcar: orcarT3L, rodar: rodar, memorial: memorial, manual: manual, ifc: ifc, dae: dae, FAIXA: FAIXA, gruposDe: gruposDe, multGeo: multGeo };
   if (typeof module !== "undefined" && module.exports) module.exports = MadT3LSaidas;
   else global.MadT3LSaidas = MadT3LSaidas;
 })(typeof window !== "undefined" ? window : this);

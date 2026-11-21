@@ -80,6 +80,13 @@
       if (man && cfg.tesoura === "fink") R.aviso = "Tesoura Fink só existe para 2 águas; na planta em L usei Pratt.";
       R.fonte = "T3L-REFERENCIA.md"; return R;
     }
+    if (lido.tipo === "T3TU") {
+      var vU = man && cfg.tesoura !== "fink" ? cfg.tesoura : "pratt";
+      R.variante = vU; R.auto = !(man && cfg.tesoura !== "fink");
+      R.criterio = "4 águas em planta em " + lido.planta + " (barra " + virg(lido.a) + " × " + virg(lido.b) + " m, " + arr(lido.legs).length + " perna(s)): T3TU, com um RINCÃO em cada canto côncavo e calha — " + (R.auto ? "tesoura Pratt (a Fink só existe para 2 águas)" : "tesoura " + vU + " escolhida pelo usuário");
+      if (man && cfg.tesoura === "fink") R.aviso = "Tesoura Fink só existe para 2 águas; na planta em " + lido.planta + " usei Pratt.";
+      R.fonte = "T3TU-REFERENCIA.md"; return R;
+    }
     if (lido.tipo === "T3") {
       var vt = man && cfg.tesoura !== "fink" ? cfg.tesoura : "pratt";
       R.variante = vt; R.auto = !(man && cfg.tesoura !== "fink");

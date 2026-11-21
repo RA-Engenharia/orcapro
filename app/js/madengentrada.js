@@ -215,9 +215,12 @@
 
   /* ------------------------------------------------------------ T3 (telhado de 4 águas): o estado da tela → entrada de MadT3Lig.projetar */
   function t3Params(est) {
-    var t = est.t3 || {}, planta = t.planta === "L" ? { planta: "L", c: num(t.compB, 11), bb: num(t.vaoB, 5) } : {};
-    return { nome: est.obra.nome || "Telhado de 4 águas", planta: planta.planta, c: planta.c, bb: planta.bb, a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
+    var t = est.t3 || {}, tu = t.planta === "TU", planta = t.planta === "L" ? { planta: "L", c: num(t.compB, 11), bb: num(t.vaoB, 5) } : (tu ? { planta: "TU" } : {});
+    var legs = tu ? (Array.isArray(t.legs) ? t.legs : []).map(function (L) { return { x0: num(L.x0, 0), w: num(L.w, 0), c: num(L.c, 0) }; }) : undefined;      /* T/U (js/madt3tu*.js): barra a × b (ao longo de X) + até 2 pernas ao longo de Z */
+    var pr = { nome: est.obra.nome || "Telhado de 4 águas", planta: planta.planta, c: planta.c, bb: planta.bb, a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
       telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: t.tesoura === "howe" ? "howe" : "pratt" } };
+    if (tu) pr.legs = legs;
+    return pr;
   }
   function secoesPartidaT3(o, emL) {
     var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.28)), P = { forma: "quadrado", b: b, h: b };
@@ -247,8 +250,8 @@
     var o = opcaoDe(est, id), ob = est.obra, params = t3Params(est);
     var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), faces: copia(ob.faces) },
       classe: o.classe, umidade: num(ob.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined, opcao: o.id, pesoMLC: 5.0 };
-    var o3 = copia(o); o3.nome = (params.planta === "L" ? "Planta em L, " : "") + "Pilar " + Math.round(num(o.t2 && o.t2.pilarB, 0.28) * 100) + " cm, tesouras " + (params.tesoura.tipo === "howe" ? "Howe" : "Pratt") + ", " + String(o.classe || "").replace("mlc:", "");
-    return { proj: proj, partida: secoesPartidaT3(o, params.planta === "L"), t7: null, opcao: o3, extras: copia(est.extras), nome: ob.nome, t3: true, sistema: "tesoura" };
+    var o3 = copia(o); o3.nome = (params.planta === "L" ? "Planta em L, " : (params.planta === "TU" ? "Planta em T/U, " : "")) + "Pilar " + Math.round(num(o.t2 && o.t2.pilarB, 0.28) * 100) + " cm, tesouras " + (params.tesoura.tipo === "howe" ? "Howe" : "Pratt") + ", " + String(o.classe || "").replace("mlc:", "");
+    return { proj: proj, partida: secoesPartidaT3(o, params.planta === "L" || params.planta === "TU"), t7: null, opcao: o3, extras: copia(est.extras), nome: ob.nome, t3: true, sistema: "tesoura" };
   }
 
   /* ------------------------------------------------------------ T5 (pergolado): o estado da tela → entrada de MadT5Lig.projetar (incl em % na tela → fração no motor) */
@@ -303,6 +306,7 @@
       var w = est.t3;
       if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
       if (w.planta === "L") { try { var ML3 = global.MadT3L || (typeof require === "function" ? require("./madt3l.js") : null); if (ML3) ML3.parametros(t3Params(est)); } catch (eL) { f.push({ passo: 2, texto: "Planta em L: " + String(eL.message || eL).replace(/^madt3l:\s*/, "") }); } }
+      else if (w.planta === "TU") { try { var MU3 = global.MadT3TUMembros || (typeof require === "function" ? require("./madt3tumembros.js") : null); if (MU3) MU3.parametros(t3Params(est)); } catch (eU) { f.push({ passo: 2, texto: "Planta em T/U: " + String(eU.message || eU).replace(/^madt3tu:\s*/, "") }); } }
       else if (!(num(w.vao, 0) >= 3) || !(num(w.comp, 0) > 1)) f.push({ passo: 2, texto: "Informe o vão (mínimo 3 m) e o comprimento da casa." });
       else if (num(w.comp, 0) < num(w.vao, 0)) f.push({ passo: 2, texto: "O comprimento deve ser maior ou igual ao vão (gire a planta). Para planta quadrada use comprimento = vão." });
       else if (w.planta !== "L" && num(w.comp, 0) - num(w.vao, 0) > 1e-6 && num(w.comp, 0) - num(w.vao, 0) < 0.5) f.push({ passo: 2, texto: "A diferença entre comprimento e vão está entre 0 e 0,5 m: use planta quadrada (comprimento = vão) ou afaste os lados em pelo menos 0,5 m." });

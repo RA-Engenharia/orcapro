@@ -196,6 +196,7 @@
   }
   function gerarSaidas(tid) {
     var st = estado(), t = telhados(st).filter(function (x) { return String(x.id) === String(tid); })[0], MDx = global.MadTelhadoDes;
+    if (t && t.calcMadeira && t.calcMadeira.tipo === "T3TU") { status("Planta em T/U: as pranchas detalhadas (e o manual de montagem) entram na próxima versão. O cálculo, as reações nas paredes e o memorial do módulo Madeira já valem."); return false; }
     if (!t || !t.calcMadeira || !t.calcMadeira.motor || !MDx) { status("Calcule a madeira do telhado " + tid + " antes (Madeira calculada › Calcular)."); return false; }
     if (UI_ESTADO.rodando) { status("Já tem um cálculo de madeira rodando: espere terminar."); return false; }
     var obra = lerObra(), sl = MDx.solicitar(t.calcMadeira, obra);
@@ -253,6 +254,11 @@
       h += "<ul style=\"margin:0 0 4px 18px;padding:0;font-size:12px\">" + arr(vdc.vigas).map(function (v) { return "<li>" + esc(v.id) + ": vão " + virg(v.L, 2) + " m, " + v.nPontaletes + " pontalete(s); η flexão " + virg(v.etaFlexao, 2) + ", flecha " + virg(v.etaFlecha, 2) + ", lateral " + virg(v.etaLateral, 2) + ", σc90 apoio " + virg(v.etaC90Apoio, 2) + "</li>"; }).join("") + "</ul>";
       if (c.cargasNasParedes && c.cargasNasParedes.length) h += "<p style=\"margin:0 0 4px;font-size:12px\"><b>Cargas nas paredes/vigas</b> (reação de cálculo): " + c.cargasNasParedes.map(function (q) { return esc(q.apoio) + " " + virg(q.kN, 1) + " kN"; }).join(" · ") + ". Confirmar a resistência da parede com o RT.</p>";
       if (vdc.premissa) h += "<p style=\"margin:0 0 4px;font-size:11px;opacity:.8\">" + esc(vdc.premissa) + ".</p>";
+    }
+    if (c.tipo === "T3TU") {      /* T/U: reações nas paredes, pendências ao RT por canto côncavo e o aviso das pranchas */
+      if (arr(c.cargasNasParedes).length) h += "<p style=\"margin:8px 0 0;font-size:12px\"><b>Cargas nas paredes</b> (reação de cálculo, soma dos pilares de cada parede): " + c.cargasNasParedes.map(function (q) { return esc(q.apoio) + " " + virg(q.kN, 1) + " kN"; }).join(" · ") + (c.equilibrioReacoes ? "; equilíbrio vertical " + (c.equilibrioReacoes.ok ? "fecha (±1 %)" : "NÃO fecha") : "") + ". Confirmar a resistência da parede com o RT.</p>";
+      if (arr(c.pendenciasRT).length) h += "<p style=\"margin:6px 0 0;font-size:12px\"><b>Pendências ao RT (cantos côncavos):</b> " + c.pendenciasRT.map(esc).join(" ") + "</p>";
+      h += "<p style=\"margin:6px 0 0;font-size:12px\"><b>Pranchas detalhadas do T/U: próxima versão.</b> Pinos e chapas dos nós: estimativa pelo critério do L (verificação detalhada das ligações na etapa 3b).</p>";
     }
     if (c.cargasNaLaje && c.cargasNaLaje.n) h += "<p style=\"margin:8px 0 0;font-size:12px\"><b>Cargas na laje:</b> " + c.cargasNaLaje.n + " pontaletes × " + virg(c.cargasNaLaje.porPonto_kN, 2) + " kN (total " + virg(c.cargasNaLaje.total_kN, 1) + " kN). " + esc(c.cargasNaLaje.aviso) + ".</p>";
     if (c.aparente) h += "<p style=\"margin:8px 0 0;font-size:12px\">Telhado aparente: peças com acabamento à vista" + (c.ligacaoOculta ? ", ligações ocultas" : "") + "; sem forro. Os cortes de encaixe vêm do módulo de encaixes (js/madencaixe.js) quando ele estiver no sistema.</p>";
