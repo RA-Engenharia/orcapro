@@ -1692,7 +1692,9 @@
           bt("cenarios", "cenarios", "Comparar cenários"),
           bt("orcprec-hub", "ciclo", "Revisões e preços", ' title="Guardar revisões (R00, R01…) e compará-las, atualizar os preços para outra base e comparar bases lado a lado"'),
           bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"'),
-          bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"')
+          bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"'),
+          bt("orc-precospub", "relatorio", "Comparar com preços públicos", ' title="Compara o preço de cada item com atas e contratos públicos (faixa praticada), com fonte e link; alerta se estiver fora da faixa"'),
+          bt("orc-reajuste", "ciclo", "Reajustar por índice", ' title="Reajusta os custos pelo IPCA, INCC-M ou IGP-M oficiais (Banco Central), com a conta mês a mês e a fonte; dá para desfazer"')
         ])
         .concat(aprov.botoes || [])
         .concat(vazio ? [bProp.replace(' primary"', '"')] : [])

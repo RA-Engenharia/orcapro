@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.419",
+versao: "1.2.420",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -19819,7 +19819,9 @@ bt("reimportar-excel", "reimportar", "Reimportar", ' title="Traz de volta as edi
 bt("cenarios", "cenarios", "Comparar cenários"),
 bt("orcprec-hub", "ciclo", "Revisões e preços", ' title="Guardar revisões (R00, R01…) e compará-las, atualizar os preços para outra base e comparar bases lado a lado"'),
 bt("relatorio", "relatorio", "Relatório completo", ' aria-label="Relatório completo" title="Relatório completo"'),
-bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"')
+bt("orc-ref", "relatorio", "Pacote da prefeitura", ' title="Orçamento de referência no padrão do órgão público: sintética, analítica, BDI, encargos, curva ABC, cronograma, memória, cotação e declarações (PDF + Excel)"'),
+bt("orc-precospub", "relatorio", "Comparar com preços públicos", ' title="Compara o preço de cada item com atas e contratos públicos (faixa praticada), com fonte e link; alerta se estiver fora da faixa"'),
+bt("orc-reajuste", "ciclo", "Reajustar por índice", ' title="Reajusta os custos pelo IPCA, INCC-M ou IGP-M oficiais (Banco Central), com a conta mês a mês e a fonte; dá para desfazer"')
 ])
 .concat(aprov.botoes || [])
 .concat(vazio ? [bProp.replace(' primary"', '"')] : [])
@@ -34368,6 +34370,95 @@ return { carregado: this.carregado, total: this._itens.length, categorias: this.
 };
 if (global) global.Epi = Epi;
 if (typeof module !== "undefined" && module.exports) module.exports = Epi;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/caepi.js ==== */
+try {
+(function (global) {
+"use strict";
+var AVISO_DIAS = 60;
+var ARQUIVO = "data/caepi-indice.json";
+var _indice = null, _promessa = null;
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function diasDe(d) { return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(2000, 0, 1)) / 86400000); }
+function isoDeDias(n) { var d = new Date(Date.UTC(2000, 0, 1) + n * 86400000); return d.getUTCFullYear() + "-" + dd(d.getUTCMonth() + 1) + "-" + dd(d.getUTCDate()); }
+function brDeIso(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; }
+function soDigitos(v) { return String(v == null ? "" : v).replace(/\D/g, ""); }
+function montar(raw) {
+if (!raw || !raw.c || !raw.v || !raw.fonte) throw new Error("índice do CAEPI inválido");
+var porCA = {}, n = 0, i;
+for (i = 0; i < raw.c.length; i++) { n += raw.c[i]; porCA[n] = [raw.v[i], raw.s.charAt(i), raw.e[i], raw.fb[i]]; }
+return { porCA: porCA, fonte: raw.fonte, eq: raw.eq || [], fab: raw.fab || [] };
+}
+function carregar(ctx) {
+ctx = ctx || {};
+var P = ctx.Promise || global.Promise;
+if (_indice) return P.resolve(_indice);
+if (_promessa) return _promessa;
+var f = ctx.fetch || (global.fetch ? function (u) { return global.fetch(u); } : null);
+if (!f) return P.reject(new Error("Este navegador não consegue ler a base de CAs."));
+_promessa = P.resolve().then(function () { return f(ctx.arquivo || ARQUIVO); }).then(function (r) {
+if (!r || !r.ok) throw new Error("A base de CAs não está instalada nesta versão (HTTP " + (r && r.status) + ").");
+return r.json();
+}).then(function (j) { _indice = montar(j); return _indice; }).then(null, function (e) {
+_promessa = null;
+throw e;
+});
+return _promessa;
+}
+function validar(ca, indice, hoje) {
+hoje = hoje || new Date();
+var n = parseInt(soDigitos(ca), 10);
+var base = indice && indice.fonte ? brDeIso(indice.fonte.baseData) : "";
+var fonteTxt = "CAEPI/MTE, base de " + (base || "data não informada");
+if (!isFinite(n) || n <= 0) return { estado: "formato", ok: false, aviso: false, texto: "Número de CA inválido: use só dígitos (ex.: 33547).", fonte: fonteTxt };
+var r = indice.porCA[n];
+if (!r) return { estado: "naoconsta", ok: false, aviso: true, ca: n, fonte: fonteTxt,
+texto: "CA " + n + " não consta na base de " + (base || "—") + ". Pode ser um CA emitido depois dessa data ou um número digitado errado — confira online antes de entregar." };
+var sit = r[1], dias = r[0], hojeD = diasDe(hoje);
+var equip = indice.eq[r[2]] || "", fab = indice.fab[r[3]] || "";
+var val = dias > 0 ? isoDeDias(dias) : "", valBR = brDeIso(val);
+var out = { ca: n, validade: val, validadeBR: valBR, equipamento: equip, fabricante: fab, situacaoBase: sit, fonte: fonteTxt };
+if (sit === "C") { out.estado = "cancelado"; out.ok = false; out.aviso = true; out.texto = "CA " + n + " CANCELADO pelo MTE (" + fonteTxt + "). Não entregue este equipamento."; return out; }
+if (sit === "S") { out.estado = "suspenso"; out.ok = false; out.aviso = true; out.texto = "CA " + n + " SUSPENSO pelo MTE (" + fonteTxt + "). Não entregue até regularizar."; return out; }
+if (dias > 0 && dias < hojeD) { out.estado = "vencido"; out.ok = false; out.aviso = true; out.texto = "CA " + n + " VENCIDO em " + valBR + " (" + fonteTxt + ")." + (equip ? " " + equip + "." : ""); return out; }
+if (sit === "E") { out.estado = "vencido"; out.ok = false; out.aviso = true; out.texto = "CA " + n + " consta como VENCIDO (" + fonteTxt + ")."; return out; }
+if (sit !== "V") { out.estado = "indefinido"; out.ok = false; out.aviso = true; out.texto = "CA " + n + " com situação não reconhecida na base — confira online."; return out; }
+if (!(dias > 0)) { out.estado = "semvalidade"; out.ok = true; out.aviso = true; out.texto = "CA " + n + " válido, sem data de validade na base (" + fonteTxt + ")."; return out; }
+var falta = dias - hojeD; out.diasParaVencer = falta;
+if (falta <= AVISO_DIAS) { out.estado = "vencendo"; out.ok = true; out.aviso = true; out.texto = "CA " + n + " válido, mas VENCE em " + valBR + " (" + falta + " dia" + (falta === 1 ? "" : "s") + "). " + fonteTxt + "."; return out; }
+out.estado = "valido"; out.ok = true; out.aviso = false;
+out.texto = "CA " + n + " válido até " + valBR + (equip ? " — " + equip : "") + (fab ? " (" + fab + ")" : "") + ". " + fonteTxt + ".";
+return out;
+}
+function validarItens(itens, indice, hoje) {
+var out = [];
+(itens || []).forEach(function (it, i) {
+var ca = soDigitos(it && it.ca);
+if (!ca) return;
+var r = validar(ca, indice, hoje); r.indice = i; r.nome = it.nome || ""; out.push(r);
+});
+return out;
+}
+var CORES = { valido: "#166534", vencendo: "#b45309", semvalidade: "#b45309", naoconsta: "#b45309", vencido: "#b91c1c", cancelado: "#b91c1c", suspenso: "#b91c1c", indefinido: "#b45309", formato: "#b45309" };
+function pintar(container, itens, ctx) {
+if (!container || !container.querySelector) return;
+carregar(ctx).then(function (ind) {
+validarItens(itens, ind, ctx && ctx.hoje).forEach(function (r) {
+var el = container.querySelector('[data-eecav="' + r.indice + '"]');
+if (!el) return;
+el.textContent = (r.ok && !r.aviso ? "✔ " : "⚠ ") + r.texto;
+el.style.color = CORES[r.estado] || "#475569";
+el.setAttribute("data-eecav-estado", r.estado);
+});
+}, function (e) {
+var els = container.querySelectorAll("[data-eecav]"), i;
+for (i = 0; i < els.length; i++) { els[i].textContent = "Validação do CA indisponível: " + (e && e.message ? e.message : "base não carregou") + " Use 🔎 consultar."; els[i].style.color = "#64748b"; }
+});
+}
+global.Caepi = { pintar: pintar, AVISO_DIAS: AVISO_DIAS, ARQUIVO: ARQUIVO, montar: montar, carregar: carregar, validar: validar, validarItens: validarItens, brDeIso: brDeIso,
+_zerar: function () { _indice = null; _promessa = null; } };
+if (typeof module !== "undefined" && module.exports) module.exports = global.Caepi;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/nfitens.js ==== */
@@ -75218,6 +75309,463 @@ mostrarPend();
 }
 global.OrcRefUI = { abrir: abrir, opcoesDe: opcoesDe };
 if (typeof module !== "undefined" && module.exports) module.exports = global.OrcRefUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/reajusteindice.js ==== */
+try {
+(function (global) {
+"use strict";
+var TTL_MS = 12 * 3600 * 1000;
+var INTERVALO_MIN_MS = 3000;
+var CH = "orcapro:bcb:sgs:";
+var SERIES = {
+ipca: { id: "ipca", codigo: 433, nome: "IPCA", orgao: "IBGE", descricao: "Índice Nacional de Preços ao Consumidor Amplo (variação mensal %)" },
+incc: { id: "incc", codigo: 192, nome: "INCC-M", orgao: "FGV", descricao: "Índice Nacional de Custo da Construção — Mercado (variação mensal %)" },
+igpm: { id: "igpm", codigo: 189, nome: "IGP-M", orgao: "FGV", descricao: "Índice Geral de Preços — Mercado (variação mensal %)" }
+};
+function s(v) { return v == null ? "" : String(v); }
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function mesOk(m) { return /^\d{4}-(0[1-9]|1[0-2])$/.test(s(m)); }
+function mesAdd(m, n) {
+var a = parseInt(m.slice(0, 4), 10), b = parseInt(m.slice(5, 7), 10) - 1 + n;
+a += Math.floor(b / 12); b = ((b % 12) + 12) % 12;
+return a + "-" + dd(b + 1);
+}
+function mesesEntre(base, alvo) {
+var out = [], m = mesAdd(base, 1), guarda = 0;
+while (m <= alvo && guarda++ < 600) { out.push(m); m = mesAdd(m, 1); }
+return out;
+}
+function urlSerie(codigo, mesIni, mesFim) {
+var ini = "01/" + mesIni.slice(5, 7) + "/" + mesIni.slice(0, 4);
+var fim = "28/" + mesFim.slice(5, 7) + "/" + mesFim.slice(0, 4);
+return "https://api.bcb.gov.br/dados/serie/bcdata.sgs." + codigo + "/dados?formato=json&dataInicial=" + ini + "&dataFinal=" + fim;
+}
+function lerSerie(entrada) {
+var out = [], vistos = {}, descartados = 0, lista = null;
+if (typeof entrada === "string") {
+var t = entrada.replace(/^\s+|\s+$/g, "");
+if (t.charAt(0) === "[") { try { lista = JSON.parse(t); } catch (e) { lista = null; } }
+else {
+lista = [];
+t.split(/\r?\n/).forEach(function (ln) {
+var p = ln.split(/[;\t]/); if (p.length < 2) return;
+var d = p[0].replace(/^\s+|\s+$/g, "");
+var m1 = /^(\d{4})-(\d{2})/.exec(d), m2 = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d), m3 = /^(\d{2})\/(\d{4})$/.exec(d);
+var mes = m1 ? m1[1] + "-" + m1[2] : (m2 ? m2[3] + "-" + m2[2] : (m3 ? m3[2] + "-" + m3[1] : ""));
+lista.push({ mes: mes, valor: p[1] });
+});
+}
+} else lista = entrada;
+arr(lista).forEach(function (x) {
+if (!x) { descartados++; return; }
+var mes = x.mes || "";
+if (!mes && x.data) { var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s(x.data)); if (m) mes = m[3] + "-" + m[2]; }
+var raw = s(x.valor).replace(/\s/g, "");
+var v = raw.indexOf(",") >= 0 ? parseFloat(raw.replace(/\./g, "").replace(",", ".")) : parseFloat(raw);
+if (!mesOk(mes) || !isFinite(v)) { descartados++; return; }
+if (vistos[mes]) return;
+vistos[mes] = 1; out.push({ mes: mes, valor: v });
+});
+out.sort(function (a, b) { return a.mes < b.mes ? -1 : (a.mes > b.mes ? 1 : 0); });
+return { pontos: out, descartados: descartados };
+}
+function fatorAcumulado(pontos, mesBase, mesAlvo) {
+if (!mesOk(mesBase) || !mesOk(mesAlvo)) return { ok: false, erro: "Informe o mês-base e o mês-alvo (AAAA-MM)." };
+if (mesAlvo <= mesBase) return { ok: false, erro: "O mês-alvo precisa ser DEPOIS do mês-base (o mês-base já está no preço)." };
+var porMes = {}; arr(pontos).forEach(function (p) { porMes[p.mes] = p.valor; });
+var meses = mesesEntre(mesBase, mesAlvo), falta = [], acum = 1, linhas = [];
+meses.forEach(function (m) {
+if (porMes[m] === undefined) { falta.push(m); return; }
+acum *= 1 + porMes[m] / 100;
+linhas.push({ mes: m, valor: porMes[m], acumulado: acum });
+});
+if (falta.length) {
+var ult = ""; arr(pontos).forEach(function (p) { if (p.mes > ult) ult = p.mes; });
+return { ok: false, faltam: falta, erro: "A série não tem " + (falta.length === 1 ? "o mês " : "os meses ") + falta.slice(0, 6).join(", ") + (falta.length > 6 ? "…" : "") +
+(ult ? " (último mês divulgado na série: " + ult + ")" : "") + ". Escolha um mês-alvo já divulgado — o sistema não estima índice." };
+}
+return { ok: true, fator: acum, pct: (acum - 1) * 100, meses: linhas, mesBase: mesBase, mesAlvo: mesAlvo,
+regra: "Fator = produto de (1 + variação mensal) dos meses de " + meses[0] + " a " + meses[meses.length - 1] + " (o mês-base " + mesBase + " fica de fora: já está no preço)." };
+}
+function arm() { try { return global.localStorage || null; } catch (e) { return null; } }
+function cacheLer(codigo, ctx) {
+var a = (ctx && ctx.storage) || arm(); if (!a) return null;
+try { var o = JSON.parse(a.getItem(CH + codigo) || "null"); return o && arr(o.pontos).length ? o : null; } catch (e) { return null; }
+}
+function cacheGravar(codigo, o, ctx) {
+var a = (ctx && ctx.storage) || arm(); if (!a) return;
+try { a.setItem(CH + codigo, JSON.stringify(o)); } catch (e) {}
+}
+var _ultimaChamada = 0, _emVoo = {};
+function obterSerie(serieId, mesIni, mesFim, ctx) {
+ctx = ctx || {};
+var def = SERIES[serieId];
+var P = ctx.Promise || global.Promise;
+if (!def) return P.reject(new Error("Índice desconhecido."));
+var agora = ctx.agora != null ? ctx.agora : new Date().getTime();
+var url = urlSerie(def.codigo, mesIni, mesFim);
+var c = cacheLer(def.codigo, ctx);
+var cobre = function (o) {
+if (!o) return false;
+var pts = o.pontos, ini = o.mesIni || "", fim = o.mesFim || "";
+return ini && fim && ini <= mesIni && fim >= mesFim && pts.length > 0;
+};
+if (c && cobre(c) && agora - c.baixadoEm < TTL_MS) {
+return P.resolve({ pontos: c.pontos, fonte: { url: c.url, baixadoEm: c.baixadoEm, deCache: true } });
+}
+var f = ctx.fetch || (global.fetch ? function (u, o) { return global.fetch(u, o); } : null);
+function recorrer(motivo) {
+if (c && cobre(c)) return { pontos: c.pontos, fonte: { url: c.url, baixadoEm: c.baixadoEm, deCache: true, velho: true, motivo: motivo } };
+var e = new Error("Não consegui baixar a série do Banco Central (" + motivo + "). Verifique a internet ou cole a série na caixa abaixo.");
+e.semRede = true; throw e;
+}
+if (!f) return P.resolve().then(function () { return recorrer("navegador sem fetch"); });
+if (_emVoo[def.codigo]) return _emVoo[def.codigo];
+if (!ctx.semFreio && agora - _ultimaChamada < INTERVALO_MIN_MS && _ultimaChamada) {
+return P.resolve().then(function () { return recorrer("aguarde alguns segundos entre consultas"); });
+}
+_ultimaChamada = agora;
+_emVoo[def.codigo] = P.resolve().then(function () { return f(url); }).then(function (r) {
+if (!r || !r.ok) throw new Error("HTTP " + (r && r.status));
+return r.json();
+}).then(function (j) {
+var l = lerSerie(j);
+if (!l.pontos.length) throw new Error("resposta sem dados");
+cacheGravar(def.codigo, { baixadoEm: agora, url: url, mesIni: mesIni, mesFim: mesFim, pontos: l.pontos }, ctx);
+delete _emVoo[def.codigo];
+return { pontos: l.pontos, fonte: { url: url, baixadoEm: agora, deCache: false } };
+}).then(null, function (e) {
+delete _emVoo[def.codigo];
+return recorrer(e && e.message ? e.message : "falha de rede");
+});
+return _emVoo[def.codigo];
+}
+function planoOrcamento(orc, fator, Orc) {
+var itens = [], antes = 0, depois = 0;
+arr(orc && orc.etapas).forEach(function (e) {
+arr(e.itens).forEach(function (it) {
+var cu = Number(it.custoUnitario) || 0;
+if (!(cu > 0) || it.qtdPendente || it.opcional) return;
+var novo = Math.round(cu * fator * 100) / 100;
+itens.push({ etapaId: e.id, itemId: it.id, antes: cu, depois: novo });
+});
+});
+itens.forEach(function (x) { antes += x.antes; depois += x.depois; });
+return { itens: itens, somaUnitariosAntes: antes, somaUnitariosDepois: depois };
+}
+function aplicarOrcamento(orc, calculo, serieId, fonte, Orc) {
+Orc = Orc || global.Orcamento;
+if (!orc || !calculo || !calculo.ok) return { ok: false, erro: "Calcule o fator antes de aplicar." };
+if (orc.reajusteIndice) return { ok: false, erro: "Este orçamento já foi reajustado por índice. Desfaça o reajuste anterior antes de aplicar outro." };
+var lic = orc.licitacao || null;
+if (lic && (lic.descontoLinear || lic.descontoItens)) return { ok: false, erro: "Há desconto de licitação aplicado. Desfaça-o antes de reajustar por índice." };
+if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de reajustar." };
+var plano = planoOrcamento(orc, calculo.fator, Orc);
+if (!plano.itens.length) return { ok: false, erro: "Nenhum item com custo unitário para reajustar." };
+var totAntes = Orc.totais(orc).precoVenda;
+var guarda = plano.itens.map(function (x) { return { e: x.etapaId, i: x.itemId, a: x.antes }; });
+plano.itens.forEach(function (x) { Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.depois }); });
+var totDepois = Orc.totais(orc).precoVenda;
+orc.reajusteIndice = {
+aplicadoEm: new Date().toISOString(), indice: serieId, codigoSgs: SERIES[serieId].codigo, mesBase: calculo.mesBase, mesAlvo: calculo.mesAlvo,
+fator: calculo.fator, fonte: fonte && fonte.url ? fonte.url : "", itens: guarda, totalAntes: totAntes, totalDepois: totDepois
+};
+return { ok: true, itens: plano.itens.length, totalAntes: totAntes, totalDepois: totDepois };
+}
+function desfazerOrcamento(orc, Orc) {
+Orc = Orc || global.Orcamento;
+var r = orc && orc.reajusteIndice;
+if (!r) return { ok: false, erro: "Não há reajuste por índice para desfazer." };
+arr(r.itens).forEach(function (x) { Orc.atualizarItem(orc, x.e, x.i, { custoUnitario: x.a }); });
+var n = arr(r.itens).length;
+delete orc.reajusteIndice;
+return { ok: true, itens: n };
+}
+function aditivoDeContrato(valorVigente, calculo, serieId, fonte) {
+if (!calculo || !calculo.ok) return { ok: false, erro: "Calcule o fator antes." };
+var v = Number(valorVigente) || 0;
+if (!(v > 0)) return { ok: false, erro: "O contrato não tem valor vigente para reajustar." };
+var valor = Math.round(v * (calculo.fator - 1) * 100) / 100;
+var d = SERIES[serieId];
+var motivo = "Reajuste por " + d.nome + " (" + d.orgao + "), série " + d.codigo + " do SGS/Banco Central: " + calculo.pct.toFixed(4).replace(".", ",") + "% acumulado de " +
+calculo.meses[0].mes + " a " + calculo.mesAlvo + " (data-base " + calculo.mesBase + "), sobre o valor vigente de R$ " + v.toFixed(2).replace(".", ",") + ". " + calculo.regra +
+(fonte && fonte.url ? " Fonte: " + fonte.url : "");
+return { ok: true, valor: valor, motivo: motivo, fundamento: "Lei 14.133/2021, art. 135 (reajuste em sentido estrito) — conferir cláusula de reajuste do contrato" };
+}
+global.ReajusteIndice = {
+SERIES: SERIES, TTL_MS: TTL_MS, INTERVALO_MIN_MS: INTERVALO_MIN_MS,
+mesOk: mesOk, mesAdd: mesAdd, urlSerie: urlSerie, lerSerie: lerSerie, fatorAcumulado: fatorAcumulado,
+obterSerie: obterSerie, planoOrcamento: planoOrcamento, aplicarOrcamento: aplicarOrcamento, desfazerOrcamento: desfazerOrcamento,
+aditivoDeContrato: aditivoDeContrato,
+_reset: function () { _ultimaChamada = 0; _emVoo = {}; }
+};
+if (typeof module !== "undefined" && module.exports) module.exports = global.ReajusteIndice;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/reajusteui.js ==== */
+try {
+(function (global) {
+"use strict";
+function s(v) { return v == null ? "" : String(v); }
+function esc(v) { return s(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function el(id) { return global.document ? global.document.getElementById(id) : null; }
+function dd(n) { return (n < 10 ? "0" : "") + n; }
+function mesDe(d) { return d.getFullYear() + "-" + dd(d.getMonth() + 1); }
+function moeda(v) { return global.Util && Util.fmtMoeda ? Util.fmtMoeda(v) : s(v); }
+function pct4(v) { return v.toFixed(4).replace(".", ",") + "%"; }
+function dataHora(ms) { var d = new Date(ms); return dd(d.getDate()) + "/" + dd(d.getMonth() + 1) + "/" + d.getFullYear() + " " + dd(d.getHours()) + ":" + dd(d.getMinutes()); }
+function htmlCalculo(calc, serieId, fonte) {
+var RI = global.ReajusteIndice, d = RI.SERIES[serieId];
+if (!calc.ok) return '<div style="border:1px solid #c00000;color:#c00000;padding:8px;font-size:12.5px"><b>Não deu para calcular.</b> ' + esc(calc.erro) + '</div>';
+var h = '<div style="font-size:13px;margin:8px 0"><b>Fator acumulado: ' + calc.fator.toFixed(6).replace(".", ",") + '</b> (' + pct4(calc.pct) + ' de ' + calc.meses[0].mes + ' a ' + calc.mesAlvo + ')</div>' +
+'<div class="muted" style="font-size:12px;margin-bottom:6px">' + esc(calc.regra) + '</div>' +
+'<div style="overflow:auto;max-height:26vh"><table class="tbl" style="font-size:12px"><thead><tr><th>Mês</th><th class="num">Variação</th><th class="num">Acumulado</th></tr></thead><tbody>' +
+calc.meses.map(function (m) { return "<tr><td>" + m.mes + '</td><td class="num">' + m.valor.toFixed(2).replace(".", ",") + '%</td><td class="num">' + m.acumulado.toFixed(6).replace(".", ",") + "</td></tr>"; }).join("") +
+"</tbody></table></div>" +
+'<p class="muted" style="font-size:12px;margin:8px 0 0">Fonte: Banco Central do Brasil — SGS, série ' + d.codigo + " (" + esc(d.nome) + ", " + esc(d.orgao) + "). " +
+(fonte && fonte.url ? '<a href="' + esc(fonte.url) + '" target="_blank" rel="noopener">abrir a série na fonte</a>. ' : "") +
+(fonte ? "Consultada em " + dataHora(fonte.baixadoEm) + (fonte.deCache ? " (guardada neste computador" + (fonte.velho ? " — <b>sem internet, dado possivelmente desatualizado</b>" : "") + ")" : "") + "." : "") + "</p>";
+return h;
+}
+function abrir(ext) {
+var UI = global.UI, RI = global.ReajusteIndice;
+if (!UI || !RI) return;
+var estado = { calc: null, serie: "ipca", fonte: null, ocupado: false };
+var hoje = new Date(), alvoPad = mesDe(new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1));
+var basePad = ext.baseSugerida && RI.mesOk(ext.baseSugerida) ? ext.baseSugerida : mesDe(new Date(hoje.getFullYear() - 1, hoje.getMonth() - 2, 1));
+var opt = Object.keys(RI.SERIES).map(function (k) { return '<option value="' + k + '">' + esc(RI.SERIES[k].nome) + " (" + esc(RI.SERIES[k].orgao) + ") — SGS " + RI.SERIES[k].codigo + "</option>"; }).join("");
+var corpo = ext.introHtml +
+'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:10px 0">' +
+'<label style="flex:1 1 220px"><span style="font-size:12px;color:#64748b">Índice</span><select id="ri-idx" style="width:100%">' + opt + "</select></label>" +
+'<label><span style="font-size:12px;color:#64748b">Mês-base (data-base do preço)</span><input type="month" id="ri-base" value="' + basePad + '"></label>' +
+'<label><span style="font-size:12px;color:#64748b">Mês-alvo (último índice a aplicar)</span><input type="month" id="ri-alvo" value="' + alvoPad + '"></label></div>' +
+'<details style="margin:4px 0;font-size:12.5px"><summary>Sem internet? Cole a série do Banco Central</summary>' +
+'<textarea id="ri-cola" rows="3" style="width:100%" placeholder="Uma linha por mês: 2025-02;1,31 — ou o JSON baixado da fonte"></textarea></details>' +
+'<div id="ri-res" class="muted" style="font-size:13px">Escolha o índice e os meses e clique em <b>Calcular fator</b>. Nada é baixado antes disso.</div>';
+function limpar() { estado.calc = null; var box = el("ri-res"); if (box) box.innerHTML = "Dados alterados — clique em <b>Calcular fator</b> de novo."; }
+function calcular() {
+if (estado.ocupado) return;
+var serie = (el("ri-idx") || {}).value || "ipca", base = (el("ri-base") || {}).value, alvo = (el("ri-alvo") || {}).value, box = el("ri-res");
+if (!RI.mesOk(base) || !RI.mesOk(alvo)) { box.innerHTML = htmlCalculo({ ok: false, erro: "Informe o mês-base e o mês-alvo." }, serie); return; }
+if (alvo <= base) { box.innerHTML = htmlCalculo({ ok: false, erro: "O mês-alvo precisa ser depois do mês-base." }, serie); return; }
+var cola = s((el("ri-cola") || {}).value).replace(/^\s+|\s+$/g, "");
+estado.ocupado = true; box.textContent = "Consultando o Banco Central…";
+var prom;
+if (cola) { var l = RI.lerSerie(cola); prom = l.pontos.length ? global.Promise.resolve({ pontos: l.pontos, fonte: { url: "", baixadoEm: new Date().getTime(), deCache: true, velho: false, colada: true } }) : global.Promise.reject(new Error("Não entendi a série colada.")); }
+else prom = RI.obterSerie(serie, base, alvo);
+prom.then(function (r) {
+estado.ocupado = false; estado.serie = serie; estado.fonte = r.fonte;
+estado.calc = RI.fatorAcumulado(r.pontos, base, alvo);
+var html = htmlCalculo(estado.calc, serie, r.fonte);
+if (r.fonte && r.fonte.colada) html += '<p class="muted" style="font-size:12px">Série colada por você — a fonte não foi consultada.</p>';
+box.innerHTML = html;
+}, function (e) {
+estado.ocupado = false; estado.calc = null;
+box.innerHTML = htmlCalculo({ ok: false, erro: e && e.message ? e.message : "falha desconhecida" }, serie);
+});
+}
+var botoes = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }].concat(ext.botoesExtra ? ext.botoesExtra(estado) : []);
+botoes.push({ texto: "Calcular fator", classe: "ghost", onClick: calcular });
+botoes.push({ texto: ext.rotuloAplicar, classe: "primary", onClick: function () { if (!estado.calc || !estado.calc.ok) { UI.toast("Calcule o fator antes.", "erro"); return; } ext.aplicar(estado); } });
+UI.modal(ext.titulo, corpo, botoes);
+var corpoEl = el("modal-bg");
+if (corpoEl) { var ch = corpoEl.querySelectorAll("select,input"), i; for (i = 0; i < ch.length; i++) ch[i].addEventListener("change", limpar); }
+}
+function abrirOrcamento(App) {
+var orc = App && App.orcAtual, RI = global.ReajusteIndice, UI = global.UI;
+if (!orc) return;
+var comp = s(orc.competenciaSinapi).slice(0, 7);
+var intro = '<p style="font-size:13px;margin-top:0">Reajusta o <b>custo unitário</b> dos itens pelo índice oficial acumulado entre a data-base dos preços e o mês-alvo. Você confere a conta mês a mês antes de aplicar, e dá para <b>desfazer</b> depois.</p>' +
+(orc.reajusteIndice ? '<p style="border:1px solid #b45309;color:#b45309;padding:6px;font-size:12.5px">Este orçamento <b>já foi reajustado</b> em ' + esc(s(orc.reajusteIndice.aplicadoEm).slice(0, 10)) + " por " + esc(RI.SERIES[orc.reajusteIndice.indice] ? RI.SERIES[orc.reajusteIndice.indice].nome : "") + " (fator " + Number(orc.reajusteIndice.fator).toFixed(6).replace(".", ",") + "). Desfaça antes de aplicar outro.</p>" : "");
+abrir({
+titulo: "Reajustar o orçamento por índice", introHtml: intro, baseSugerida: comp, rotuloAplicar: "Aplicar ao orçamento",
+botoesExtra: function () {
+return orc.reajusteIndice ? [{ texto: "Desfazer reajuste", classe: "ghost", onClick: function () {
+if (!global.confirm("Desfazer o reajuste? Os custos unitários voltam ao que eram antes dele (inclusive o que você tenha editado à mão nos itens reajustados depois).")) return;
+var r = RI.desfazerOrcamento(orc); if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+var g = App.persistir(); UI.fecharModal(); App.render();
+if (App._gravou(g)) UI.toast("Reajuste desfeito em " + r.itens + " item(ns).", "ok");
+} }] : [];
+},
+aplicar: function (st) {
+var plano = RI.planoOrcamento(orc, st.calc.fator);
+if (!global.confirm("Aplicar o fator " + st.calc.fator.toFixed(6).replace(".", ",") + " (" + pct4(st.calc.pct) + ") no custo unitário de " + plano.itens.length + " item(ns)?\n\nÍndice: " + RI.SERIES[st.serie].nome + ", de " + st.calc.mesBase + " (base) a " + st.calc.mesAlvo + ".\nÉ possível desfazer depois.")) return;
+var r = RI.aplicarOrcamento(orc, st.calc, st.serie, st.fonte);
+if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+var g = App.persistir(); UI.fecharModal(); App.render();
+if (App._gravou(g)) UI.toast("Reajuste aplicado em " + r.itens + " item(ns): total de " + moeda(r.totalAntes) + " para " + moeda(r.totalDepois) + ".", "ok");
+}
+});
+}
+function abrirContrato(contratoId) {
+var RI = global.ReajusteIndice, UI = global.UI, G = global.Gestao;
+if (!G || !global.Store || !global.Auth) return;
+var emp = Auth.empresaId(), c = Store.obter(emp, "contratos", contratoId);
+if (!c) { UI.toast("Contrato não encontrado.", "erro"); return; }
+var vig = (global.Aditivo && Aditivo.vigente) ? Aditivo.vigente(c, Store.listar(emp, "aditivos")) : { valor: Number(c.valor) || 0 };
+var dataBase = s(c.dataAssinatura || c.dataInicio || c.data).slice(0, 7);
+var intro = '<p style="font-size:13px;margin-top:0">Contrato <b>' + esc(c.numero || "—") + "</b> · valor vigente <b>" + moeda(vig.valor) + "</b>. O reajuste <b>não altera o contrato</b>: abre um <b>termo aditivo</b> já preenchido (valor, motivo com a série e o link da fonte), que passa pela aprovação normal. Confira a cláusula de reajuste e a data-base do contrato.</p>";
+abrir({
+titulo: "Reajustar o contrato por índice", introHtml: intro, baseSugerida: dataBase, rotuloAplicar: "Criar aditivo de reajuste",
+aplicar: function (st) {
+var a = RI.aditivoDeContrato(vig.valor, st.calc, st.serie, st.fonte);
+if (!a.ok) { UI.toast(a.erro, "erro"); return; }
+UI.fecharModal();
+G.formAditivo({ contratoId: contratoId, obraId: c.obraId || "", valor: a.valor, motivo: a.motivo, fundamento: a.fundamento });
+}
+});
+}
+global.ReajusteUI = { abrirOrcamento: abrirOrcamento, abrirContrato: abrirContrato, htmlCalculo: htmlCalculo };
+if (typeof module !== "undefined" && module.exports) module.exports = global.ReajusteUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cep.js ==== */
+try {
+(function (global) {
+"use strict";
+var TTL_MS = 30 * 24 * 3600 * 1000;
+var CH = "orcapro:cep:";
+var UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
+var _voo = {};
+function s(v) { return v == null ? "" : String(v); }
+function arm(ctx) { try { return (ctx && ctx.storage) || global.localStorage || null; } catch (e) { return null; } }
+function lerCache(chave, ctx, agora) {
+var a = arm(ctx); if (!a) return null;
+try { var o = JSON.parse(a.getItem(CH + chave) || "null"); return o && agora - o.em < TTL_MS ? o : null; } catch (e) { return null; }
+}
+function gravarCache(chave, dados, ctx, agora) { var a = arm(ctx); if (!a) return; try { a.setItem(CH + chave, JSON.stringify({ em: agora, d: dados })); } catch (e) {} }
+function normalizar(cep) { var d = s(cep).replace(/\D/g, ""); return d.length === 8 ? d : ""; }
+function formatar(cep) { var d = normalizar(cep); return d ? d.slice(0, 5) + "-" + d.slice(5) : s(cep); }
+function urlViaCep(cep) { return "https://viacep.com.br/ws/" + normalizar(cep) + "/json/"; }
+function chaveNome(n) { return s(n).normalize ? s(n).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/^ | $/g, "") : s(n).toLowerCase(); }
+function parseViaCep(j) {
+if (!j || typeof j !== "object") return { ok: false, erro: "Resposta inesperada do ViaCEP." };
+if (j.erro === true || j.erro === "true") return { ok: false, naoEncontrado: true, erro: "CEP não encontrado no ViaCEP. Confira o número ou preencha o endereço à mão." };
+if (!j.cep) return { ok: false, erro: "Resposta inesperada do ViaCEP." };
+return { ok: true, cep: formatar(j.cep), logradouro: s(j.logradouro), complemento: s(j.complemento), bairro: s(j.bairro), cidade: s(j.localidade), uf: s(j.uf).toUpperCase(), ibge: s(j.ibge),
+fonte: { nome: "ViaCEP", url: urlViaCep(j.cep) } };
+}
+function chamar(url, ctx) {
+var P = ctx.Promise || global.Promise;
+var f = ctx.fetch || (global.fetch ? function (u) { return global.fetch(u); } : null);
+if (!f) return P.reject(new Error("sem fetch"));
+return P.resolve().then(function () { return f(url); }).then(function (r) { if (!r || !r.ok) throw new Error("HTTP " + (r && r.status)); return r.json(); });
+}
+function comCache(chave, url, ctx, transformar, msgFalha) {
+ctx = ctx || {};
+var P = ctx.Promise || global.Promise, agora = ctx.agora != null ? ctx.agora : new Date().getTime();
+var c = lerCache(chave, ctx, agora);
+if (c) return P.resolve({ dados: c.d, deCache: true, em: c.em });
+if (_voo[chave]) return _voo[chave];
+_voo[chave] = chamar(url, ctx).then(function (j) {
+var d = transformar(j);
+if (d && d.ok !== false) gravarCache(chave, d, ctx, agora);
+delete _voo[chave];
+return { dados: d, deCache: false, em: agora };
+}).then(null, function (e) {
+delete _voo[chave];
+var er = new Error(msgFalha + " (" + (e && e.message ? e.message : "falha") + ")"); er.semRede = true; throw er;
+});
+return _voo[chave];
+}
+function consultarCep(cep, ctx) {
+var n = normalizar(cep), P = (ctx && ctx.Promise) || global.Promise;
+if (!n) return P.resolve({ ok: false, erro: "CEP precisa ter 8 dígitos." });
+return comCache("cep:" + n, urlViaCep(n), ctx, parseViaCep, "Sem conexão com o ViaCEP — preencha o endereço à mão").then(function (r) {
+var d = r.dados; d.deCache = r.deCache; return d;
+});
+}
+function urlMunicipios(uf) { return "https://servicodados.ibge.gov.br/api/v1/localidades/estados/" + s(uf).toUpperCase() + "/municipios"; }
+function municipios(uf, ctx) {
+uf = s(uf).toUpperCase();
+var P = (ctx && ctx.Promise) || global.Promise;
+if (UFS.indexOf(uf) < 0) return P.resolve({ ok: false, erro: "UF inválida." });
+return comCache("mun:" + uf, urlMunicipios(uf), ctx, function (j) {
+var lista = (Object.prototype.toString.call(j) === "[object Array]" ? j : []).map(function (m) { return { ibge: s(m.id), nome: s(m.nome) }; }).filter(function (m) { return m.ibge && m.nome; });
+if (!lista.length) return { ok: false, erro: "O IBGE não devolveu municípios para " + uf + "." };
+lista.sort(function (a, b) { return chaveNome(a.nome) < chaveNome(b.nome) ? -1 : (chaveNome(a.nome) > chaveNome(b.nome) ? 1 : 0); });
+return { ok: true, uf: uf, lista: lista, fonte: { nome: "IBGE — Localidades", url: urlMunicipios(uf) } };
+}, "Sem conexão com o IBGE — digite a cidade à mão").then(function (r) { return r.dados; });
+}
+function ibgeDe(lista, nome) {
+var k = chaveNome(nome), achados = (lista || []).filter(function (m) { return chaveNome(m.nome) === k; });
+return achados.length === 1 ? achados[0].ibge : "";
+}
+global.Cep = { UFS: UFS, TTL_MS: TTL_MS, normalizar: normalizar, formatar: formatar, urlViaCep: urlViaCep, urlMunicipios: urlMunicipios, parseViaCep: parseViaCep,
+consultarCep: consultarCep, municipios: municipios, ibgeDe: ibgeDe, chaveNome: chaveNome, _reset: function () { _voo = {}; } };
+if (typeof module !== "undefined" && module.exports) module.exports = global.Cep;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cepui.js ==== */
+try {
+(function (global) {
+"use strict";
+var doc = global.document;
+if (!doc || !global.Cep) return;
+var FORMS = [
+{ cep: "g-cep", rua: "g-end", cidade: "g-cidade", uf: "g-uf" },
+{ cep: "g-obracep", rua: "g-local", ruaFn: function (p) { return [p.logradouro, p.bairro].filter(Boolean).join(", "); }, cidade: "g-obracidade", uf: "g-obrauf", ibge: "g-obraibge" },
+{ cidade: "g-cidade", uf: "g-uf" }
+];
+var timer = null, cidadesCarregando = {};
+function el(id) { return id ? doc.getElementById(id) : null; }
+function formDoCampo(campo, chave) { var i; for (i = 0; i < FORMS.length; i++) if (FORMS[i][chave] && FORMS[i][chave] === campo.id && el(FORMS[i].uf)) return FORMS[i]; return null; }
+function msgDe(inputCep) {
+var m = inputCep.parentNode.querySelector("[data-cepmsg]");
+if (!m) { m = doc.createElement("div"); m.setAttribute("data-cepmsg", "1"); m.className = "muted"; m.style.cssText = "font-size:11.5px;margin-top:3px"; inputCep.parentNode.appendChild(m); }
+return m;
+}
+function escrever(campo, valor) { if (!campo) return; campo.value = valor; try { campo.dispatchEvent(new global.Event("change", { bubbles: true })); } catch (e) {} }
+function buscar(f, inputCep) {
+var cep = global.Cep.normalizar(inputCep.value), m = msgDe(inputCep);
+if (!cep) { m.textContent = ""; return; }
+m.textContent = "Consultando o CEP…"; m.style.color = "";
+global.Cep.consultarCep(cep).then(function (p) {
+if (!doc.body.contains(inputCep) || global.Cep.normalizar(inputCep.value) !== cep) return;
+if (!p.ok) { m.textContent = p.erro; m.style.color = "#b45309"; return; }
+var cid = el(f.cidade), uf = el(f.uf), rua = el(f.rua), ib = el(f.ibge);
+escrever(cid, p.cidade); escrever(uf, p.uf);
+if (ib) ib.value = p.ibge;
+if (rua && !String(rua.value).replace(/\s/g, "")) escrever(rua, f.ruaFn ? f.ruaFn(p) : p.logradouro);
+m.style.color = "#166534";
+m.textContent = "✔ " + [p.logradouro, p.bairro].filter(Boolean).join(", ") + (p.logradouro || p.bairro ? " — " : "") + p.cidade + "/" + p.uf + (p.ibge ? " · IBGE " + p.ibge : "") + " · fonte: ViaCEP" + (p.deCache ? " (guardado neste computador)" : "");
+}, function (e) {
+if (!doc.body.contains(inputCep)) return;
+m.style.color = "#b45309"; m.textContent = e && e.message ? e.message : "Não consegui consultar o CEP — preencha à mão.";
+});
+}
+function carregarCidades(f, inputCidade) {
+var uf = el(f.uf) ? el(f.uf).value : "";
+if (!uf || cidadesCarregando[uf]) return;
+cidadesCarregando[uf] = true;
+global.Cep.municipios(uf).then(function (r) {
+cidadesCarregando[uf] = false;
+if (!r.ok || !doc.body.contains(inputCidade)) return;
+var id = "cepui-dl-" + uf, dl = el(id);
+if (!dl) { dl = doc.createElement("datalist"); dl.id = id; dl.innerHTML = r.lista.map(function (m) { return '<option value="' + m.nome.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '">'; }).join(""); doc.body.appendChild(dl); }
+inputCidade.setAttribute("list", id);
+inputCidade._cepLista = r.lista;
+}, function () { cidadesCarregando[uf] = false; });
+}
+doc.addEventListener("input", function (e) {
+var t = e.target; if (!t || !t.id) return;
+var f = formDoCampo(t, "cep"); if (!f) return;
+clearTimeout(timer);
+timer = setTimeout(function () { buscar(f, t); }, 600);
+});
+doc.addEventListener("focusin", function (e) {
+var t = e.target; if (!t || !t.id) return;
+var f = formDoCampo(t, "cidade"); if (f) carregarCidades(f, t);
+});
+doc.addEventListener("change", function (e) {
+var t = e.target; if (!t || !t.id) return;
+var f = formDoCampo(t, "cidade"); if (!f || !f.ibge || !t._cepLista) return;
+var ib = el(f.ibge), cod = global.Cep.ibgeDe(t._cepLista, t.value);
+if (ib && cod) ib.value = cod;
+});
+global.CepUI = { FORMS: FORMS, _buscar: buscar };
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/licitacaoauto.js ==== */

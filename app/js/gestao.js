@@ -6010,6 +6010,9 @@
            cronograma sozinho ou só sugere */
         selfObra._medAvancoObraSelHtml(o) +
         campo("Local / Endereço", inp("g-local", o.local, "Rua, nº, bairro, cidade")) +
+        /* CEP → cidade/UF/código IBGE do município (ViaCEP + IBGE, js/cep.js e js/cepui.js); os campos continuam editáveis à mão */
+        '<div class="row">' + campo("CEP da obra", inp("g-obracep", o.cep, "00000-000")) + campo("Cidade", inp("g-obracidade", o.cidade)) + campo("UF", sel("g-obrauf", optsUf(o.uf))) +
+          campo("Cód. IBGE do município", '<input id="g-obraibge" value="' + Util.esc(o.ibge || "") + '" readonly placeholder="vem do CEP ou da cidade">') + "</div>" +
         /* ENTREGA E CONFERÊNCIA — vão impressos no pedido de compra. Sem estes
            campos o pedido saía dizendo só o NOME da obra, e o motorista do
            fornecedor ligava para o escritório perguntando onde descarregar e
@@ -6095,6 +6098,7 @@
         if (obj.foto && typeof Fotos !== "undefined" && Fotos.carimbarRemotos) Fotos.carimbarRemotos([obj.foto]);
         obj.clienteId = v("g-cliente"); obj.tipo = v("g-tipo"); obj.fase = v("g-fase"); obj.status = v("g-status");
         obj.valor = nv("g-valor"); obj.local = v("g-local"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino");
+        obj.cep = v("g-obracep"); obj.cidade = v("g-obracidade"); obj.uf = v("g-obrauf") || o.uf || ""; obj.ibge = v("g-obraibge");   /* o.uf antigo fora da lista do select não é apagado ao salvar */
         /* ⚠ PLANEJADOR 1A (I13): o início da obra não se apaga enquanto o plano
            de execução dela tiver função que precisa dele (tarefa sem preço,
            calendário próprio, "o mais tarde possível", avanço lançado) — com o
@@ -6509,7 +6513,7 @@
           "<td>" + pill(c.status) + "</td>" +
           /* a porta do aditivo DESTE contrato: o botão vence o clique da linha
              (o despacho pega o elemento mais interno com data-gacao) */
-          '<td style="text-align:right;white-space:nowrap"><button class="btn sm" data-gacao="aditivo-novo" data-ctr="' + c.id + '" title="Registrar um termo aditivo deste contrato (valor e/ou prazo) — entra no vigente depois de aprovado">+ Aditivo</button></td></tr>';
+          '<td style="text-align:right;white-space:nowrap"><button class="btn sm" data-gacao="contrato-reajuste" data-ctr="' + c.id + '" title="Reajustar por IPCA, INCC-M ou IGP-M (Banco Central): calcula o fator e abre um termo aditivo pendente de aprovação">Reajustar</button> <button class="btn sm" data-gacao="aditivo-novo" data-ctr="' + c.id + '" title="Registrar um termo aditivo deste contrato (valor e/ou prazo) — entra no vigente depois de aprovado">+ Aditivo</button></td></tr>';
       });
       html += Modulo.secao({ corpoHtml: t + "</tbody></table>" });
       /* ⚠ O ADITIVO MORA JUNTO DO CONTRATO, e nao numa tela propria: e um
@@ -34674,6 +34678,15 @@
         obj.itens = itensBuf.slice(); obj.valorTotal = self._epiValor(itensBuf);
         return true;
       });
+      /* o selo do CA (não se aplica / pendente / da nota) é uma função à parte para poder ser trocado SOZINHO no onchange:
+         reescrever a tabela inteira com o foco dentro do campo dava «node to be removed is no longer a child» no blur. */
+      function caPill(it) {
+        return (Epi.caNaoSeAplica(it.ca)
+          ? ' <span class="pill" style="background:#e2e8f0;color:#475569" title="Você marcou que este item não tem CA — nada pendente aqui">não se aplica</span>'
+          : Epi.caPendente(it.ca)
+            ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — a busca consulta online">CA pendente</span>'
+            : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : ""));
+      }
       function renderItens() {
         var el = document.getElementById("ee-itens"); if (!el) return;
         if (!itensBuf.length) { el.innerHTML = '<div class="muted" style="font-size:12px">Nenhum EPI ainda — busque no catálogo acima.</div>'; return; }
@@ -34683,14 +34696,7 @@
               + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</button>'
               /* sem CA não é "N/A": é PENDENTE. O número vem da nota do modelo
                  comprado — inventar um seria falsificar a ficha NR-6. */
-              + (Epi.caNaoSeAplica(it.ca)
-                ? ' <span class="pill" style="background:#e2e8f0;color:#475569" title="Você marcou que este item não tem CA — nada pendente aqui">não se aplica</span>'
-                : Epi.caPendente(it.ca)
-                  /* mesmo defeito do campo Estado da composição própria: o <svg>
-                     do ícone tem aspas duplas e fechava o title no meio, jogando
-                     « consulta online">CA pendente… » na tela. title é texto puro. */
-                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — a busca consulta online">CA pendente</span>'
-                  : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
+              + ' <span data-eepill="' + i + '">' + caPill(it) + '</span><div class="muted" data-eecav="' + i + '" style="font-size:11px;max-width:230px"></div></td>'
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
               + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
@@ -34708,7 +34714,10 @@
             itensBuf[i].ca = v2;
             if (Epi.caNaoSeAplica(v2)) itensBuf[i].caFonte = "";
             if (v2 !== x.value.trim()) x.value = v2;
-            renderItens();                       /* repinta o selo na hora */
+            /* troca só o selo e a linha de validação: a tabela e o campo com foco ficam como estão */
+            var pill = el.querySelector('[data-eepill="' + i + '"]'); if (pill) pill.innerHTML = caPill(itensBuf[i]);
+            var cv0 = el.querySelector('[data-eecav="' + i + '"]'); if (cv0) cv0.textContent = "";
+            if (typeof Caepi !== "undefined" && Caepi.pintar) Caepi.pintar(el, itensBuf);
           };
         });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eeval]"), function (x) { x.onchange = function () { itensBuf[+x.getAttribute("data-eeval")].validade = x.value; }; });
@@ -34716,6 +34725,8 @@
         Array.prototype.forEach.call(el.querySelectorAll("[data-eevu]"), function (x) { x.onchange = function () { var i = +x.getAttribute("data-eevu"); itensBuf[i].valorUnit = Util.num(x.value) || 0; upd(i); }; });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eeconsulta]"), function (b) { b.onclick = function () { window.open(Epi.consultaCaUrl(itensBuf[+b.getAttribute("data-eeconsulta")].ca), "_blank"); }; });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eerm]"), function (b) { b.onclick = function () { itensBuf.splice(+b.getAttribute("data-eerm"), 1); renderItens(); }; });
+        /* CAEPI/MTE: confere cada CA digitado (existe? situação? validade?) e avisa vencimento — js/caepi.js, base offline em data/caepi-indice.json */
+        if (typeof Caepi !== "undefined" && Caepi.pintar) Caepi.pintar(el, itensBuf);
       }
       this._wireCatalogoEpi("ee-q", "ee-res", "ee-status", function (epi) {
         var it = { epiId: epi.id, nome: epi.nome, ca: epi.ca || "", validade: "", quantidade: 1, valorUnit: Util.num(epi.valorRef) || 0 };
@@ -52939,6 +52950,14 @@ renderFolha: function () {
             UI.toast("Você não tem acesso a Contratos.", "erro"); return;
           }
           return this.novoAditivo(dataset && dataset.ctr);
+        }
+        /* reajuste por índice: só calcula e abre o termo aditivo (pendente) — não mexe no valor do contrato (js/reajusteui.js) */
+        case "contrato-reajuste": {
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {
+            UI.toast("Você não tem acesso a Contratos.", "erro"); return;
+          }
+          if (typeof ReajusteUI === "undefined") { UI.toast("O reajuste por índice não carregou. Atualize a página.", "erro"); return; }
+          return ReajusteUI.abrirContrato(dataset && dataset.ctr);
         }
         case "aprovar-aditivo": {
           if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {

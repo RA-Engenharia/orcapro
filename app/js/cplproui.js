@@ -142,7 +142,7 @@
     });
   }
   /* navegação pura: não é «ação com resposta» e não troca o botão de uma ação ainda em curso (importação assíncrona) */
-  var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+  var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-aba-precos": 1, "cpl-pp-proc": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
   function iniciarAcao(nome, ds) {
     if (NAVEGACAO[nome]) return;
     ds = ds || {};
@@ -327,7 +327,7 @@
     if (G._cplView === "proc" && procAtual()) html = _renderProc(procAtual());
     else {
       if (G._cplView === "proc") { G._cplView = "lista"; G._cplId = ""; }
-      html = G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : (G._cplView === "orgao" ? _renderOrgao(obras) : _renderLista(obras)));
+      html = G._cplView === "precos" && typeof global.PrecosPubUI !== "undefined" ? _renderPrecos(obras) : G._cplView === "papeis" ? _renderPapeis(obras) : (G._cplView === "modelos" ? _renderModelos(obras) : (G._cplView === "orgao" ? _renderOrgao(obras) : _renderLista(obras)));
     }
     return html;
   };
@@ -336,6 +336,7 @@
   function abasTopo(ativa) {
     var abas = [{ id: "lista", rotulo: "Processos", attrs: 'data-gacao="cpl-aba-lista"' }, { id: "papeis", rotulo: "Pessoas e papéis", attrs: 'data-gacao="cpl-aba-papeis"' }, { id: "orgao", rotulo: "Órgão", attrs: 'data-gacao="cpl-aba-orgao"' }];
     if (podeAcao("gerenciar_modelos")) abas.push({ id: "modelos", rotulo: "Modelos do órgão", attrs: 'data-gacao="cpl-aba-modelos"' });
+    if (typeof global.PrecosPubUI !== "undefined") abas.push({ id: "precos", rotulo: "Preços públicos", attrs: 'data-gacao="cpl-aba-precos"' });   /* pesquisa art. 23 + atas para adesão (js/precospubui.js) */
     return M.abas(abas.map(function (a) { return { id: a.id, rotulo: a.rotulo, ativa: a.id === ativa, attrs: a.attrs }; }));
   }
 
@@ -346,6 +347,29 @@
       acoes: [btn("Painel da CPL", "cpl-painel")],
       primariaHtml: podeAcao("criar_processo") ? btn("+ Novo processo", "cpl-novo", "", "primary") : '<button type="button" class="btn primary" data-gacao="cpl-novo" disabled title="' + esc(motivoAcao("criar_processo")) + '">+ Novo processo</button>'
     });
+  }
+
+  /* aba «Preços públicos»: o conteúdo mora em js/precospubui.js (a consulta só acontece no clique, nunca ao abrir a aba) */
+  function _renderPrecos(obras) {
+    return cabLista(obras, "Pesquisa de preços públicos e atas para adesão") + abasTopo("precos") + global.PrecosPubUI.html() + _blocoUsarNoProcesso();
+  }
+  /* «Usar no processo»: leva os preços ACEITOS (depois da regra de descarte) para as fontes do passo de pesquisa de um item do processo.
+     Só o clique grava; a trava é a do passo (editar_pesquisa) dentro de `gravar`. Mesclar por chave impede duplicar. */
+  function _blocoUsarNoProcesso() {
+    var PU = global.PrecosPubUI, pesq = PU && PU.pesquisa ? PU.pesquisa() : null;
+    if (!pesq || !pesq.mantidos.length) return "";
+    var procs = listaProc().filter(function (x) { return x.status !== "publicado"; });
+    if (!procs.length) return M.secao({ titulo: "Usar no processo", corpoHtml: M.aviso({ tom: "info", titulo: "Não há processo em andamento.", texto: "Crie um processo para levar estes preços ao passo de pesquisa." }) });
+    var alvo = procs.filter(function (x) { return x.id === G._cplId; })[0] || procs[0];
+    var orc = orcDoProc(alvo), c = calc(orc), itens = [];
+    if (c) { var pq = F.pesquisar(alvo, c.linhas, modoDoOrc(c)); c.linhas.forEach(function (l, i) { if (!pq.avaliacoes[i].comBase) itens.push(l); }); }
+    var corpo = '<p class="muted" style="font-size:12.5px;margin-top:0">Leva os <b>' + pesq.mantidos.length + ' preço(s) aceitos</b> (sem os descartados) para as fontes do item escolhido, como «contratação similar». Cada fonte guarda órgão, link, data do registro, <b>data da consulta</b> e a <b>regra de descarte</b>. Clicar de novo não duplica.</p>' +
+      '<div class="cpl-form"><div class="field"><label>Processo</label><select id="cpl-pp-proc" data-gacao="cpl-pp-proc">' + procs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === alvo.id ? " selected" : "") + ">" + esc(F.codigoDe(x) + " — " + String(x.objeto || "(sem objeto)").substring(0, 60)) + "</option>"; }).join("") + "</select></div>" +
+      '<div class="field"><label>Item da pesquisa (sem base oficial)</label><select id="cpl-pp-item">' + itens.map(function (l) { return '<option value="' + esc(l.numero) + '">' + esc(l.numero + " — " + String(l.descricao).substring(0, 60) + " (" + l.unidade + ")") + "</option>"; }).join("") + "</select></div>" +
+      '<div class="field"><label>Fator de atualização (índice)</label><input id="cpl-pp-fator" inputmode="decimal" style="width:100px" value="1,0000"></div></div>' +
+      '<p class="muted" style="font-size:12px">O regulamento exige índice de atualização nas contratações similares. 1,0000 = sem atualização (registros recentes); para atualizar, calcule o fator em «Reajustar por índice» e informe aqui. Só entram preços na mesma unidade do item.</p>' +
+      (itens.length ? '<div class="cpl-acoes">' + btn("Usar no processo", "cpl-pp-usar", "", "primary") + "</div>" : M.aviso({ tom: "alerta", titulo: "O processo não tem item sem base oficial.", texto: "Todos os itens já têm base (SINAPI/SICRO) ou o processo ainda não tem orçamento." }));
+    return M.secao({ titulo: "Usar no processo", corpoHtml: corpo });
   }
 
   /* ---------- LISTA ---------- */
@@ -1725,6 +1749,33 @@
 
   var acoes = {
     "cpl-obra": function (ds) { G._cplObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
+    "cpl-pp-proc": function (ds) { G._cplId = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
+    "cpl-pp-usar": function () {
+      var PU = global.PrecosPubUI, PP = global.PrecosPub, pesq = PU && PU.pesquisa ? PU.pesquisa() : null;
+      if (!pesq || !pesq.mantidos.length) { toast("Consulte e deixe ao menos um preço aceito antes de usar no processo.", "erro"); return; }
+      var sp = document.getElementById("cpl-pp-proc"), si = document.getElementById("cpl-pp-item"), it = si ? si.value : "";
+      if (!sp || !sp.value) { toast("Escolha o processo.", "erro"); return; }
+      if (!it) { toast("Escolha o item da pesquisa.", "erro"); return; }
+      G._cplId = sp.value;
+      var p0 = procAtual(), reg = p0 ? C.pesquisaPrecos.regulamentoEfetivo(p0) : null;
+      if (!reg) { toast("Defina o regulamento de pesquisa de preços do processo (passo 8) antes.", "erro"); return; }
+      if (!reg.ordem.some(function (o) { return o.tipo === "contratacao_similar"; })) { toast("O regulamento deste processo não prevê «contratação similar» como fonte.", "erro"); return; }
+      var fator = lerNum("cpl-pp-fator"); if (fator === null || !(fator > 0)) { toast("Informe o fator de atualização (1,0000 se não houver).", "erro"); return; }
+      var un = ""; try { var orc = orcDoProc(p0), c = calc(orc); c.linhas.forEach(function (l) { if (String(l.numero) === String(it)) un = l.unidade; }); } catch (e) {}
+      var conv = PP.fontesParaProcesso(pesq, { unidade: un, fator: fator });
+      if (!conv.fontes.length) { toast("Nenhum preço aceito está na unidade do item (" + (un || "?") + "). " + conv.outraUnidade + " ficaram de fora.", "erro"); return; }
+      var resumo = null;
+      var ok = gravar("orcamento", function (q) {
+        q.pesquisa = q.pesquisa || { itens: {} }; q.pesquisa.itens = q.pesquisa.itens || {};
+        var cfg = q.pesquisa.itens[it] = q.pesquisa.itens[it] || { fontes: [], justificativa: null };
+        var m = PP.mesclarFontes(cfg.fontes, conv.fontes); resumo = m;
+        if (!m.adicionadas) return null;
+        var antes = arr(cfg.fontes).length; cfg.fontes = m.fontes;
+        return { antes: "item " + it + ": " + antes + " fonte(s)", depois: "item " + it + ": " + m.fontes.length + " fonte(s) (+" + m.adicionadas + " de preços públicos, consulta " + String(pesq.consultadoEm).slice(0, 10) + ")" };
+      }, "editar_pesquisa");
+      if (ok) { toast(resumo.adicionadas + " fonte(s) levada(s) ao item " + it + (resumo.repetidas ? " (" + resumo.repetidas + " já estavam lá)" : "") + (conv.outraUnidade ? "; " + conv.outraUnidade + " de outra unidade ficaram de fora" : "") + ". Veja no passo de pesquisa de preços.", "ok"); App.render(); }
+    },
+    "cpl-aba-precos": function () { G._cplView = "precos"; App.render(); },
     "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
     "cpl-aba-papeis": function () { G._cplView = "papeis"; App.render(); },
     "cpl-aba-orgao": function () { G._cplView = "orgao"; App.render(); },

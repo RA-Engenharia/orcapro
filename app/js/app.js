@@ -2959,6 +2959,8 @@
         case "lic-desconto": this.licitacaoDesconto(); break;
         case "lic-pacote": this.licitacaoPacote(); break;
         case "orc-ref": if (typeof OrcRefUI !== "undefined") OrcRefUI.abrir(this.orcAtual); break;
+        case "orc-precospub": if (typeof PrecosPubUI !== "undefined") PrecosPubUI.abrirOrcamento(this); break;   /* orçado x preços públicos por item (js/precospubui.js) */
+        case "orc-reajuste": if (typeof ReajusteUI !== "undefined") ReajusteUI.abrirOrcamento(this); break;   /* reajuste por índice do Banco Central (js/reajusteui.js) */
         case "lic-desconto-desfazer": this.licitacaoDescontoDesfazer(); break;
         case "lic-desconto-itens": this.licitacaoDescontoItens(); break;
         case "lic-desconto-itens-desfazer": this.licitacaoDescontoItensDesfazer(); break;

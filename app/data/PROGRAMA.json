@@ -7,6 +7,11 @@
       "motivo": "este manifesto: o /__update/apply do server/static.js lê a lista do stage para saber o que promover de data/"
     },
     {
+      "arquivo": "caepi-indice.json",
+      "carregadoPor": "js/caepi.js (fetch)",
+      "motivo": "índice compacto do CAEPI/MTE (42 mil CAs: validade, situação, equipamento, fabricante) para validar o CA da entrega de EPI offline; gerado por tools/gerar-indice-caepi.js, traz a data da base dentro"
+    },
+    {
       "arquivo": "estilos-objeto-ra.json",
       "carregadoPor": "js/bimmodelovista.js (fetch)",
       "motivo": "estilos de objeto RA (P6-A): pena de projeção/corte, cor, linha e preenchimento das 137 categorias — tabela do programa, igual em toda instalação"

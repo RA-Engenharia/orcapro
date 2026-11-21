@@ -232,6 +232,7 @@
   <script src="js/analiticobases.js"></script>
   <script src="js/insumos.js"></script>
   <script src="js/epi.js"></script>
+  <script src="js/caepi.js"></script>   <!-- valida o CA do EPI contra a base do MTE (data/caepi-indice.json) -->
   <script src="js/nfitens.js"></script>
   <script src="js/feriados.js"></script>
   <script src="js/cronograma.js"></script>
@@ -808,6 +809,10 @@
   <script src="js/orcref.js"></script>   <!-- PACOTE do orçamento de referência no padrão da prefeitura (sintética, analítica, BDI, encargos, ABC, cronograma, memória, cotação, CAIXA, declarações) -->
   <script src="js/orcrefxls.js"></script>   <!-- XLSX com fórmulas vivas do pacote do orçamento de referência -->
   <script src="js/orcrefui.js"></script>   <!-- botão/diálogo do pacote do orçamento de referência -->
+  <script src="js/reajusteindice.js"></script>   <!-- reajuste por índice (IPCA/INCC-M/IGP-M, Banco Central SGS): motor puro -->
+  <script src="js/reajusteui.js"></script>   <!-- "Reajustar por índice" no orçamento e no contrato -->
+  <script src="js/cep.js"></script>   <!-- endereço pelo CEP (ViaCEP) e municípios/UF (IBGE): motor puro -->
+  <script src="js/cepui.js"></script>   <!-- liga CEP/cidade/UF nos formulários de cliente, obra e fornecedor por delegação -->
   <script src="js/licitacaoauto.js"></script>   <!-- ORÇAMENTO DE LICITAÇÃO AUTOMÁTICO: presets, orçar pelas bases exigidas, marca de "não conferido" (contrato CertamePRO v1) -->
   <script src="js/porobra.js"></script>
   <script src="js/custoetapa.js"></script>
@@ -1388,6 +1393,8 @@
   <script src="js/cplproorgao.js"></script>
   <script src="js/cplpropreparo.js"></script>
   <script src="js/cplproui.js"></script>
+  <script src="js/precospub.js"></script>   <!-- pesquisa de preços públicos (CertamePRO): motor puro -->
+  <script src="js/precospubui.js"></script>   <!-- aba «Preços públicos» do CPLPRO + «Comparar com preços públicos» no orçamento -->
   <!-- Tour virtual 360. Ordem obrigatoria e' esta: o motor (tour360.js) nao
        depende de ninguem; o viewer usa o motor; o relatorio usa os dois mais
        o BimVideo (carregado la em cima); e a tela usa todos, entao vem por
