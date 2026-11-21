@@ -221,9 +221,17 @@
   /* ---------------------------------------------------------------
    * O DIÁLOGO DO NOVO PROJETO
    * --------------------------------------------------------------- */
+  /* PROJETO SEM OBRA (B1, 21/11/2026): a cena do projeto vive num escopo
+     PRÓPRIO, "semobra-<id do projeto>" — nunca "geral" (a Área de teste, que
+     seria dividida entre todos os projetos sem obra). Sem ":" no id: os níveis
+     usam "<obra>::<nível>" (rechavear, _obraDosNiveis). */
+  var SEM_OBRA = "semobra-";
+  function ehSemObra(id) { return String(id == null ? "" : id).indexOf(SEM_OBRA) === 0 && String(id).length > SEM_OBRA.length; }
+  function idSemObra(idProjeto) { return SEM_OBRA + String(idProjeto || "").replace(/[^A-Za-z0-9_-]+/g, "_"); }
   function validarNovo(cfg, obrasIds) {
     var c = cfg || {}, erros = [];
-    if (!txt(c.obra)) erros.push("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.");
+    if (ehSemObra(c.obra)) { /* sem obra: nada a conferir no cadastro */ }
+    else if (!txt(c.obra)) erros.push("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.");
     else if (Array.isArray(obrasIds) && obrasIds.indexOf(txt(c.obra)) < 0) erros.push("A obra escolhida não existe mais nesta conta. Escolha outra.");
     var arq = limpa(c.arquivo);
     if (!arq) erros.push("Dê um nome ao arquivo do projeto.");
@@ -313,7 +321,7 @@
     nomeArquivo: nomeArquivo, nomePadrao: nomePadrao, assinatura: assinatura, podarVazios: podarVazios,
     indiceNormal: indiceNormal, registrar: registrar, ocultar: ocultar, esquecer: esquecer, obter: obter,
     recentes: recentes, doSistema: doSistema, conflitoDeNome: conflitoDeNome, marcarObra: marcarObra,
-    validarNovo: validarNovo, paredesRetangulo: paredesRetangulo, rechavear: rechavear,
+    validarNovo: validarNovo, ehSemObra: ehSemObra, idSemObra: idSemObra, SEM_OBRA: SEM_OBRA, paredesRetangulo: paredesRetangulo, rechavear: rechavear,
     nomeAnterior: nomeAnterior, nomeLivre: nomeLivre,
     chaveIdb: chaveIdb, chaveIndice: chaveIndice
   };

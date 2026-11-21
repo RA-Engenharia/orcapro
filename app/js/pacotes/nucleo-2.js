@@ -14074,9 +14074,10 @@ g.tplLembrar = BimTplInicio.padrao() === g.tplIni;
 var obrasNp = lista("obras");
 if (g.obraNova) { g.obra = g.obraNova; g.obraNova = ""; }
 else if (this._bimSel) g.obra = this._bimSel;
-if (g.obra && !obrasNp.some(function (o) { return o.id === g.obra; })) g.obra = "";
+if (g.obra && g.obra !== "__semobra__" && !obrasNp.some(function (o) { return o.id === g.obra; })) g.obra = "";
 this._npArquivoPadrao();
-var optObras = '<option value="">— escolha a obra —</option>' + obrasNp.map(function (o) {
+var optObras = '<option value="">— escolha a obra —</option>' +
+'<option value="__semobra__"' + (g.obra === "__semobra__" ? " selected" : "") + ">Sem obra (só o projeto)</option>" + obrasNp.map(function (o) {
 return '<option value="' + Util.esc(o.id) + '"' + (o.id === g.obra ? " selected" : "") + ">" + Util.esc(o.nome || "Obra") + "</option>";
 }).join("") + '<option value="__nova__">+ Criar obra nova…</option>';
 var tipos = AlvTipos.listar().map(function (t) {
@@ -14091,6 +14092,11 @@ var h =
 '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px">' +
 '<label>Obra<select data-np="obra" style="width:100%">' + optObras + "</select></label>" +
 '<label>Nome do arquivo<input type="text" data-np="arquivo" value="' + Util.esc(g.arquivo || "") + '" style="width:100%" title="É o nome do arquivo .opbim — no sistema, nos recentes e na pasta do computador"></label>' +
+"</div>" +
+'<div data-np-pasta-box style="margin:-2px 0 10px;display:' + (g.obra === "__semobra__" ? "flex" : "none") + ';gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px">' +
+'<span>Salvar em:</span><b data-np-pasta-txt style="word-break:break-all">' + Util.esc(g.pasta || "Área de Trabalho\\" + (g.arquivo || "<nome do arquivo>")) + "</b>" +
+'<button type="button" class="btn" data-np-pasta-esc>Escolher pasta…</button>' +
+(g.pasta ? '<button type="button" class="btn ghost" data-np-pasta-limpa title="Volta para a Área de Trabalho">Área de Trabalho</button>' : "") +
 "</div>" +
 '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
 '<label>Nome do projeto<input type="text" data-np="nome" value="' + Util.esc(g.nome) + '" style="width:100%"></label>' +
@@ -14111,6 +14117,7 @@ UI.modal("Novo projeto", h, [
 { texto: "Cancelar", classe: "", onClick: function () { UI.fecharModal(); } }
 ]);
 this._npLigar();
+this._npPastaPintar();
 this._npResumo();
 },
 _npTemplates: function () {
@@ -14266,13 +14273,16 @@ if (k === "obra") {
 if (el.value === "__nova__") { el.value = g.obra || ""; self._npNovaObra(); return; }
 g.obra = el.value;
 self._npArquivoPadrao();
+self._npPastaPintar();
 } else if (k === "arquivo") {
 g.arquivo = el.value;
 g.arquivoManual = !!String(el.value).trim();
 if (!g.arquivoManual) self._npArquivoPadrao();
+self._npPastaPintar();
 } else if (k === "nome" || k === "tipo" || k === "contorno" || k === "template") {
 g[k] = el.value;
 if (k === "nome") self._npArquivoPadrao();
+if (k === "nome") self._npPastaPintar();
 } else {
 var v = parseFloat(String(el.value).replace(",", "."));
 if (!isFinite(v) || v <= 0) { UI.toast("Informe um número maior que zero, em metros.", "aviso"); return; }
@@ -14332,16 +14342,53 @@ h += this._pagLinha("Atenção", '<b style="color:var(--amarelo)">a obra já tem
 h += "</tbody></table>";
 el.innerHTML = h;
 },
+_npPastaPintar: function () {
+var g = this._npCfg, box = document.querySelector("#modal-bg [data-np-pasta-box]");
+if (!g || !box) return;
+box.style.display = g.obra === "__semobra__" ? "flex" : "none";
+var t = box.querySelector("[data-np-pasta-txt]");
+if (t) t.textContent = g.pasta || ("Área de Trabalho\\" + (String(g.arquivo || "").trim() || "<nome do arquivo>"));
+var self = this;
+if (!box._npOuve) {
+box._npOuve = 1;
+box.addEventListener("click", function (e) {
+var b = e.target && e.target.closest ? e.target.closest("[data-np-pasta-esc],[data-np-pasta-limpa]") : null;
+if (!b) return;
+if (b.hasAttribute("data-np-pasta-limpa")) { g.pasta = ""; b.parentNode.removeChild(b); self._npPastaPintar(); return; }
+b.disabled = true;
+UI.toast("Escolha a pasta na janela do Windows que abriu (pode estar atrás desta).", "ok", 5000);
+fetch("/__projetos/escolher-pasta", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
+b.disabled = false;
+if (j && j.ok && j.pasta) { g.pasta = j.pasta; self._npPastaPintar(); }
+else if (j && !j.ok) UI.toast(j.erro || "Não consegui escolher a pasta.", "erro");
+})["catch"](function () { b.disabled = false; UI.toast("Escolher pasta só funciona no OrçaPRO instalado: o projeto vai para a Área de Trabalho.", "aviso", 7000); });
+});
+}
+},
 _npCriar: function (opts) {
+var g = this._npCfg, self = this, BP = window.BimProjetos, BPU = window.BimProjetosUI;
+if (g && g.obra === "__semobra__" && BP && BP.idSemObra) {
+if (this._npGuardando) return;
+if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
+if (!g.projIdSemObra) g.projIdSemObra = (window.Util && Util.uid) ? Util.uid("bpj") : "bpj_" + Date.now().toString(36);
+var gSem = Object.assign({}, g, { obra: BP.idSemObra(g.projIdSemObra) });
+var dlg = this._npCfg;
+this._npCfg = gSem;
+try { return this._npCriarCom(opts, { semObra: true, projId: g.projIdSemObra, pasta: g.pasta || "" }); }
+finally { if (this._npCfg === gSem) this._npCfg = dlg; }
+}
+return this._npCriarCom(opts, null);
+},
+_npCriarCom: function (opts, sem) {
 var g = this._npCfg, self = this, BP = window.BimProjetos, BPU = window.BimProjetosUI;
 if (this._npGuardando) return;
 if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
 if (!g.obra && this._bimSel) g.obra = this._bimSel;
 if (!g.obra) { UI.toast("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.", "aviso"); return; }
 var obraNp = Store.obter(eid(), "obras", g.obra);
-var semCadastro = !obraNp && g.obra === this._bimSel;
+var semCadastro = !obraNp && (g.obra === this._bimSel || !!sem);
 if (!obraNp && !semCadastro) { UI.toast("A obra escolhida não existe mais. Escolha outra.", "erro"); return; }
-obraNp = obraNp || { id: g.obra, nome: "" };
+obraNp = obraNp || { id: g.obra, nome: sem ? "Sem obra" : "" };
 if (!String(g.arquivo || "").trim()) { g.arquivoManual = false; this._npArquivoPadrao(); }
 var arquivo = String(g.arquivo || "").replace(/\s+/g, " ").trim();
 if (BP) {
@@ -14408,7 +14455,7 @@ BimShell.status(ops.length
 ? arquivo + ": " + lista.length + " níveis e " + ops.length + " paredes no 3D. O editor já está ligado."
 : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
 }
-if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
+if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp, id: sem ? sem.projId : "", pasta: sem ? sem.pasta : "", semObra: !!sem });
 var resTpl = null;
 if (planoTpl) {
 if (window.BimTplInicio) BimTplInicio.lembrar(g.tplLembrar ? g.tplIni : (BimTplInicio.padrao() === g.tplIni ? null : BimTplInicio.padrao()));
@@ -14417,7 +14464,9 @@ if (window.BimShell) BimShell.status(arquivo + " (" + planoTpl.template.nomeComp
 ". A planta baixa do Térreo está na frente" + (ops.length ? "." : " — desenhe a primeira peça nela."));
 } else if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
 if (resTpl && resTpl.avisos && resTpl.avisos.length) UI.toast("Template: " + resTpl.avisos.join("; ") + ".", "aviso", 8000);
-UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
+UI.toast(sem
+? "Projeto “" + arquivo + "” criado sem obra. Ao salvar ele vai para " + (sem.pasta || "Área de Trabalho\\" + arquivo) + "; para vincular a uma obra, clique em “sem obra” no título."
+: "Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 8000);
 try { this._bimCascaContexto(); } catch (e) {}
 },
 _volCfg: null,
@@ -67092,19 +67141,85 @@ Promise.all(tarefas).then(go, go);
 } catch (e) { go(); }
 setTimeout(go, 15000);
 }
+var CHAVE_RECARGAS = "orcapro:update:recargas";
+var CHAVE_DEPOIS = "orcapro:update:ao-reabrir";
+var versaoPronta = "";
+function podeRecarregarSozinho() {
+var agora = Date.now(), lista = [];
+try { lista = JSON.parse(sessionStorage.getItem(CHAVE_RECARGAS) || "[]") || []; } catch (e) { lista = []; }
+lista = lista.filter(function (t) { return typeof t === "number" && agora - t < 10 * 60 * 1000; });
+if (lista.length >= 2) return false;
+lista.push(agora);
+try { sessionStorage.setItem(CHAVE_RECARGAS, JSON.stringify(lista)); } catch (e) {}
+return true;
+}
+function esperarSwNovo() {
+try {
+if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistration) return Promise.resolve(null);
+return navigator.serviceWorker.getRegistration().then(function (reg) {
+if (!reg) return null;
+var p = reg.update ? reg.update().catch(function () {}) : Promise.resolve();
+return p.then(function () {
+var w = reg.installing;
+if (!w) return reg;
+return new Promise(function (ok, falha) {
+var fim = setTimeout(function () { ok(reg); }, 120000);
+w.addEventListener("statechange", function () {
+if (w.state === "installed" || w.state === "activated") { clearTimeout(fim); ok(reg); }
+else if (w.state === "redundant") { clearTimeout(fim); falha(new Error("sw recusado")); }
+});
+});
+});
+}).catch(function (e) { if (e && e.message === "sw recusado") throw e; return null; });
+} catch (e) { return Promise.resolve(null); }
+}
+function recarregarParaVersao() {
+var s = location.search.replace(/[?&]_upd=\d+/g, "").replace(/^&/, "?");
+var sep = s ? "&" : "?";
+location.replace(location.pathname + s + sep + "_upd=" + Date.now() + location.hash);
+}
+function aplicarAgora() {
+try { if (global.Gestao && Gestao._bimEdFlush) Gestao._bimEdFlush(); } catch (e) {}
+faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Aplicando a versão ' + esc(versaoPronta) + '…</b></div>');
+var feito = false;
+function ir() { if (feito) return; feito = true; recarregarParaVersao(); }
+setTimeout(ir, 8000);
+esperarSwNovo().then(function (reg) {
+if (reg && reg.waiting) {
+navigator.serviceWorker.addEventListener("controllerchange", ir);
+reg.waiting.postMessage({ tipo: "orcapro:aplicar" });
+} else { renovarShell().then(ir, ir); }
+}, function () { renovarShell().then(ir, ir); });
+}
+function faixaPronta(versao) {
+var ic = typeof Icones !== "undefined" ? Icones.get("check", 15) : "";
+faixa('<span class="opr-ic">' + ic + '</span><div class="opr-tx"><b>Nova versão ' + esc(versao) + ' pronta.</b>' +
+'<small>Pode continuar trabalhando: ela entra quando você quiser.</small></div>' +
+'<button type="button" id="opr-upd-agora" style="flex:none;background:#fff;color:#0f2740;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">Aplicar agora</button>' +
+'<button type="button" id="opr-upd-depois" style="flex:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 12px;cursor:pointer">Ao reabrir</button>');
+var a = document.getElementById("opr-upd-agora"), d = document.getElementById("opr-upd-depois");
+if (a) a.onclick = function () { aplicarAgora(); };
+if (d) d.onclick = function () { try { sessionStorage.setItem(CHAVE_DEPOIS, versao); } catch (e) {} fechar(); };
+}
 function agendarRecarga(versao) {
 if (recarregarPendente) return;
 recarregarPendente = true;
-function tentar() {
-if (seguroRecarregar()) {
-faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Atualizado para a versão ' + esc(versao) + ' — recarregando…</b></div>');
-setTimeout(function () { if (seguroRecarregar()) limparCachesERecarregar(); else setTimeout(tentar, 15000); }, 400);
-} else {
-faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Versão ' + esc(versao) + ' instalada.</b><small>O app recarrega sozinho assim que você concluir o que está fazendo.</small></div>');
-setTimeout(tentar, 15000);
+versaoPronta = String(versao || "");
+esperarSwNovo().then(function () {
+var adiada = ""; try { adiada = sessionStorage.getItem(CHAVE_DEPOIS) || ""; } catch (e) {}
+if (adiada === versaoPronta) { fechar(); return; }
+faixaPronta(versaoPronta);
+}, function () {
+recarregarPendente = false; versaoPronta = ""; fechar();
+});
 }
-}
-tentar();
+function antesDoGrupo() {
+if (!versaoPronta) return false;
+var rodando = String((typeof CONFIG !== "undefined" && CONFIG.versao) || "").trim();
+if (rodando === versaoPronta) return false;
+if (!seguroRecarregar() || !podeRecarregarSozinho()) return false;
+aplicarAgora();
+return true;
 }
 var CHAVE_ALVO = "orcapro:recarga-alvo";
 var alvosTentados = {};
@@ -67156,13 +67271,13 @@ faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Atualizando o OrçaPRO
 '<small>Não precisa baixar nem instalar nada: é automático. Pode continuar usando — seus dados não são tocados.</small></div>');
 fetch("/__update/apply", { method: "POST" })
 .then(function (r) {
-if (r.status === 409) { aplicando = false; agendarRecarga(d.disponivel); return null; }
+if (r.status === 409) { aplicando = false; setTimeout(function () { agendarRecarga(d.disponivel); }, 4000); return null; }
 return r.json().catch(function () { return { ok: false }; });
 })
 .then(function (res) {
 if (res === null) return;
 aplicando = false;
-if (res && res.ok) { agendarRecarga(res.versao || d.disponivel); }
+if (res && res.ok) { setTimeout(function () { agendarRecarga(res.versao || d.disponivel); }, 4000); }
 else if (d && d.pediuUsuario) {
 faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</span><div class="opr-tx"><b>Não consegui atualizar agora.</b>' +
 '<small>Verifique a internet — o app tenta de novo sozinho. Você pode continuar trabalhando normalmente.</small></div>');
@@ -67214,6 +67329,11 @@ umaRodada();
 }
 var AutoUpdate = {
 forcar: forcarAtualizacao,
+aplicarAgora: aplicarAgora,
+antesDoGrupo: antesDoGrupo,
+pronta: function () { return versaoPronta; },
+_podeRecarregarSozinho: podeRecarregarSozinho,
+_esperarSwNovo: esperarSwNovo,
 _urlsDoShell: urlsDoShell,
 _renovarShell: renovarShell,
 verificar: function () {
@@ -87198,5 +87318,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=ffa3a2678a"},{"src":"js/bim-pacote.js?v=fbf59b8f55","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=1b91b58fe2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=873add5a49"},{"src":"js/bim-pacote.js?v=fbf59b8f55","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=1b91b58fe2"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

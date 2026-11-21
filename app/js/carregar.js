@@ -138,6 +138,20 @@
       var lista = itens(nome);
       st = estado[nome] = { promessa: null, pronto: false, erro: null, total: lista.length, feitos: 0, ms: 0 };
       if (!lista.length) { st.pronto = true; st.promessa = Promise.resolve({ ms: 0, arquivos: 0 }); return st.promessa; }
+      /* ⚠ VERSÃO NOVA JÁ PRONTA (21/11/2026): o pacote viria do disco NOVO para
+         este núcleo VELHO (o servidor ignora o ?v=). js/autoupdate.js aplica a
+         versão antes — se for seguro e o freio de recargas deixar; senão segue
+         o carregamento normal. Recarga que não aconteceu em 20 s vira a tela
+         de "Tentar de novo", nunca espera infinita. */
+      var AU = global.AutoUpdate;
+      var recarregando = false;
+      try { recarregando = !!(AU && AU.antesDoGrupo && AU.antesDoGrupo(nome)); } catch (eAu) {}
+      if (recarregando) {
+        st.promessa = new Promise(function (ok, falha) {
+          setTimeout(function () { st.erro = ["(a troca para a versão nova não terminou)"]; falha(new Error("recarga para a versão nova")); }, 20000);
+        });
+        return st.promessa;
+      }
       var t0 = Date.now();
       var classicos = lista.filter(function (x) { return !x.modulo; });
       var modulos = lista.filter(function (x) { return x.modulo; });

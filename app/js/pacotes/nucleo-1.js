@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.427",
+versao: "1.2.428",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -442,6 +442,15 @@ if (st && st.promessa && !st.erro) return st.promessa;
 var lista = itens(nome);
 st = estado[nome] = { promessa: null, pronto: false, erro: null, total: lista.length, feitos: 0, ms: 0 };
 if (!lista.length) { st.pronto = true; st.promessa = Promise.resolve({ ms: 0, arquivos: 0 }); return st.promessa; }
+var AU = global.AutoUpdate;
+var recarregando = false;
+try { recarregando = !!(AU && AU.antesDoGrupo && AU.antesDoGrupo(nome)); } catch (eAu) {}
+if (recarregando) {
+st.promessa = new Promise(function (ok, falha) {
+setTimeout(function () { st.erro = ["(a troca para a versão nova não terminou)"]; falha(new Error("recarga para a versão nova")); }, 20000);
+});
+return st.promessa;
+}
 var t0 = Date.now();
 var classicos = lista.filter(function (x) { return !x.modulo; });
 var modulos = lista.filter(function (x) { return x.modulo; });

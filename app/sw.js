@@ -11,10 +11,42 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.2.427';
+var CACHE = 'orcapro-app-v1.2.428';
 
+/* ⚠ SEM skipWaiting NO INSTALL, E PRÉ-CACHE CONFERIDO (21/11/2026).
+ * Roteiro do defeito (1.2.308 → 1.2.410, notebook do Rogério): o worker novo
+ * assumia sozinho (skipWaiting + clients.claim) no meio da atualização, cada
+ * `c.add(u).catch(function () {})` engolia o arquivo que falhou (o servidor
+ * local estava se reiniciando) e o worker se instalava SEM o
+ * js/pacotes/bim.js?v=… — que é cache-first: "Faltou baixar" e nenhuma nova
+ * tentativa. Agora:
+ *   · o que a página precisa para abrir (index.html, os pacotes do
+ *     js/pacotes/lista.json) é OBRIGATÓRIO: até 3 tentativas cada, com o
+ *     tamanho conferido pelo `tamanhos` da lista quando ela traz; faltou um,
+ *     o install FALHA e o worker velho segue com o cache velho inteiro
+ *     (ou entra a versão nova inteira, ou fica a velha);
+ *   · o worker novo ESPERA. Ele só assume quando a página pede
+ *     ("Aplicar agora" → mensagem orcapro:aplicar, js/autoupdate.js) ou
+ *     quando todas as janelas fecham ("Ao reabrir"). Primeiro install
+ *     (nenhum worker ativo) assume na hora, como sempre. */
+self.addEventListener('message', function (e) {
+  if (e && e.data && e.data.tipo === 'orcapro:aplicar') self.skipWaiting();
+});
+function guardarConferido(c, u, bytes, tentativas) {
+  var req = new Request(u, { cache: 'reload' });
+  return fetch(req).then(function (r) {
+    if (!r || !r.ok) throw new Error('HTTP ' + (r && r.status) + ' em ' + u);
+    return r.clone().blob().then(function (b) {
+      if (typeof bytes === 'number' && b.size !== bytes) throw new Error('tamanho ' + b.size + ' != ' + bytes + ' em ' + u);
+      return c.put(u, r);
+    });
+  }).catch(function (err) {
+    if (tentativas > 1) return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return guardarConferido(c, u, bytes, tentativas - 1); });
+    throw err;
+  });
+}
 self.addEventListener('install', function (e) {
-  self.skipWaiting();
+  if (!self.registration || !self.registration.active) self.skipWaiting();   // primeira vez: nada a preservar
   // Pré-cacheia o leitor de .xls (SheetJS): é lazy-load — não é baixado no boot normal do app,
   // então sem isto o import de .xls quebraria offline após instalar. Falha silenciosa (não trava o install).
   // Idem para o leitor de PDF (pdf.js): nota fiscal em PDF e volumetria de planta
@@ -55,10 +87,15 @@ self.addEventListener('install', function (e) {
     return Promise.all([lista, indice])
       .then(function (rs) {
         var pac = rs[0] && rs[0].precache && rs[0].precache.length ? rs[0].precache : null, html = rs[1], extras = [];
+        var tam = (rs[0] && rs[0].tamanhos) || {};
+        if (!html) throw new Error('index.html não veio');   // servidor fora: não instala um worker vazio
         var re = /(?:src|href)="((?:js|css)\/[^"]+)"/g, m;
         while ((m = re.exec(html))) { if (!pac || m[1].indexOf('css/') === 0) extras.push('./' + m[1]); }
-        if (pac) pac.forEach(function (u) { extras.push('./' + u); });
-        return Promise.all(fixos.concat(extras).map(function (u) { return c.add(u).catch(function () {}); }));
+        var obrig = ['./index.html'];
+        if (pac) pac.forEach(function (u) { obrig.push('./' + u); });
+        var soltos = fixos.concat(extras).filter(function (u) { return obrig.indexOf(u) < 0; });
+        return Promise.all(obrig.map(function (u) { return guardarConferido(c, u, tam[u.slice(2)], 3); }))
+          .then(function () { return Promise.all(soltos.map(function (u) { return c.add(u).catch(function () {}); })); });
       });
   }));
 });

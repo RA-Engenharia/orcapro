@@ -4,11 +4,14 @@
  *   GET  /__update/check  -> { temAtualizacao, instalada, disponivel, notas }
  *   POST /__update/apply  -> baixa e extrai a nova versão por cima
  *
- * Política (v1.1.113): havendo versão nova, o app BAIXA E APLICA sozinho em
- * segundo plano e recarrega SOZINHO — mas só num momento seguro (sem modal
- * aberto, sem documento em impressão, sem campo sendo digitado, sem reunião
- * BIM ativa). O cliente nunca precisa clicar em "Atualizar". Falhou (offline,
- * servidor fora)? Silencioso — tenta de novo na próxima verificação/boot.
+ * Política (21/11/2026): havendo versão nova, o app BAIXA E INSTALA sozinho em
+ * segundo plano (o servidor confere arquivo por arquivo e troca a versão de uma
+ * vez — server/static.js, "ATUALIZAÇÃO CONFERIDA"); a página NÃO recarrega
+ * sozinha: aparece a faixa "Nova versão pronta — Aplicar agora / Ao reabrir"
+ * (ver agendarRecarga). Ninguém precisa baixar nada. Falhou (offline, servidor
+ * fora)? Silencioso — tenta de novo na próxima verificação/boot.
+ * Até a 1.2.427 a página recarregava sozinha no "momento seguro" e isso virava
+ * laço durante o reinício do servidor (roteiro em agendarRecarga).
  * Os dados do cliente ficam no navegador (localStorage/IndexedDB) — a troca
  * de arquivos não os toca.
  * ===================================================================== */
@@ -147,22 +150,122 @@
     setTimeout(go, 15000);
   }
 
-  /* Update já está no disco: recarrega agora se seguro, senão espera ficar. */
+  /* ⚠ A PÁGINA NUNCA MAIS RECARREGA SOZINHA POR CAUSA DE VERSÃO (21/11/2026).
+   *
+   * ROTEIRO DO DEFEITO ("a página fica recarregando várias vezes durante a
+   * atualização", notebook do Rogério, 1.2.308 → 1.2.410). Até aqui, com a
+   * versão nova no disco, esta função esperava o "momento seguro" e chamava
+   * `limparCachesERecarregar`, que (1) APAGAVA todos os caches do PWA,
+   * (2) DESREGISTRAVA o service worker e (3) recarregava — exatamente enquanto
+   * o servidor local se reiniciava com o código novo (o /__update/apply
+   * derruba o Node 0,8 s depois de responder). A recarga caía sem servidor e
+   * sem cache: a página de "O OrçaPRO está reiniciando" do sw.js se recarrega
+   * a cada 3 s; a outra janela (o OrçaPRO BIM abre em janela própria) fazia o
+   * mesmo pelo 409; e o service worker novo, instalado no meio disso, guardava
+   * o que conseguia — `c.add(...).catch()` engolia o que falhou. Resultado:
+   * várias recargas seguidas e um cache sem o js/pacotes/bim.js ("Faltou
+   * baixar"), que é cache-first e não ia à rede de novo.
+   *
+   * AGORA, quando a versão nova está pronta:
+   *   · nada é apagado nem desregistrado: o service worker novo baixa e
+   *     CONFERE tudo em segundo plano (sw.js, "PRÉ-CACHE CONFERIDO") e fica
+   *     esperando; se faltar arquivo ele não se instala e o velho continua;
+   *   · aparece uma faixa discreta "Nova versão pronta — Aplicar agora / Ao
+   *     reabrir". Quem decide a hora é quem está usando;
+   *   · "Aplicar agora" grava o pendente do BIM, pede ao worker novo para
+   *     assumir e recarrega UMA vez; "Ao reabrir" some com a faixa e a versão
+   *     entra na próxima abertura.
+   * A única recarga sem clique é a de `antesDoGrupo` (abrir o BIM com a
+   * versão nova já no disco, para não juntar o núcleo velho com o BIM novo) —
+   * e ela passa pelo freio `podeRecarregarSozinho` (no máximo 2 em 10 min). */
+  var CHAVE_RECARGAS = "orcapro:update:recargas";
+  var CHAVE_DEPOIS = "orcapro:update:ao-reabrir";
+  var versaoPronta = "";
+  function podeRecarregarSozinho() {
+    var agora = Date.now(), lista = [];
+    try { lista = JSON.parse(sessionStorage.getItem(CHAVE_RECARGAS) || "[]") || []; } catch (e) { lista = []; }
+    lista = lista.filter(function (t) { return typeof t === "number" && agora - t < 10 * 60 * 1000; });
+    if (lista.length >= 2) return false;
+    lista.push(agora);
+    try { sessionStorage.setItem(CHAVE_RECARGAS, JSON.stringify(lista)); } catch (e) {}
+    return true;
+  }
+  /* o service worker novo terminou de baixar e conferir? resolve com o
+     registro (ou null sem service worker); rejeita se ele foi recusado */
+  function esperarSwNovo() {
+    try {
+      if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistration) return Promise.resolve(null);
+      return navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) return null;
+        var p = reg.update ? reg.update().catch(function () {}) : Promise.resolve();
+        return p.then(function () {
+          var w = reg.installing;
+          if (!w) return reg;                            // já instalado (waiting) ou nada novo
+          return new Promise(function (ok, falha) {
+            var fim = setTimeout(function () { ok(reg); }, 120000);   // rede lenta: não segura a faixa para sempre
+            w.addEventListener("statechange", function () {
+              if (w.state === "installed" || w.state === "activated") { clearTimeout(fim); ok(reg); }
+              else if (w.state === "redundant") { clearTimeout(fim); falha(new Error("sw recusado")); }
+            });
+          });
+        });
+      }).catch(function (e) { if (e && e.message === "sw recusado") throw e; return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function recarregarParaVersao() {
+    var s = location.search.replace(/[?&]_upd=\d+/g, "").replace(/^&/, "?");
+    var sep = s ? "&" : "?";
+    location.replace(location.pathname + s + sep + "_upd=" + Date.now() + location.hash);
+  }
+  /* troca de versão pedida (clique, ou abrir o BIM com versão nova no disco) */
+  function aplicarAgora() {
+    try { if (global.Gestao && Gestao._bimEdFlush) Gestao._bimEdFlush(); } catch (e) {}
+    faixa('<span class="opr-sp"></span><div class="opr-tx"><b>Aplicando a versão ' + esc(versaoPronta) + '…</b></div>');
+    var feito = false;
+    function ir() { if (feito) return; feito = true; recarregarParaVersao(); }
+    setTimeout(ir, 8000);   // o worker novo não respondeu: recarrega assim mesmo (network-first traz o novo)
+    esperarSwNovo().then(function (reg) {
+      if (reg && reg.waiting) {
+        navigator.serviceWorker.addEventListener("controllerchange", ir);
+        reg.waiting.postMessage({ tipo: "orcapro:aplicar" });
+      } else { renovarShell().then(ir, ir); }
+    }, function () { renovarShell().then(ir, ir); });
+  }
+  function faixaPronta(versao) {
+    var ic = typeof Icones !== "undefined" ? Icones.get("check", 15) : "";
+    faixa('<span class="opr-ic">' + ic + '</span><div class="opr-tx"><b>Nova versão ' + esc(versao) + ' pronta.</b>' +
+      '<small>Pode continuar trabalhando: ela entra quando você quiser.</small></div>' +
+      '<button type="button" id="opr-upd-agora" style="flex:none;background:#fff;color:#0f2740;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">Aplicar agora</button>' +
+      '<button type="button" id="opr-upd-depois" style="flex:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 12px;cursor:pointer">Ao reabrir</button>');
+    var a = document.getElementById("opr-upd-agora"), d = document.getElementById("opr-upd-depois");
+    if (a) a.onclick = function () { aplicarAgora(); };
+    if (d) d.onclick = function () { try { sessionStorage.setItem(CHAVE_DEPOIS, versao); } catch (e) {} fechar(); };
+  }
+  /* Update pronto (no disco, ou no servidor que esta página usa): avisa, não recarrega. */
   function agendarRecarga(versao) {
     if (recarregarPendente) return;
     recarregarPendente = true;
-    function tentar() {
-      if (seguroRecarregar()) {
-        faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Atualizado para a versão ' + esc(versao) + ' — recarregando…</b></div>');
-        // re-checa DEPOIS da faixa aparecer: se o cliente voltou a mexer nesses 400ms, espera de novo
-        setTimeout(function () { if (seguroRecarregar()) limparCachesERecarregar(); else setTimeout(tentar, 15000); }, 400);
-      } else {
-        // discreto: avisa que está pronto e recarrega sozinho quando o cliente terminar o que está fazendo
-        faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Versão ' + esc(versao) + ' instalada.</b><small>O app recarrega sozinho assim que você concluir o que está fazendo.</small></div>');
-        setTimeout(tentar, 15000);
-      }
-    }
-    tentar();
+    versaoPronta = String(versao || "");
+    esperarSwNovo().then(function () {
+      var adiada = ""; try { adiada = sessionStorage.getItem(CHAVE_DEPOIS) || ""; } catch (e) {}
+      if (adiada === versaoPronta) { fechar(); return; }   // "Ao reabrir" já escolhido nesta sessão
+      faixaPronta(versaoPronta);
+    }, function () {
+      /* o worker novo foi recusado (arquivo não chegou): fica a versão que funciona,
+         e a próxima rodada tenta de novo */
+      recarregarPendente = false; versaoPronta = ""; fechar();
+    });
+  }
+  /* Abrir o BIM com a versão nova já pronta: o pacote do BIM viria do disco NOVO
+     para um núcleo VELHO. Se é seguro (nada aberto/digitando) e o freio deixa,
+     aplica a versão antes; devolve true quando a recarga foi pedida. */
+  function antesDoGrupo() {
+    if (!versaoPronta) return false;
+    var rodando = String((typeof CONFIG !== "undefined" && CONFIG.versao) || "").trim();
+    if (rodando === versaoPronta) return false;
+    if (!seguroRecarregar() || !podeRecarregarSozinho()) return false;
+    aplicarAgora();
+    return true;
   }
 
   /* ⚠ O DISCO ANDOU EMBAIXO DESTA PÁGINA.
@@ -280,13 +383,15 @@
       .then(function (r) {
         // 409 = outra aba já está aplicando: o disco vai ficar atualizado — esta aba
         // só precisa recarregar quando seguro (senão ficaria no JS velho pra sempre)
-        if (r.status === 409) { aplicando = false; agendarRecarga(d.disponivel); return null; }
+        if (r.status === 409) { aplicando = false; setTimeout(function () { agendarRecarga(d.disponivel); }, 4000); return null; }
         return r.json().catch(function () { return { ok: false }; });
       })
       .then(function (res) {
         if (res === null) return;
         aplicando = false;
-        if (res && res.ok) { agendarRecarga(res.versao || d.disponivel); }
+        /* o servidor local se reinicia ~1 s depois de responder: espera ele voltar
+           antes de pedir o sw.js novo (senão o worker novo nem começa a baixar) */
+        if (res && res.ok) { setTimeout(function () { agendarRecarga(res.versao || d.disponivel); }, 4000); }
         else if (d && d.pediuUsuario) {
           /* O usuário CLICOU em "Atualizar agora": sumir em silêncio faz ele achar
              que atualizou. Quando ele não pediu (update silencioso), o silêncio é
@@ -385,6 +490,11 @@
 
   var AutoUpdate = {
     forcar: forcarAtualizacao, // botão manual — continua existindo para quem quiser puxar na hora
+    aplicarAgora: aplicarAgora,  // "Aplicar agora" da faixa de versão pronta
+    antesDoGrupo: antesDoGrupo,  // js/carregar.js, antes de baixar o BIM
+    pronta: function () { return versaoPronta; },
+    _podeRecarregarSozinho: podeRecarregarSozinho,
+    _esperarSwNovo: esperarSwNovo,
     _urlsDoShell: urlsDoShell,   // expostos para tools/e2e-foto-obra-aparelhos.js
     _renovarShell: renovarShell,
     // Verifica e ATUALIZA sozinho. Silencioso se: não há servidor de update, offline, ou já é a última.

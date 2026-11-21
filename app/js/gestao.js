@@ -12674,9 +12674,12 @@
       /* a obra que acabou de ser criada pelo "+ Criar obra nova…" vence a do alto */
       if (g.obraNova) { g.obra = g.obraNova; g.obraNova = ""; }
       else if (this._bimSel) g.obra = this._bimSel;
-      if (g.obra && !obrasNp.some(function (o) { return o.id === g.obra; })) g.obra = "";
+      if (g.obra && g.obra !== "__semobra__" && !obrasNp.some(function (o) { return o.id === g.obra; })) g.obra = "";
       this._npArquivoPadrao();
-      var optObras = '<option value="">— escolha a obra —</option>' + obrasNp.map(function (o) {
+      /* PROJETO SEM OBRA (B1, 21/11/2026): o projeto pode nascer sem obra, numa pasta escolhida
+         (ou Área de Trabalho\<nome>), e ser vinculado a uma obra depois (BimProjetosUI.vincularObra) */
+      var optObras = '<option value="">— escolha a obra —</option>' +
+        '<option value="__semobra__"' + (g.obra === "__semobra__" ? " selected" : "") + ">Sem obra (só o projeto)</option>" + obrasNp.map(function (o) {
         return '<option value="' + Util.esc(o.id) + '"' + (o.id === g.obra ? " selected" : "") + ">" + Util.esc(o.nome || "Obra") + "</option>";
       }).join("") + '<option value="__nova__">+ Criar obra nova…</option>';
 
@@ -12693,6 +12696,11 @@
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px">' +
           '<label>Obra<select data-np="obra" style="width:100%">' + optObras + "</select></label>" +
           '<label>Nome do arquivo<input type="text" data-np="arquivo" value="' + Util.esc(g.arquivo || "") + '" style="width:100%" title="É o nome do arquivo .opbim — no sistema, nos recentes e na pasta do computador"></label>' +
+        "</div>" +
+        '<div data-np-pasta-box style="margin:-2px 0 10px;display:' + (g.obra === "__semobra__" ? "flex" : "none") + ';gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px">' +
+          '<span>Salvar em:</span><b data-np-pasta-txt style="word-break:break-all">' + Util.esc(g.pasta || "Área de Trabalho\\" + (g.arquivo || "<nome do arquivo>")) + "</b>" +
+          '<button type="button" class="btn" data-np-pasta-esc>Escolher pasta…</button>' +
+          (g.pasta ? '<button type="button" class="btn ghost" data-np-pasta-limpa title="Volta para a Área de Trabalho">Área de Trabalho</button>' : "") +
         "</div>" +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
           '<label>Nome do projeto<input type="text" data-np="nome" value="' + Util.esc(g.nome) + '" style="width:100%"></label>' +
@@ -12717,6 +12725,7 @@
         { texto: "Cancelar", classe: "", onClick: function () { UI.fecharModal(); } }
       ]);
       this._npLigar();
+      this._npPastaPintar();
       this._npResumo();
     },
 
@@ -12904,14 +12913,17 @@
           if (el.value === "__nova__") { el.value = g.obra || ""; self._npNovaObra(); return; }
           g.obra = el.value;
           self._npArquivoPadrao();
+          self._npPastaPintar();
         } else if (k === "arquivo") {
           g.arquivo = el.value;
           /* apagou o nome: volta a seguir nome e obra */
           g.arquivoManual = !!String(el.value).trim();
           if (!g.arquivoManual) self._npArquivoPadrao();
+          self._npPastaPintar();
         } else if (k === "nome" || k === "tipo" || k === "contorno" || k === "template") {
           g[k] = el.value;
           if (k === "nome") self._npArquivoPadrao();
+          if (k === "nome") self._npPastaPintar();
         } else {
           var v = parseFloat(String(el.value).replace(",", "."));
           if (!isFinite(v) || v <= 0) { UI.toast("Informe um número maior que zero, em metros.", "aviso"); return; }
@@ -12978,7 +12990,48 @@
 
     /* `opts.guardada` (PROJETOS BIM): a modelagem desta obra já foi guardada como
        "Modelagem anterior" — segue sem perguntar de novo (ver abaixo) */
+    /* "Salvar em" do projeto sem obra: mostra/esconde e repinta o caminho */
+    _npPastaPintar: function () {
+      var g = this._npCfg, box = document.querySelector("#modal-bg [data-np-pasta-box]");
+      if (!g || !box) return;
+      box.style.display = g.obra === "__semobra__" ? "flex" : "none";
+      var t = box.querySelector("[data-np-pasta-txt]");
+      if (t) t.textContent = g.pasta || ("Área de Trabalho\\" + (String(g.arquivo || "").trim() || "<nome do arquivo>"));
+      var self = this;
+      if (!box._npOuve) {
+        box._npOuve = 1;
+        box.addEventListener("click", function (e) {
+          var b = e.target && e.target.closest ? e.target.closest("[data-np-pasta-esc],[data-np-pasta-limpa]") : null;
+          if (!b) return;
+          if (b.hasAttribute("data-np-pasta-limpa")) { g.pasta = ""; b.parentNode.removeChild(b); self._npPastaPintar(); return; }
+          b.disabled = true;
+          UI.toast("Escolha a pasta na janela do Windows que abriu (pode estar atrás desta).", "ok", 5000);
+          fetch("/__projetos/escolher-pasta", { method: "POST" }).then(function (r) { return r.json(); }).then(function (j) {
+            b.disabled = false;
+            if (j && j.ok && j.pasta) { g.pasta = j.pasta; self._npPastaPintar(); }
+            else if (j && !j.ok) UI.toast(j.erro || "Não consegui escolher a pasta.", "erro");
+          })["catch"](function () { b.disabled = false; UI.toast("Escolher pasta só funciona no OrçaPRO instalado: o projeto vai para a Área de Trabalho.", "aviso", 7000); });
+        });
+      }
+    },
+
     _npCriar: function (opts) {
+      var g = this._npCfg, self = this, BP = window.BimProjetos, BPU = window.BimProjetosUI;
+      /* PROJETO SEM OBRA (B1): o escopo próprio "semobra-<id>" vira a "obra" daqui
+         para baixo; o diálogo continua com "__semobra__" (cancelar não muda nada) */
+      if (g && g.obra === "__semobra__" && BP && BP.idSemObra) {
+        if (this._npGuardando) return;
+        if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
+        if (!g.projIdSemObra) g.projIdSemObra = (window.Util && Util.uid) ? Util.uid("bpj") : "bpj_" + Date.now().toString(36);
+        var gSem = Object.assign({}, g, { obra: BP.idSemObra(g.projIdSemObra) });
+        var dlg = this._npCfg;
+        this._npCfg = gSem;
+        try { return this._npCriarCom(opts, { semObra: true, projId: g.projIdSemObra, pasta: g.pasta || "" }); }
+        finally { if (this._npCfg === gSem) this._npCfg = dlg; }
+      }
+      return this._npCriarCom(opts, null);
+    },
+    _npCriarCom: function (opts, sem) {
       var g = this._npCfg, self = this, BP = window.BimProjetos, BPU = window.BimProjetosUI;
       if (this._npGuardando) return;   /* a cópia da modelagem anterior está sendo gravada */
       if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
@@ -12989,9 +13042,9 @@
       var obraNp = Store.obter(eid(), "obras", g.obra);
       /* a obra do alto sem cadastro (quem chama por fora com um id próprio):
          o caminho antigo aceitava, e aceita */
-      var semCadastro = !obraNp && g.obra === this._bimSel;
+      var semCadastro = !obraNp && (g.obra === this._bimSel || !!sem);
       if (!obraNp && !semCadastro) { UI.toast("A obra escolhida não existe mais. Escolha outra.", "erro"); return; }
-      obraNp = obraNp || { id: g.obra, nome: "" };
+      obraNp = obraNp || { id: g.obra, nome: sem ? "Sem obra" : "" };
       if (!String(g.arquivo || "").trim()) { g.arquivoManual = false; this._npArquivoPadrao(); }
       var arquivo = String(g.arquivo || "").replace(/\s+/g, " ").trim();
       if (BP) {
@@ -13086,7 +13139,7 @@
           ? arquivo + ": " + lista.length + " níveis e " + ops.length + " paredes no 3D. O editor já está ligado."
           : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
       }
-      if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
+      if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp, id: sem ? sem.projId : "", pasta: sem ? sem.pasta : "", semObra: !!sem });
       /* TEMPLATE DE INÍCIO: penas, prancha RA, cortes, elevações, a disciplina e a PLANTA BAIXA na frente */
       var resTpl = null;
       if (planoTpl) {
@@ -13096,7 +13149,9 @@
           ". A planta baixa do Térreo está na frente" + (ops.length ? "." : " — desenhe a primeira peça nela."));
       } else if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
       if (resTpl && resTpl.avisos && resTpl.avisos.length) UI.toast("Template: " + resTpl.avisos.join("; ") + ".", "aviso", 8000);
-      UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
+      UI.toast(sem
+        ? "Projeto “" + arquivo + "” criado sem obra. Ao salvar ele vai para " + (sem.pasta || "Área de Trabalho\\" + arquivo) + "; para vincular a uma obra, clique em “sem obra” no título."
+        : "Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 8000);
       try { this._bimCascaContexto(); } catch (e) {}
     },
 

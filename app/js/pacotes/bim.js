@@ -246606,9 +246606,13 @@ var i0 = indiceNormal(ix);
 if (txt(obraId)) i0.obras[txt(obraId)] = txt(ass);
 return i0;
 }
+var SEM_OBRA = "semobra-";
+function ehSemObra(id) { return String(id == null ? "" : id).indexOf(SEM_OBRA) === 0 && String(id).length > SEM_OBRA.length; }
+function idSemObra(idProjeto) { return SEM_OBRA + String(idProjeto || "").replace(/[^A-Za-z0-9_-]+/g, "_"); }
 function validarNovo(cfg, obrasIds) {
 var c = cfg || {}, erros = [];
-if (!txt(c.obra)) erros.push("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.");
+if (ehSemObra(c.obra)) { }
+else if (!txt(c.obra)) erros.push("Escolha a obra do projeto — ou crie uma nova pela opção “+ Criar obra nova…”.");
 else if (Array.isArray(obrasIds) && obrasIds.indexOf(txt(c.obra)) < 0) erros.push("A obra escolhida não existe mais nesta conta. Escolha outra.");
 var arq = limpa(c.arquivo);
 if (!arq) erros.push("Dê um nome ao arquivo do projeto.");
@@ -246659,7 +246663,7 @@ PREFIXO: PREFIXO, TETO_RECENTES: TETO_RECENTES, EXT: ".opbim",
 nomeArquivo: nomeArquivo, nomePadrao: nomePadrao, assinatura: assinatura, podarVazios: podarVazios,
 indiceNormal: indiceNormal, registrar: registrar, ocultar: ocultar, esquecer: esquecer, obter: obter,
 recentes: recentes, doSistema: doSistema, conflitoDeNome: conflitoDeNome, marcarObra: marcarObra,
-validarNovo: validarNovo, paredesRetangulo: paredesRetangulo, rechavear: rechavear,
+validarNovo: validarNovo, ehSemObra: ehSemObra, idSemObra: idSemObra, SEM_OBRA: SEM_OBRA, paredesRetangulo: paredesRetangulo, rechavear: rechavear,
 nomeAnterior: nomeAnterior, nomeLivre: nomeLivre,
 chaveIdb: chaveIdb, chaveIndice: chaveIndice
 };
@@ -246681,7 +246685,8 @@ function quando(iso) { try { return iso ? global.Util.fmtData(iso) : "—"; } ca
 function ico(n, s) { try { return global.Icones ? global.Icones.get(n, s || 16) : ""; } catch (e) { return ""; } }
 function agora() { return new Date().toISOString(); }
 function uid() { try { return global.Util.uid("bpj"); } catch (e) { return "bpj_" + Date.now().toString(36); } }
-function obraNome(id) { try { var o = global.Store.obter(emp(), "obras", id); return (o && (o.nome || o.titulo)) || ""; } catch (e) { return ""; } }
+function semObra(id) { return !!(global.BimProjetos && global.BimProjetos.ehSemObra && global.BimProjetos.ehSemObra(id)); }
+function obraNome(id) { if (semObra(id)) return "Sem obra"; try { var o = global.Store.obter(emp(), "obras", id); return (o && (o.nome || o.titulo)) || ""; } catch (e) { return ""; } }
 function obrasVisiveis() {
 try { var g = G(); return ((g && g.ui && g.ui.lista) ? g.ui.lista("obras") : global.Store.listar(emp(), "obras")) || []; } catch (e) { return []; }
 }
@@ -247003,7 +247008,8 @@ g._bimCenaObra = obraId;
 },
 criado: function (g, info) {
 var self = this;
-this._proj = { id: uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null, cotasAutoNovo: true };
+this._proj = { id: info.id || uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null, cotasAutoNovo: true };
+if (semObra(info.obraId)) this._proj.pasta = String(info.pasta || "");
 g._bimCenaObra = info.obraId;
 this.esconderInicio();
 this.pintarTitulo();
@@ -247292,6 +247298,7 @@ try {
 m.proj.nome = p.nome;
 m.proj.extras = m.proj.extras || {};
 m.proj.extras["projeto-bim.json"] = { formato: 1, id: p.id, nome: p.nome, obraId: p.obraId, obraNome: p.obraNome, criadoEm: p.criadoEm, salvoEm: quando0 };
+if (p.pasta != null) m.proj.extras["projeto-bim.json"].pasta = p.pasta;
 zip = global.OpFormato.projetoParaZip(m.proj, g._opMeta(), global.BimBcf.zipEscrever);
 } catch (e1) { return Promise.resolve({ ok: false, montar: true, motivo: "não consegui montar o arquivo do projeto: " + (e1 && e1.message || e1) }); }
 var noSistema = this._guardarNoSistema(p.id, zip, { nome: p.nome, obraId: p.obraId, salvoEm: quando0 });
@@ -247317,6 +247324,7 @@ var ok = opts.automatico ? (!!sis.ok || (!!pc.ok && !!pc.arquivo)) : (!!sis.ok |
 if (!ok) return { ok: false, sistema: sis, computador: pc };
 var entrada = { id: p.id, nome: p.nome, obraId: p.obraId, obraNome: p.obraNome, criadoEm: p.criadoEm, salvoEm: quando0, abertoEm: quando0, bytes: zip.length, oculto: false, sistema: !!sis.ok };
 if (pc.ok && pc.arquivo) { entrada.computador = pc.arquivo; entrada.caminho = pc.caminho || ""; entrada.computadorEm = quando0; }
+if (p.pasta != null) entrada.pasta = p.pasta;
 if (pc.baixado) entrada.baixado = true;
 return self._mexerIndice(function (ix) {
 var i1 = P().registrar(ix, entrada);
@@ -247326,13 +247334,40 @@ return opts.assinaturaObra ? P().marcarObra(i1, p.obraId, opts.assinaturaObra) :
 },
 _gravarNoPc: function (p, zip, substituir) {
 var q = "obra=" + encodeURIComponent(p.obraNome || "") + "&nome=" + encodeURIComponent(p.nome) + "&id=" + encodeURIComponent(p.id) + (substituir ? "&substituir=1" : "");
+if (p.pasta != null) q = "fora=1&nome=" + encodeURIComponent(p.nome) + "&id=" + encodeURIComponent(p.id) + (p.pasta ? "&pasta=" + encodeURIComponent(p.pasta) : "") + (substituir ? "&substituir=1" : "");
 return fetch("/__projetos/salvar?" + q, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: zip })
 .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: null }; }); })
 .then(function (x) {
 if (x.status === 409 && x.j && x.j.codigo === "existe") return { ok: false, conflito: true, caminho: x.j.caminho, arquivo: x.j.arquivo };
-if (x.j && x.j.ok) return { ok: true, arquivo: x.j.arquivo, caminho: x.j.caminho };
+if (x.j && x.j.ok) {
+if (p.pasta != null && x.j.pasta) p.pasta = x.j.pasta;
+return { ok: true, arquivo: x.j.arquivo, caminho: x.j.caminho };
+}
 return { ok: false, motivo: (x.j && x.j.erro) || ("o servidor local respondeu " + x.status) };
 })["catch"](function () { return { ok: false, motivo: "o servidor local do OrçaPRO não respondeu" }; });
+},
+vincularObra: function () {
+var self = this, g = G(), p = this._proj;
+if (!p || !g || !semObra(p.obraId)) return Promise.resolve(false);
+if (!obrasVisiveis().length) { toast("Não há obra nesta conta para vincular. Crie a obra primeiro (Obras).", "aviso", 7000); return Promise.resolve(false); }
+return this.salvar().then(function (s) {
+if (!s || !s.ok) { toast("Salve o projeto antes de vincular: nada foi mudado.", "erro"); return false; }
+var m, zip, pasta = p.pasta;
+try {
+m = g._opbimMontar();
+m.proj.nome = p.nome; m.proj.extras = m.proj.extras || {};
+m.proj.extras["projeto-bim.json"] = { formato: 1, id: p.id, nome: p.nome, obraId: p.obraId, obraNome: "Sem obra", criadoEm: p.criadoEm, salvoEm: p.salvoEm, pasta: pasta || "" };
+zip = global.OpFormato.projetoParaZip(m.proj, g._opMeta(), global.BimBcf.zipEscrever);
+} catch (e) { toast("Não consegui preparar o vínculo: " + (e && e.message || e), "erro"); return false; }
+return self.abrirBytes(zip, { vincular: true, id: p.id }).then(function (ok) {
+if (!ok || !self._proj || semObra(self._proj.obraId)) return false;
+if (pasta != null) self._proj.pasta = pasta;
+return self.salvar().then(function (s2) {
+if (s2 && s2.ok) toast("Projeto “" + self._proj.nome + "” vinculado à obra “" + self._proj.obraNome + "”.", "ok", 6000);
+return !!(s2 && s2.ok);
+});
+});
+});
 },
 abrirProjeto: function () {
 var self = this;
@@ -247453,6 +247488,8 @@ nome: String(meta.nome || origem.nome || r.nome || origem.arquivoNome || "Projet
 obraId: String(meta.obraId || origem.obraId || ""), obraNome: String(meta.obraNome || origem.obraNome || ""),
 criadoEm: String(meta.criadoEm || ""), salvoEm: String(meta.salvoEm || "")
 };
+if (meta.pasta != null) info.pasta = String(meta.pasta || "");
+if (origem.vincular) info.vincular = true;
 return self._garantirObra(info).then(function (ok) {
 if (!ok) return false;
 return new Promise(function (res) {
@@ -247463,14 +247500,16 @@ self._fecharComPergunta(function () { self._aplicar(r, info, origem, bytes).then
 },
 _garantirObra: function (info) {
 var visiveis = obrasVisiveis();
+if (semObra(info.obraId) && !info.vincular) { info.obraNome = "Sem obra"; return Promise.resolve(true); }
 if (info.obraId && visiveis.some(function (o) { return String(o.id) === info.obraId; })) { info.obraNome = obraNome(info.obraId) || info.obraNome; return Promise.resolve(true); }
 return new Promise(function (res) {
-var titulo = info.obraId ? "O projeto “" + esc(info.nome) + "” é da obra “" + esc(info.obraNome || info.obraId) + "”, que não existe nesta conta." : "Em que obra o projeto “" + esc(info.nome) + "” entra?";
+var titulo = info.vincular ? "Vincular o projeto “" + esc(info.nome) + "” a qual obra? A modelagem vai para a obra escolhida; o arquivo continua na mesma pasta." :
+info.obraId ? "O projeto “" + esc(info.nome) + "” é da obra “" + esc(info.obraNome || info.obraId) + "”, que não existe nesta conta." : "Em que obra o projeto “" + esc(info.nome) + "” entra?";
 var opts = visiveis.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.nome || "Obra") + "</option>"; }).join("");
 global.UI.modal("Obra do projeto", '<p style="margin:0 0 10px">' + titulo + "</p>" +
 '<label style="display:block">Obra<select id="bp-obra-esc" style="width:100%"><option value="">— escolha a obra —</option>' + opts + "</select></label>", [
 { texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); res(false); } },
-{ texto: "Abrir nesta obra", classe: "primary", onClick: function () {
+{ texto: info.vincular ? "Vincular" : "Abrir nesta obra", classe: "primary", onClick: function () {
 var s = document.getElementById("bp-obra-esc"), v = s ? s.value : "";
 if (!v) { toast("Escolha a obra.", "aviso"); return; }
 global.UI.fecharModal();
@@ -247513,7 +247552,7 @@ self._abrindo = false;
 g._bimCenaObra = info.obraId;
 self._abrirPlantaDoProjeto();
 var t = agora();
-self._proj = { id: info.id, nome: info.nome, obraId: info.obraId, obraNome: obraNome(info.obraId) || info.obraNome, criadoEm: info.criadoEm || t,
+self._proj = { id: info.id, nome: info.nome, obraId: info.obraId, obraNome: obraNome(info.obraId) || info.obraNome, criadoEm: info.criadoEm || t, pasta: info.pasta != null ? info.pasta : undefined,
 salvoEm: info.salvoEm || t, base: null, salvo: null };
 self._proj.base = self.assinaturaAtual();
 self._proj.salvo = self.fotoObra(info.obraId);
@@ -247745,6 +247784,7 @@ if (!b) return;
 var a = b.getAttribute("data-bp-tit");
 if (a === "fechar") self._fecharComPergunta(function () { self.mostrarInicio(); });
 else if (a === "inicio") self.mostrarInicio();
+else if (a === "vincular") self.vincularObra();
 });
 }
 if (sel && !sel._bpOuve) { sel._bpOuve = 1; sel.addEventListener("change", function () { setTimeout(function () { self.pintarTitulo(); }, 0); }); }
@@ -247757,7 +247797,9 @@ return;
 if (sel) sel.style.display = "none";
 var sujo = this.sujo();
 tag.innerHTML = '<span class="bp-titulo-nome" data-bp-titulo-nome title="' + esc(p.nome) + '">' + esc(p.nome) + "</span>" +
-'<span class="bp-titulo-obra" data-bp-titulo-obra>obra ' + esc(p.obraNome || obraNome(p.obraId)) + "</span>" +
+(semObra(p.obraId)
+? '<button type="button" class="bp-tbt bp-titulo-obra" data-bp-tit="vincular" data-bp-titulo-obra title="Projeto sem obra — clique para vincular a uma obra">sem obra · vincular…</button>'
+: '<span class="bp-titulo-obra" data-bp-titulo-obra>obra ' + esc(p.obraNome || obraNome(p.obraId)) + "</span>") +
 (sujo ? '<span class="bp-sujo" data-bp-sujo title="Alterações não salvas">●</span>' : "") +
 '<button type="button" class="bp-tbt" data-bp-tit="fechar" title="Fechar o projeto (pergunta antes, se houver alteração não salva)">×</button>';
 },
@@ -247810,6 +247852,59 @@ s.textContent =
 document.head.appendChild(s);
 }
 };
+BimProjetosUI.codigoExterno = function (busca) {
+var m = /[?&]arquivo=([a-f0-9]{16,64})(?:&|$)/.exec(String(busca == null ? (global.location && global.location.search) || "" : busca));
+return m ? m[1] : "";
+};
+BimProjetosUI.abrirExterno = function (codigo) {
+var self = this;
+if (!codigo || typeof fetch !== "function") return Promise.resolve(false);
+return fetch("/__projetos/externo?t=" + encodeURIComponent(codigo), { cache: "no-store" }).then(function (r) {
+if (!r.ok) return r.json().then(function (j) { throw new Error((j && j.erro) || ("erro " + r.status)); }, function () { throw new Error("erro " + r.status); });
+var nome = "";
+try { nome = decodeURIComponent(r.headers.get("X-Nome") || ""); } catch (eN) {}
+return r.arrayBuffer().then(function (ab) { return { bytes: new Uint8Array(ab), nome: nome }; });
+}).then(function (a) {
+var ext = (/\.([a-z]+)$/i.exec(a.nome) || [])[1];
+ext = ext ? ext.toLowerCase() : "";
+var semExt = a.nome.replace(/\.[a-z]+$/i, "");
+if (ext === "opbim") return self.abrirBytes(a.bytes, { arquivoNome: semExt });
+if (ext === "optpl") {
+var g = G(), txt = "";
+try { txt = new TextDecoder("utf-8").decode(a.bytes); } catch (eT) {}
+if (!g || !g._optplAplicar || !global.OpFormato) throw new Error("o leitor de template não carregou");
+var r = global.OpFormato.lerTemplate(txt, global.Familia ? global.Familia.validar : null);
+if (!r.ok) throw new Error(r.erros.join("; "));
+g._optplAplicar(r.template, r.avisos);
+return true;
+}
+if (ext === "opfam") {
+if (!global.FamiliaImportUI) throw new Error("o leitor de famílias não carregou");
+return global.FamiliaImportUI.receber([{ name: a.nome, _bytes: a.bytes }]).then(function (o) { return !!(o && o.importadas && o.importadas.length); });
+}
+throw new Error("formato não reconhecido (" + (a.nome || "sem nome") + ")");
+})["catch"](function (e) { toast("Não abri o arquivo: " + (e && e.message || e), "erro", 10000); return false; });
+};
+BimProjetosUI._ligarExterno = function () {
+var self = this, cod = this.codigoExterno();
+if (!cod) return;
+try {
+var u = new URL(global.location.href); u.searchParams["delete"]("arquivo");
+if (global.history && global.history.replaceState) global.history.replaceState(null, "", u.pathname + u.search + u.hash);
+} catch (eH) {}
+var t0 = Date.now();
+(function esperar() {
+var g = G(), C = global.Carregar, A = global.App;
+var pronto = g && global.OpFormato && global.BimBcf && (!C || C.pronto("bim")) && (!A || A.view === "bim" || A._appBim) && !document.getElementById("ui-loading");
+if (pronto) { self.abrirExterno(cod); return; }
+if (Date.now() - t0 > 180000) { toast("O BIM demorou a abrir; o arquivo não foi aberto. Abra pelo “Abrir projeto do computador”.", "erro", 10000); return; }
+setTimeout(esperar, 700);
+})();
+};
+if (typeof document !== "undefined" && document.addEventListener && global.location) {
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { BimProjetosUI._ligarExterno(); });
+else setTimeout(function () { BimProjetosUI._ligarExterno(); }, 0);
+}
 global.BimProjetosUI = BimProjetosUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimProjetosUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
