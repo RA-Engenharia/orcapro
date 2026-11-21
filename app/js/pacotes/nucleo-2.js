@@ -78101,8 +78101,11 @@ if (!d.ok) { UI.toast(d.erro, "erro"); return; }
 var seguir = function () {
 var cx = self._licEmpresaCertame(orc);
 var ir = function (opcoes) {
-UI.toast("Gerando o Excel para devolver ao CertamePRO…", "ok");
+self._licProgressoDevolucao("excel");
+opcoes = opcoes || {};
+opcoes.progresso = function (etapa) { self._licProgressoDevolucao(etapa); };
 self._licDevolverSilencioso(orc, d, opcoes).then(function (res) {
+self._licProgressoDevolucao(null);
 self._licMostrarDevolucao(orc, d, res);
 try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); if (res.naoAplicado && self._licAutoLog) self._licAutoLog("devolucao-nao-aplicada", orc, { status: 409, origem: "manual" }); } catch (eLg) {}
 });
@@ -78129,6 +78132,35 @@ UI.modal("Itens ainda com o preço simbólico de R$ 0,01",
 { texto: "Voltar e preencher", classe: "primary", onClick: function () { UI.fecharModal(); } },
 { texto: "Devolver assim mesmo", classe: "ghost", onClick: function () { UI.fecharModal(); destinoOk(); } }
 ]);
+},
+_licProgressoDevolucao: function (etapa) {
+var el = document.getElementById("lic-devolvendo");
+if (!etapa) { if (el) { clearInterval(this._licProgTimer); this._licProgTimer = null; UI.fecharModal(); } return; }
+var textos = {
+excel: ["1 de 2", "Gerando o Excel do orçamento…"],
+envio: ["2 de 2", "Enviando ao CertamePRO e aguardando a conferência (valores, BDI, carta)…"]
+};
+var t = textos[etapa] || ["", "Enviando…"];
+if (!el) {
+UI.modal("Devolvendo ao CertamePRO",
+'<div id="lic-devolvendo" role="status" aria-live="polite" style="font-size:13px">' +
+'<style>@keyframes licProg{0%{left:-40%}100%{left:100%}}</style>' +
+'<p style="margin:0 0 8px"><b id="lic-dev-etapa"></b> <span id="lic-dev-texto"></span></p>' +
+'<div style="position:relative;height:8px;border-radius:4px;background:var(--borda,#e3e8ee);overflow:hidden">' +
+'<div style="position:absolute;top:0;bottom:0;width:40%;border-radius:4px;background:var(--primaria,#1f6feb);animation:licProg 1.2s ease-in-out infinite"></div></div>' +
+'<p class="muted" style="margin:8px 0 0;font-size:12px">Não feche o programa. <span id="lic-dev-tempo"></span></p></div>',
+[]);
+var ini = Date.now();
+clearInterval(this._licProgTimer);
+this._licProgTimer = setInterval(function () {
+var s = Math.round((Date.now() - ini) / 1000), tg = document.getElementById("lic-dev-tempo");
+if (!tg) return;
+tg.textContent = s + " s" + (s > 40 ? " · o CertamePRO está conferindo; editais grandes levam mais tempo" : "");
+}, 1000);
+}
+var e1 = document.getElementById("lic-dev-etapa"), e2 = document.getElementById("lic-dev-texto");
+if (e1) e1.textContent = t[0] ? "Etapa " + t[0] + ":" : "";
+if (e2) e2.textContent = t[1];
 },
 _licHtmlDevolucao: function (nome, r) {
 var M = (typeof Modulo !== "undefined" && Modulo.aviso) ? Modulo : null;
@@ -78211,8 +78243,11 @@ aoErro: falhou
 _licDevolverSilencioso: function (orc, d, opcoes) {
 var self = this;
 opcoes = opcoes || {};
+var prog = typeof opcoes.progresso === "function" ? opcoes.progresso : function () {};
+try { prog("excel"); } catch (eP0) {}
 return this._licGerarExcel(orc).then(function (g) {
 if (!g.ok) return { ok: false, etapa: "excel", erro: g.erro };
+try { prog("envio"); } catch (eP1) {}
 return self._licPost(d, g.blob, g.nome).then(function (p) {
 var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null, faltaPdf: !!p.ok };
 if (!p.ok && p.status === 409) { out.naoAplicado = true; out.motivoNaoAplicado = Licitacao.motivoNaoAplicado ? Licitacao.motivoNaoAplicado(p.j) : ""; }
