@@ -77635,24 +77635,29 @@ basePronta.then(function () { if (UI.el("lic-desc-prev")) prev(); });
 try { inp.focus(); } catch (e) {}
 }
 },
-licitacaoPacote: function () {
-var self = this, orc = this.orcAtual;
-if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") return;
+licitacaoPacote: function (auto) {
+if (auto && typeof auto.aoPdf !== "function") auto = null;
+var self = this, orc = (auto && auto.orc) || this.orcAtual;
+var falhaAuto = function (m) { if (auto) { try { auto.aoPdf({ ok: false, erro: m }); } catch (eA) {} } };
+if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") { falhaAuto("o gerador do pacote não carregou"); return; }
 var lic = Licitacao.cfg(orc);
-if (!lic || !lic.ativo) { UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
+if (!lic || !lic.ativo) { if (auto) falhaAuto("o orçamento não está em modo licitação"); else UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
 var cx = this._licEmpresaCertame(orc);
 var seguir = function () {
-UI.toast("Montando o pacote da proposta…", "ok");
+if (!auto) UI.toast("Montando o pacote da proposta…", "ok");
 var andou = false, relogio = null;
 var depoisBase = function () {
 if (andou) return; andou = true;
 if (relogio) { clearTimeout(relogio); relogio = null; }
-self._licPegarBase(lic, function (base) { montarPacote(base); });
+self._licPegarBase(lic, function (base) {
+if (!auto) { montarPacote(base); return; }
+try { montarPacote(base); } catch (eMp) { try { self.fecharProposta(); } catch (eFp) {} falhaAuto("falha ao montar o documento: " + (eMp && eMp.message ? eMp.message : eMp)); }
+});
 };
 try { self._analiticoDoOrc(orc, depoisBase); } catch (eAn) { depoisBase(); return; }
 if (!andou) relogio = setTimeout(function () {
 if (andou) return;
-try { UI.toast("A base de insumos demorou mais de " + Math.round((self._licTempoBaseMs || 20000) / 1000) + " s para carregar. Segui sem ela; confira as pendências do pacote.", "aviso"); } catch (eT) {}
+if (!auto) try { UI.toast("A base de insumos demorou mais de " + Math.round((self._licTempoBaseMs || 20000) / 1000) + " s para carregar. Segui sem ela; confira as pendências do pacote.", "aviso"); } catch (eT) {}
 depoisBase();
 }, self._licTempoBaseMs || 20000);
 };
@@ -77667,10 +77672,11 @@ if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.se
 }
 } catch (eSai) { }
 var pr = LicitacaoDocs.pendencias(orc, emp, opc);
+if (!pr.ok && auto) { falhaAuto(pr.erro); return; }
 if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
 var gerar = function () {
 var r = LicitacaoDocs.gerar(orc, emp, opc);
-if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+if (!r.ok) { if (auto) falhaAuto(r.erro); else UI.toast(r.erro, "erro"); return; }
 var baixandoPdf = false;
 var baixarPdf = function () {
 if (baixandoPdf) return;
@@ -77690,12 +77696,20 @@ UI.toast("Não consegui gerar o PDF (" + (eG && eG.message ? eG.message : eG) + 
 });
 };
 self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf });
-try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { if (auto) { self.fecharProposta(); falhaAuto("falha ao paginar: " + eP.message); return; } UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+if (auto) {
+var fl = document.querySelectorAll("#proposta-print .ld-pg");
+if (typeof PdfDireto === "undefined" || !fl.length) { self.fecharProposta(); falhaAuto("o gerador de PDF não carregou"); return; }
+PdfDireto.gerar(fl, { titulo: "Proposta — " + (orc.numero || "licitação"), produtor: "OrçaPRO" }).then(function (res) {
+self.fecharProposta();
+try { auto.aoPdf({ ok: true, blob: res.blob, paginas: res.paginas }); } catch (eA2) {}
+}).catch(function (eG2) { self.fecharProposta(); falhaAuto(eG2 && eG2.message ? eG2.message : String(eG2)); });
+}
 };
 var conf = [];
 try { conf = LicitacaoDocs.conferirEdital(pr.dados_, lic) || []; } catch (eCf) { conf = []; }
 var reprovou = conf.filter(function (c) { return !c.ok; }).length;
-if (!pr.total && !reprovou) { gerar(); return; }
+if (auto || (!pr.total && !reprovou)) { gerar(); return; }
 var lista = function (tit, a) {
 return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px">' + tit + '</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' + a.map(function (x) { return '<li>' + Util.esc(x) + '</li>'; }).join("") + '</ul>' : "";
 };
@@ -77716,6 +77730,7 @@ lista("Dados do pacote", pr.dados) + blocoConf,
 { texto: "Gerar assim mesmo", classe: "primary", onClick: function () { UI.fecharModal(); gerar(); } }]);
 }
 };
+if (cx.perguntar && auto && !auto.empresaOk) { falhaAuto("o certame não informou a empresa licitante; gere o PDF pelo botão do pacote"); return; }
 if (cx.perguntar) {
 this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, function () { });
 return;
@@ -77791,11 +77806,14 @@ Util.esc(nome || "(razão social não cadastrada)") + '</b> (CNPJ ' + Util.esc(c
 [{ texto: rotNao, classe: "ghost", onClick: function () { UI.fecharModal(); if (aoNao) aoNao(); } },
 { texto: "Usar esta empresa", classe: "primary", onClick: function () { UI.fecharModal(); if (aoUsar) aoUsar(); } }]);
 },
-_licTextoFaltaPdf: function () {
-return "Orçamento devolvido. Falta a proposta em PDF: abra, salve em PDF e envie no CertamePRO, em Orçamento → Proposta completa.";
+_licTextoFaltaPdf: function (res) {
+if (res && res.pdf && res.pdf.ok) return "Orçamento e proposta em PDF (" + res.pdf.paginas + " páginas) devolvidos ao CertamePRO. Não precisa salvar nem enviar nada.";
+return "Orçamento devolvido. A proposta em PDF não foi junto" + (res && res.pdf && res.pdf.erro ? " (" + res.pdf.erro + ")" : "") +
+": abra, salve em PDF e envie no CertamePRO, em Orçamento → Proposta completa.";
 },
-_licBlocoFaltaPdf: function () {
-return '<p style="font-size:13px;border-left:3px solid #b45309;padding-left:8px"><b>' + Util.esc(this._licTextoFaltaPdf()) + '</b></p>';
+_licBlocoFaltaPdf: function (res) {
+var ok = res && res.pdf && res.pdf.ok;
+return '<p style="font-size:13px;border-left:3px solid ' + (ok ? "#1a7f37" : "#b45309") + ';padding-left:8px"><b>' + Util.esc(this._licTextoFaltaPdf(res)) + '</b></p>';
 },
 licitacaoDescontoDesfazer: function () {
 var self = this, orc = this.orcAtual;
@@ -78110,7 +78128,7 @@ self._licMostrarDevolucao(orc, d, res);
 try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!res.ok, erro: res.erro || "" }); if (res.naoAplicado && self._licAutoLog) self._licAutoLog("devolucao-nao-aplicada", orc, { status: 409, origem: "manual" }); } catch (eLg) {}
 });
 };
-if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({}); }, function () { });
+if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({ empresaAprovada: true }); }, function () { });
 else ir({});
 };
 var destinoOk = function () {
@@ -78137,8 +78155,9 @@ _licProgressoDevolucao: function (etapa) {
 var el = document.getElementById("lic-devolvendo");
 if (!etapa) { if (el) { clearInterval(this._licProgTimer); this._licProgTimer = null; UI.fecharModal(); } return; }
 var textos = {
-excel: ["1 de 2", "Gerando o Excel do orçamento…"],
-envio: ["2 de 2", "Enviando ao CertamePRO e aguardando a conferência (valores, BDI, carta)…"]
+excel: ["1 de 3", "Gerando o Excel do orçamento…"],
+envio: ["2 de 3", "Enviando ao CertamePRO e aguardando a conferência (valores, BDI, carta)…"],
+pdf: ["3 de 3", "Gerando a proposta em PDF e enviando ao CertamePRO…"]
 };
 var t = textos[etapa] || ["", "Enviando…"];
 if (!el) {
@@ -78185,7 +78204,7 @@ var self = this;
 var lic = (typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null;
 var u = lic && lic.urlCertame ? String(lic.urlCertame) : "";
 var b = [];
-if (comPdf) b.push({ texto: "Abrir a proposta (salvar em PDF)", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
+if (comPdf) b.push({ texto: "Abrir a proposta", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
 if (/^https?:\/\//i.test(u)) {
 b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
 b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
@@ -78252,8 +78271,31 @@ return self._licPost(d, g.blob, g.nome).then(function (p) {
 var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null, faltaPdf: !!p.ok };
 if (!p.ok && p.status === 409) { out.naoAplicado = true; out.motivoNaoAplicado = Licitacao.motivoNaoAplicado ? Licitacao.motivoNaoAplicado(p.j) : ""; }
 if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }
+if (!p.ok || opcoes.semPdf) return out;
+try { prog("pdf"); } catch (eP2) {}
+return self._licEnviarPdf(orc, d, !!opcoes.empresaAprovada).then(function (pdf) {
+out.pdf = pdf; out.faltaPdf = !pdf.ok;
 return out;
 });
+});
+});
+},
+_licEnviarPdf: function (orc, d, empresaAprovada) {
+var self = this;
+return new Promise(function (resolve) {
+var feito = false, fim = function (x) { if (!feito) { feito = true; resolve(x); } };
+setTimeout(function () { fim({ ok: false, erro: "o PDF levou mais de 3 minutos para ficar pronto" }); }, 180000);
+try {
+self.licitacaoPacote({ orc: orc, empresaOk: !!empresaAprovada, aoPdf: function (res) {
+if (!res.ok) { fim({ ok: false, erro: res.erro || "não consegui gerar o PDF" }); return; }
+var url = String(d.url || "").replace(/\/orcamento-orcapro(\?|$)/, "/proposta-completa-pdf$1");
+if (url === d.url) { fim({ ok: false, erro: "endereço do CertamePRO sem a rota do PDF" }); return; }
+var nome = "Proposta_" + String(orc.numero || "licitacao").replace(/[^A-Za-z0-9._-]+/g, "_") + ".pdf";
+self._licPost({ url: url, host: d.host }, res.blob, nome).then(function (p) {
+fim(p.ok ? { ok: true, paginas: res.paginas } : { ok: false, erro: p.erro || "o CertamePRO não aceitou o PDF" });
+});
+} });
+} catch (e) { fim({ ok: false, erro: e && e.message ? e.message : String(e) }); }
 });
 },
 _licMostrarDevolucao: function (orc, d, res) {
@@ -78282,7 +78324,7 @@ return;
 }
 var j = res.j, lido = res.lido, htmlLido = "";
 try { if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
-var linhaProp = self._licBlocoFaltaPdf();
+var linhaProp = self._licBlocoFaltaPdf(res);
 if (lido && htmlLido) {
 UI.modal("Orçamento devolvido ao CertamePRO", htmlLido + linhaProp, self._licBotoesVolta(orc, true));
 return;
@@ -86431,10 +86473,10 @@ return;
 }
 self._licAutoLog("devolucao-automatica", copia, { ok: !!res.ok, etapa: res.etapa || "", erro: res.erro || "", arquivo: res.nome || "", valor: res.lido ? res.lido.valor : null });
 if (res.ok) {
-set("devolver", "ok", "enviado: " + res.nome + " — " + self._licTextoFaltaPdf());
+set("devolver", "ok", "enviado: " + res.nome + " — " + self._licTextoFaltaPdf(res));
 var html = "";
 try { html = res.lido ? self._licHtmlDevolucao(res.nome, res.lido) : '<p style="font-size:13px">O CertamePRO recebeu <b class="mono">' + esc(res.nome) + "</b>.</p>"; } catch (eH) { html = ""; }
-fim("Orçamento automático devolvido ao CertamePRO", html + self._licBlocoFaltaPdf(), self._licBotoesVolta(copia, true));
+fim("Orçamento automático devolvido ao CertamePRO", html + self._licBlocoFaltaPdf(res), self._licBotoesVolta(copia, true));
 return;
 }
 if (res.blob) {

@@ -12685,16 +12685,21 @@
     /* PACOTE DA PROPOSTA DE LICITAÇÃO (js/licitacaodocs.js). Antes de gerar, mostra na TELA o que falta
        (dados da empresa, pendências da leitura do PDF do órgão): esse aviso nunca entra no PDF. O PDF é
        o do navegador (Imprimir / Salvar PDF), com as páginas medidas por LicitacaoDocs.paginar. */
-    licitacaoPacote: function () {
-      var self = this, orc = this.orcAtual;
-      if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") return;
+    /* `auto` (21/11/2026, devolução que já leva o PDF): { orc, aoPdf(res) } monta o MESMO pacote sem perguntar nada, grava o PDF
+       direto (PdfDireto) e devolve { ok, blob, paginas, erro } em aoPdf. Nunca decide pela pessoa: empresa não informada ou dado
+       que impede o pacote → ok:false com o motivo, e o PDF fica para o botão de sempre. */
+    licitacaoPacote: function (auto) {
+      if (auto && typeof auto.aoPdf !== "function") auto = null;   // clique no botão chega com o evento, não com o modo automático
+      var self = this, orc = (auto && auto.orc) || this.orcAtual;
+      var falhaAuto = function (m) { if (auto) { try { auto.aoPdf({ ok: false, erro: m }); } catch (eA) {} } };
+      if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") { falhaAuto("o gerador do pacote não carregou"); return; }
       var lic = Licitacao.cfg(orc);
-      if (!lic || !lic.ativo) { UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
+      if (!lic || !lic.ativo) { if (auto) falhaAuto("o orçamento não está em modo licitação"); else UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
       /* EMPRESA DO CERTAME: com `licitante` no pacote, os documentos usam só ele. Certame do CertamePRO SEM licitante
          nunca sai em nome da conta em silêncio: pergunta antes. */
       var cx = this._licEmpresaCertame(orc);
       var seguir = function () {
-        UI.toast("Montando o pacote da proposta…", "ok");
+        if (!auto) UI.toast("Montando o pacote da proposta…", "ok");
         /* ⚠ O IMPRESSO TEM DE SER O DEVOLVIDO. A devolução carrega o analítico da UF do orçamento (_analiticoDoOrc) antes de montar;
            aqui também, senão a proporção MO/MAT/EQ saía de uma base diferente (ou nenhuma) e a Resumo do impresso diferia do Excel.
            Se o carregamento falhar, segue sem ele: o aviso das pendências diz de onde saiu a repartição. */
@@ -12702,14 +12707,17 @@
         var depoisBase = function () {
           if (andou) return; andou = true;
           if (relogio) { clearTimeout(relogio); relogio = null; }
-          self._licPegarBase(lic, function (base) { montarPacote(base); });
+          self._licPegarBase(lic, function (base) {
+            if (!auto) { montarPacote(base); return; }
+            try { montarPacote(base); } catch (eMp) { try { self.fecharProposta(); } catch (eFp) {} falhaAuto("falha ao montar o documento: " + (eMp && eMp.message ? eMp.message : eMp)); }
+          });
         };
         try { self._analiticoDoOrc(orc, depoisBase); } catch (eAn) { depoisBase(); return; }
         /* TEMPO LIMITE: se o carregamento do analítico não responde (rede, arquivo grande), não fica em "Montando…" para sempre:
            passados 20 s segue sem ele, com o aviso (as pendências dizem de onde saiu a repartição MO/MAT/EQ). */
         if (!andou) relogio = setTimeout(function () {
           if (andou) return;
-          try { UI.toast("A base de insumos demorou mais de " + Math.round((self._licTempoBaseMs || 20000) / 1000) + " s para carregar. Segui sem ela; confira as pendências do pacote.", "aviso"); } catch (eT) {}
+          if (!auto) try { UI.toast("A base de insumos demorou mais de " + Math.round((self._licTempoBaseMs || 20000) / 1000) + " s para carregar. Segui sem ela; confira as pendências do pacote.", "aviso"); } catch (eT) {}
           depoisBase();
         }, self._licTempoBaseMs || 20000);
       };
@@ -12725,10 +12733,11 @@
             }
           } catch (eSai) { /* sem o modelo, sai o pacote completo */ }
           var pr = LicitacaoDocs.pendencias(orc, emp, opc);
+          if (!pr.ok && auto) { falhaAuto(pr.erro); return; }
           if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
           var gerar = function () {
             var r = LicitacaoDocs.gerar(orc, emp, opc);
-            if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+            if (!r.ok) { if (auto) falhaAuto(r.erro); else UI.toast(r.erro, "erro"); return; }
             /* PDF DIRETO (js/pdfdireto.js): A4 em pé com texto selecionável, sem o diálogo de impressão. O "Imprimir" continua ao lado.
                ⚠ O PDF do "Microsoft Print to PDF" saía deitado (842x595) e sem texto; o portal do órgão não lê esse arquivo. */
             var baixandoPdf = false;
@@ -12750,13 +12759,22 @@
               });
             };
             self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf });
-            try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+            try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { if (auto) { self.fecharProposta(); falhaAuto("falha ao paginar: " + eP.message); return; } UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+            if (auto) {
+              /* as folhas precisam estar na tela para o PdfDireto medir o texto: grava e fecha logo em seguida */
+              var fl = document.querySelectorAll("#proposta-print .ld-pg");
+              if (typeof PdfDireto === "undefined" || !fl.length) { self.fecharProposta(); falhaAuto("o gerador de PDF não carregou"); return; }
+              PdfDireto.gerar(fl, { titulo: "Proposta — " + (orc.numero || "licitação"), produtor: "OrçaPRO" }).then(function (res) {
+                self.fecharProposta();
+                try { auto.aoPdf({ ok: true, blob: res.blob, paginas: res.paginas }); } catch (eA2) {}
+              }).catch(function (eG2) { self.fecharProposta(); falhaAuto(eG2 && eG2.message ? eG2.message : String(eG2)); });
+            }
           };
           /* Conferência contra o item 7.20 do edital: só na tela, nunca no documento */
           var conf = [];
           try { conf = LicitacaoDocs.conferirEdital(pr.dados_, lic) || []; } catch (eCf) { conf = []; }
           var reprovou = conf.filter(function (c) { return !c.ok; }).length;   // "não conferido" também para e avisa: não é verde
-          if (!pr.total && !reprovou) { gerar(); return; }
+          if (auto || (!pr.total && !reprovou)) { gerar(); return; }   // automático: as pendências saem no PDF em vermelho e na conferência do CertamePRO
           var lista = function (tit, a) {
             return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px">' + tit + '</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' + a.map(function (x) { return '<li>' + Util.esc(x) + '</li>'; }).join("") + '</ul>' : "";
           };
@@ -12777,6 +12795,7 @@
              { texto: "Gerar assim mesmo", classe: "primary", onClick: function () { UI.fecharModal(); gerar(); } }]);
         }
       };
+      if (cx.perguntar && auto && !auto.empresaOk) { falhaAuto("o certame não informou a empresa licitante; gere o PDF pelo botão do pacote"); return; }
       if (cx.perguntar) {
         this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, function () { /* cancelou: nada a fazer */ });
         return;
@@ -12872,11 +12891,16 @@
     /* O CertamePRO NÃO lê o documento da proposta (só o Excel, campo "arquivo"): o PDF vai por uma rota própria dele
        (Orçamento → Proposta completa), enviado pela pessoa. Por isso a devolução leva SÓ o Excel e a tela, depois de
        devolver, diz o que falta e abre o documento (licitacaoPacote). NUNCA diz que o PDF foi enviado. */
-    _licTextoFaltaPdf: function () {
-      return "Orçamento devolvido. Falta a proposta em PDF: abra, salve em PDF e envie no CertamePRO, em Orçamento → Proposta completa.";
+    /* 21/11/2026: a devolução agora gera e envia o PDF sozinha (_licEnviarPdf → rota proposta-completa-pdf). O texto só diz
+       "enviado" quando o CertamePRO respondeu OK para o PDF; se falhar, volta o recado de enviar à mão, com o motivo. */
+    _licTextoFaltaPdf: function (res) {
+      if (res && res.pdf && res.pdf.ok) return "Orçamento e proposta em PDF (" + res.pdf.paginas + " páginas) devolvidos ao CertamePRO. Não precisa salvar nem enviar nada.";
+      return "Orçamento devolvido. A proposta em PDF não foi junto" + (res && res.pdf && res.pdf.erro ? " (" + res.pdf.erro + ")" : "") +
+        ": abra, salve em PDF e envie no CertamePRO, em Orçamento → Proposta completa.";
     },
-    _licBlocoFaltaPdf: function () {
-      return '<p style="font-size:13px;border-left:3px solid #b45309;padding-left:8px"><b>' + Util.esc(this._licTextoFaltaPdf()) + '</b></p>';
+    _licBlocoFaltaPdf: function (res) {
+      var ok = res && res.pdf && res.pdf.ok;
+      return '<p style="font-size:13px;border-left:3px solid ' + (ok ? "#1a7f37" : "#b45309") + ';padding-left:8px"><b>' + Util.esc(this._licTextoFaltaPdf(res)) + '</b></p>';
     },
 
     licitacaoDescontoDesfazer: function () {
@@ -13252,7 +13276,7 @@
         };
         /* certame sem empresa licitante: o Excel leva os dados da empresa da conta (assinatura, responsável técnico). Só segue com o aval;
            recusar CANCELA a devolução (nada sai em nome da conta sem a pessoa saber). */
-        if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({}); }, function () { /* cancelou: nada foi enviado */ });
+        if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({ empresaAprovada: true }); }, function () { /* cancelou: nada foi enviado */ });
         else ir({});
       };
       var destinoOk = function () {
@@ -13289,8 +13313,9 @@
       var el = document.getElementById("lic-devolvendo");
       if (!etapa) { if (el) { clearInterval(this._licProgTimer); this._licProgTimer = null; UI.fecharModal(); } return; }
       var textos = {
-        excel: ["1 de 2", "Gerando o Excel do orçamento…"],
-        envio: ["2 de 2", "Enviando ao CertamePRO e aguardando a conferência (valores, BDI, carta)…"]
+        excel: ["1 de 3", "Gerando o Excel do orçamento…"],
+        envio: ["2 de 3", "Enviando ao CertamePRO e aguardando a conferência (valores, BDI, carta)…"],
+        pdf: ["3 de 3", "Gerando a proposta em PDF e enviando ao CertamePRO…"]
       };
       var t = textos[etapa] || ["", "Enviando…"];
       if (!el) {
@@ -13348,7 +13373,7 @@
       var u = lic && lic.urlCertame ? String(lic.urlCertame) : "";
       var b = [];
       /* devolveu o Excel: a proposta em PDF ainda é da pessoa (o CertamePRO só recebe o PDF por rota própria) */
-      if (comPdf) b.push({ texto: "Abrir a proposta (salvar em PDF)", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
+      if (comPdf) b.push({ texto: "Abrir a proposta", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
       if (/^https?:\/\//i.test(u)) {
         b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
         b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
@@ -13427,8 +13452,34 @@
           /* 409: o CertamePRO já tem orçamento conferido (devolvido por pessoa ou com valor digitado à mão) e NÃO gravou nada */
           if (!p.ok && p.status === 409) { out.naoAplicado = true; out.motivoNaoAplicado = Licitacao.motivoNaoAplicado ? Licitacao.motivoNaoAplicado(p.j) : ""; }
           if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }
-          return out;
+          if (!p.ok || opcoes.semPdf) return out;
+          /* 21/11/2026: a proposta em PDF vai junto, sem a pessoa salvar e enviar à mão (rota proposta-completa-pdf, mesmo token) */
+          try { prog("pdf"); } catch (eP2) {}
+          return self._licEnviarPdf(orc, d, !!opcoes.empresaAprovada).then(function (pdf) {
+            out.pdf = pdf; out.faltaPdf = !pdf.ok;
+            return out;
+          });
         });
+      });
+    },
+
+    /* Gera o PDF do pacote (licitacaoPacote em modo automático) e envia ao CertamePRO. Resolve { ok, paginas, erro }. Nunca rejeita. */
+    _licEnviarPdf: function (orc, d, empresaAprovada) {
+      var self = this;
+      return new Promise(function (resolve) {
+        var feito = false, fim = function (x) { if (!feito) { feito = true; resolve(x); } };
+        setTimeout(function () { fim({ ok: false, erro: "o PDF levou mais de 3 minutos para ficar pronto" }); }, 180000);
+        try {
+          self.licitacaoPacote({ orc: orc, empresaOk: !!empresaAprovada, aoPdf: function (res) {
+            if (!res.ok) { fim({ ok: false, erro: res.erro || "não consegui gerar o PDF" }); return; }
+            var url = String(d.url || "").replace(/\/orcamento-orcapro(\?|$)/, "/proposta-completa-pdf$1");
+            if (url === d.url) { fim({ ok: false, erro: "endereço do CertamePRO sem a rota do PDF" }); return; }
+            var nome = "Proposta_" + String(orc.numero || "licitacao").replace(/[^A-Za-z0-9._-]+/g, "_") + ".pdf";
+            self._licPost({ url: url, host: d.host }, res.blob, nome).then(function (p) {
+              fim(p.ok ? { ok: true, paginas: res.paginas } : { ok: false, erro: p.erro || "o CertamePRO não aceitou o PDF" });
+            });
+          } });
+        } catch (e) { fim({ ok: false, erro: e && e.message ? e.message : String(e) }); }
       });
     },
 
@@ -13461,7 +13512,7 @@
          pode dizer "não consegui falar com o CertamePRO" (recado que mente) */
       var j = res.j, lido = res.lido, htmlLido = "";
       try { if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
-      var linhaProp = self._licBlocoFaltaPdf();
+      var linhaProp = self._licBlocoFaltaPdf(res);
       if (lido && htmlLido) {
         UI.modal("Orçamento devolvido ao CertamePRO", htmlLido + linhaProp, self._licBotoesVolta(orc, true));
         return;

@@ -245,10 +245,10 @@ self._licDevolverSilencioso(copia, d).then(function (res) {
           }
           self._licAutoLog("devolucao-automatica", copia, { ok: !!res.ok, etapa: res.etapa || "", erro: res.erro || "", arquivo: res.nome || "", valor: res.lido ? res.lido.valor : null });
           if (res.ok) {
-            set("devolver", "ok", "enviado: " + res.nome + " — " + self._licTextoFaltaPdf());
+            set("devolver", "ok", "enviado: " + res.nome + " — " + self._licTextoFaltaPdf(res));
             var html = "";
             try { html = res.lido ? self._licHtmlDevolucao(res.nome, res.lido) : '<p style="font-size:13px">O CertamePRO recebeu <b class="mono">' + esc(res.nome) + "</b>.</p>"; } catch (eH) { html = ""; }
-            fim("Orçamento automático devolvido ao CertamePRO", html + self._licBlocoFaltaPdf(), self._licBotoesVolta(copia, true));
+            fim("Orçamento automático devolvido ao CertamePRO", html + self._licBlocoFaltaPdf(res), self._licBotoesVolta(copia, true));
             return;
           }
           if (res.blob) {
