@@ -121,6 +121,9 @@
   function interp(x, x0, x1, y0, y1) { return x1 === x0 ? y0 : y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
   function soma(lista) { var s = 0; lista.forEach(function (o) { s += o.area; }); return s; }
   function ref(item, extra) { return NORMA + ", " + item + (extra ? " — " + extra : ""); }
+  /* AUDITORIA A1/A10 (20/11/2026): o Cpi foi conferido no texto da 2023 (_ÍNDICE/texto/ABNT NBR 6123-2023.txt, linhas 3835–3922,
+     p. 43–44): 6.3.2.1-a/b/c, 6.3.2.2 e 6.3.3 têm os MESMOS valores do 6.2.5/6.2.6/Anexo D da 1988 — cita a 2023, guarda a linha da 1988 */
+  function ref23(item, extra) { return "NBR 6123:2023, " + item + " (texto da 2023 conferido, mesmos valores; " + NORMA + (extra ? ", " + extra : "") + ")"; }
   function linhaTxt(l) { return fin(l) ? "linha " + l : "linha " + l[0] + " (" + (l[1] + 1) + "º número)"; }
 
   /* ====================================================== TABELAS (texto)
@@ -749,37 +752,37 @@
     });
     var r = cpiAnexoD(ab);
     if (!r) return [];
-    return [{ valor: r.adotado, exato: r.exato, item: "Anexo D",
-              motivo: "Anexo D (6.2.11): Σ ±A·√|Ce − cpi| = 0 com " + ab.map(function (o) { return o.nome + " (A = " + bt(o.A, 2) + " m², Ce = " + bts(o.ce, 3) + ")"; }).join("; ") +
+    return [{ valor: r.adotado, exato: r.exato, item: "6.3.3",
+              motivo: "6.3.3 (Anexo D da 1988): Σ ±A·√|Ce − cpi| = 0 com " + ab.map(function (o) { return o.nome + " (A = " + bt(o.A, 2) + " m², Ce = " + bts(o.ce, 3) + ")"; }).join("; ") +
                       " → cpi = " + bts(r.exato, 3) + ", adotado " + bts(r.adotado, 1) + " (uma casa decimal, como nos exemplos do Anexo D)",
-              referencia: ref("6.2.11 e Anexo D", "linhas 1577–1579 e 3234–3356; exemplos nas p. 47–49 do PDF") }];
+              referencia: ref23("6.3.3 (método detalhado; Anexo D da 1988)", "linhas 1577–1579 e 3234–3356; exemplos nas p. 47–49 do PDF") }];
   }
 
   function cpiSemDominante(G, F, ZP, d, entrada, aviso) {
-    if (entrada.estanque) return CPI.estanque.map(function (v) { return { valor: v, item: "6.2.6", motivo: "edificação efetivamente estanque, janelas fixas: cpi = −0,2 ou 0 (o mais nocivo)", referencia: ref("6.2.6", "linhas " + CPI.lestanque) }; });
+    if (entrada.estanque) return CPI.estanque.map(function (v) { return { valor: v, item: "6.3.2.2", motivo: "edificação efetivamente estanque, janelas fixas: cpi = −0,2 ou 0 (o mais nocivo)", referencia: ref23("6.3.2.2", "linhas " + CPI.lestanque) }; });
     var P = FACES.filter(function (k) { return F[k].permeavel; });
     if (P.length === 4) {
       /* só as aberturas não dominantes (a dominante fechada vale como fresta) */
       var ar = FACES.map(function (k) { return soma(F[k].aberturas.filter(function (o) { return !o.dominante; })); });
-      if (Math.max.apply(null, ar) - Math.min.apply(null, ar) > 1e-9) aviso("Cpi 6.2.5-b supõe as quatro faces igualmente permeáveis; as aberturas informadas diferem entre as faces — se as áreas reais forem conhecidas, o Anexo D (6.2.11) dá o valor exato");
-      return CPI.quatro.map(function (v) { return { valor: v, item: "6.2.5-b", motivo: "quatro faces igualmente permeáveis: cpi = −0,3 ou 0 (considerar o mais nocivo)", referencia: ref("6.2.5-b", "linhas " + CPI.lquatro) }; });
+      if (Math.max.apply(null, ar) - Math.min.apply(null, ar) > 1e-9) aviso("Cpi 6.3.2.1-b supõe as quatro faces igualmente permeáveis; as aberturas informadas diferem entre as faces — se as áreas reais forem conhecidas, o método detalhado (6.3.3) dá o valor exato");
+      return CPI.quatro.map(function (v) { return { valor: v, item: "6.3.2.1-b", motivo: "quatro faces igualmente permeáveis: cpi = −0,3 ou 0 (considerar o mais nocivo)", referencia: ref23("6.3.2.1-b", "linhas " + CPI.lquatro) }; });
     }
     if (P.length === 2 && OPOSTA[P[0]] === P[1]) {
       var perp = P.indexOf(BARL[d]) >= 0;
-      return [{ valor: perp ? CPI.duasOpostas.perm : CPI.duasOpostas.imperm, item: "6.2.5-a",
+      return [{ valor: perp ? CPI.duasOpostas.perm : CPI.duasOpostas.imperm, item: "6.3.2.1-a",
                 motivo: "duas faces opostas permeáveis (" + P.join(" e ") + "), as outras impermeáveis; vento perpendicular a uma face " + (perp ? "permeável: cpi = +0,2" : "impermeável: cpi = −0,3"),
-                referencia: ref("6.2.5-a", "linha " + (perp ? CPI.duasOpostas.lperm : CPI.duasOpostas.limperm)) }];
+                referencia: ref23("6.3.2.1-a", "linha " + (perp ? CPI.duasOpostas.lperm : CPI.duasOpostas.limperm)) }];
     }
     if (P.length === 0) {
-      aviso("nenhuma parede permeável (alvenaria/concreto sem aberturas, 6.2.2): adotado 6.2.6, cpi = −0,2 ou 0 — confira se a edificação é de fato estanque");
-      return CPI.estanque.map(function (v) { return { valor: v, item: "6.2.6", motivo: "paredes impermeáveis (6.2.2), edificação tratada como estanque: cpi = −0,2 ou 0", referencia: ref("6.2.6", "linhas " + CPI.lestanque) }; });
+      aviso("nenhuma parede permeável (alvenaria/concreto sem aberturas, 6.3.1): adotado 6.3.2.2, cpi = −0,2 ou 0 — confira se a edificação é de fato estanque");
+      return CPI.estanque.map(function (v) { return { valor: v, item: "6.3.2.2", motivo: "paredes impermeáveis (6.3.1), edificação tratada como estanque: cpi = −0,2 ou 0", referencia: ref23("6.3.2.2", "linhas " + CPI.lestanque) }; });
     }
     var listadas = P.every(function (k) { return F[k].aberturas.length > 0; }), itens = [];
     P.forEach(function (k) {
       if (listadas) F[k].aberturas.forEach(function (o) { itens.push({ face: k, o: o }); });
       else itens.push({ face: k, o: { nome: k + " (permeabilidade da face)", area: F[k].area, s0: null, s1: null } });
     });
-    aviso("faces permeáveis: " + P.join(", ") + " — combinação fora de 6.2.5-a/b; Cpi pelo Anexo D (6.2.11) " + (listadas ? "com as aberturas informadas" : "supondo permeabilidade igual por m² nas faces permeáveis"));
+    aviso("faces permeáveis: " + P.join(", ") + " — combinação fora de 6.3.2.1-a/b; Cpi pelo método detalhado (6.3.3) " + (listadas ? "com as aberturas informadas" : "supondo permeabilidade igual por m² nas faces permeáveis"));
     return cpiAnexoDFaces(ZP, d, itens);
   }
 
@@ -790,17 +793,17 @@
     if (pf === "barlavento") {
       var nb = soma(doms.map(function (x) { return x.o; })) + soma(outras.filter(function (x) { return x.face === face; }).map(function (x) { return x.o; }));
       var R = outrasSuc > 0 ? nb / outrasSuc : Infinity, r = cpiBarlavento(R);
-      if (!r) { aviso("abertura dominante a barlavento com razão " + br(R, 2) + " < 1 (abaixo de 6.2.5-c): Cpi pelo Anexo D"); return cpiAnexoDFaces(ZP, d, doms.concat(outras)); }
-      return [{ valor: r.v, item: "6.2.5-c", interpolado: r.interpolado,
+      if (!r) { aviso("abertura dominante a barlavento com razão " + br(R, 2) + " < 1 (abaixo de 6.3.2.1-c): Cpi pelo método detalhado (6.3.3)"); return cpiAnexoDFaces(ZP, d, doms.concat(outras)); }
+      return [{ valor: r.v, item: "6.3.2.1-c", interpolado: r.interpolado,
                 motivo: "abertura dominante na face de barlavento (" + face + "); razão aberturas na face de barlavento / aberturas nas faces em sucção = " +
                         (R === Infinity ? "∞ (nenhuma outra abertura informada nas faces em sucção → \"6 ou mais\")" : bt(nb, 2) + " / " + bt(outrasSuc, 2) + " = " + br(R, 2)) +
-                        " → cpi = " + bts(r.v, 3) + (r.interpolado ? " (interpolado linearmente entre os valores de 6.2.5-c)" : ""),
-                referencia: ref("6.2.5-c", "linhas 1494–1505") }];
+                        " → cpi = " + bts(r.v, 3) + (r.interpolado ? " (interpolado linearmente entre os valores de 6.3.2.1-c)" : ""),
+                referencia: ref23("6.3.2.1-c", "linhas 1494–1505") }];
     }
     if (pf === "sotavento") {
       var ce = ceMedioFace(Z[face]);
-      return [{ valor: ce, item: "6.2.5-c", motivo: "abertura dominante na face de sotavento (" + face + "): cpi = Ce da face (zona " + Z[face][0].zona + ", Tabela 4) = " + bts(ce, 2),
-                referencia: ref("6.2.5-c", "linhas 1506–1508 e Tabela 4") }];
+      return [{ valor: ce, item: "6.3.2.1-c", motivo: "abertura dominante na face de sotavento (" + face + "): cpi = Ce da face (zona " + Z[face][0].zona + ", Tabela 4) = " + bts(ce, 2),
+                referencia: ref23("6.3.2.1-c", "linhas 1506–1508 e Tabela 4") }];
     }
     /* face paralela ao vento */
     var fx = ZP[d].faixaAltaSuccao, temFaixa = fx.faces.indexOf(face) >= 0;
@@ -824,9 +827,9 @@
         cand.push({ valor: rz.v, interpolado: rz.interpolado,
                     motivo: "abertura dominante" + (desconhecida ? " (se estiver)" : "") + " na zona de alta sucção externa da face " + face + " (faixa s = " + bt(fx.s0, 2) + " a " + bt(fx.s1, 2) + " m); razão área na zona / outras aberturas nas faces em sucção = " +
                             (Rz === Infinity ? "∞ (nenhuma outra abertura informada → \"3 ou mais\")" : br(Rz, 2)) + " → cpi = " + bts(rz.v, 3) + (rz.interpolado ? " (interpolado)" : "") });
-      } else aviso("a parte da abertura dominante dentro da zona de alta sucção é pequena (razão < 0,25, abaixo do primeiro valor de 6.2.5-c): adotado o Ce do local");
+      } else aviso("a parte da abertura dominante dentro da zona de alta sucção é pequena (razão < 0,25, abaixo do primeiro valor de 6.3.2.1-c): adotado o Ce do local");
     }
-    return reduzir(cand, ref("6.2.5-c", "linhas 1509–1535 e Tabela 4"), "6.2.5-c");
+    return reduzir(cand, ref23("6.3.2.1-c", "linhas 1509–1535 e Tabela 4"), "6.3.2.1-c");
   }
 
   function analisarCpi(G, F, ZP, entrada, aviso) {
@@ -839,22 +842,39 @@
     if (flag.length) cen.push({ id: "dominante-fechada", nome: "abertura dominante fechada", comFlag: false });
     cen.push({ id: flag.length ? "dominante-aberta" : (abertas.length ? "face-aberta" : "sem-dominante"),
                nome: flag.length ? "abertura dominante aberta" : (abertas.length ? "face aberta" : "sem abertura dominante"), comFlag: true });
+    /* AUDITORIA A1 (20/11/2026): edificação FECHADA sem abertura dominante informada. Galpão tem portão, e com ele aberto num
+       temporal vale a NBR 6123:2023 6.3.2.1-c (cpi até +0,8 com a abertura a barlavento; Ce da face a sotavento; Ce do local
+       ou −0,4 a −0,9 em zona de alta sucção na face paralela). O motor decide sozinho: um cenário "portão aberto" em CADA face
+       fechada (posição ao longo da face desconhecida → todas as zonas e a faixa de alta sucção), envoltória com o 6.3.2.1-b.
+       Só não monta isso quando quem chama declara entrada.semAberturasDominantes === true (aviso forte). Antes: só −0,3/0 e a
+       sucção na cobertura do Pedido Gabriel saía −0,511 kN/m² em vez de −0,945 (+85 %). */
+    var semDomDeclarado = entrada.semAberturasDominantes === true;
+    if (!flag.length && !abertas.length && !entrada.estanque && entrada.aberturaDominantePropria !== true) {
+      if (semDomDeclarado) aviso("ATENÇÃO — declarado \"sem aberturas dominantes\" (portas e portões fechados e dimensionados para o vento, NBR 6123:2023 6.3.2.1): o cálculo NÃO considera portão aberto em temporal. Se a obra tiver portão, porta de enrolar ou janela grande que possa ficar aberta, desmarque — a sucção na cobertura pode passar de 1,8× a do caso sem abertura");
+      else FACES.forEach(function (k) {
+        if (F[k].aberta) return;
+        cen.push({ id: "portao-" + k, nome: "portão aberto na face " + k + " (abertura dominante suposta — 6.3.2.1-c)", comFlag: true, portao: k });
+      });
+    }
+    var envPortao = cen.some(function (c) { return c.portao; });
     cen.forEach(function (c) {
       var doms = [];
-      FACES.forEach(function (k) { F[k].aberturas.forEach(function (o) { if (o.faceAberta || (o.dominante && c.comFlag)) doms.push({ face: k, o: o }); }); });
+      if (c.portao) doms.push({ face: c.portao, o: { nome: "portão suposto na face " + c.portao, area: Math.max(F[c.portao].area, soma(outras.map(function (x) { return x.o; })) + 1e-6), dominante: true, s0: null, s1: null, suposto: true } });
+      else FACES.forEach(function (k) { F[k].aberturas.forEach(function (o) { if (o.faceAberta || (o.dominante && c.comFlag)) doms.push({ face: k, o: o }); }); });
       var fd = [];
       doms.forEach(function (x) { if (fd.indexOf(x.face) < 0) fd.push(x.face); });
       var aDom = soma(doms.map(function (x) { return x.o; })), aOut = soma(outras.map(function (x) { return x.o; }));
-      if (fd.length === 1 && aDom < aOut) aviso("a abertura marcada como dominante (" + fd[0] + ", " + bt(aDom, 2) + " m²) é menor que a soma das demais (" + bt(aOut, 2) + " m²) — não atende 6.2.4; Cpi desse cenário pelo Anexo D");
-      if (fd.length > 1) aviso("aberturas dominantes em mais de uma face (" + fd.join(", ") + "): fora de 6.2.5-c, Cpi pelo Anexo D (6.2.11)");
+      if (fd.length === 1 && aDom < aOut) aviso("a abertura marcada como dominante (" + fd[0] + ", " + bt(aDom, 2) + " m²) é menor que a soma das demais (" + bt(aOut, 2) + " m²) — não atende a definição de abertura dominante (6.3.1); Cpi desse cenário pelo método detalhado (6.3.3)");
+      if (fd.length > 1) aviso("aberturas dominantes em mais de uma face (" + fd.join(", ") + "): fora de 6.3.2.1-c, Cpi pelo método detalhado (6.3.3)");
       DIRS.forEach(function (d) {
         var res;
         if (!fd.length) res = cpiSemDominante(G, F, ZP, d, entrada, aviso);
         else if (fd.length === 1 && aDom >= aOut) res = cpiDominante(G, F, ZP, d, fd[0], doms, outras, aviso);
         else res = cpiAnexoDFaces(ZP, d, doms.concat(outras));
-        res.forEach(function (r) { r.direcao = d; r.cenario = c.id; r.cenarioNome = c.nome; lista.push(r); });
+        res.forEach(function (r) { r.direcao = d; r.cenario = c.id; r.cenarioNome = c.nome; if (c.portao) r.portao = c.portao; lista.push(r); });
       });
     });
+    lista.envoltoriaPortao = envPortao;
     return lista;
   }
 
@@ -1069,14 +1089,18 @@
     memoriaTelhado(R, G, TR, mem, tabela, aviso);
 
     /* ---------- Cpi */
-    var CPL = analisarCpi(G, F, ZP, entrada, aviso);
+    /* quem já trata a abertura dominante como caso EXCEPCIONAL próprio (madeira engenharada E1: obliquos + DCPI/DCPIS) não leva a
+       envoltória do portão — senão contaria a mesma abertura duas vezes */
+    var entCpi = entrada; if (opcoes.obliquos || opcoes.aberturaDominantePropria === true || entrada.aberturaDominantePropria === true) { entCpi = {}; Object.keys(entrada).forEach(function (k) { entCpi[k] = entrada[k]; }); entCpi.aberturaDominantePropria = true; }
+    var CPL = analisarCpi(G, F, ZP, entCpi, aviso);
+    R.aberturaDominante = CPL.envoltoriaPortao ? "envoltoria-portao" : (entrada.semAberturasDominantes === true ? "declarado-sem" : entCpi.aberturaDominantePropria ? "caso-excepcional-proprio" : "informada");
     R.cpi = CPL.filter(function (c) { return dirs.indexOf(c.direcao) >= 0; }).map(function (c) {
       return { direcao: c.direcao, valor: arred(c.valor, 4), cenario: c.cenario, cenarioNome: c.cenarioNome, item: c.item, motivo: c.motivo, interpolado: !!c.interpolado, referencia: c.referencia };
     });
-    tabela("6.2.5 (Cpi)", "linhas 1476–1540");
+    tabela("6.3.2.1 (Cpi) — NBR 6123:2023", "texto da 2023, linhas 3835–3922; 1988, linhas 1476–1540");
     dirs.forEach(function (d) {
       var l = R.cpi.filter(function (c) { return c.direcao === d; });
-      mem({ passo: "Pressão interna — vento " + d + "°", formula: "6.2.5 (permeabilidade das faces e abertura dominante)",
+      mem({ passo: "Pressão interna — vento " + d + "°", formula: "NBR 6123:2023 6.3.2.1 (permeabilidade das faces e abertura dominante; portão aberto suposto em cada face fechada salvo declaração)",
             valores: l.map(function (c) { return "[" + c.cenarioNome + "] " + c.motivo; }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join(" | "),
             resultado: l.map(function (c) { return fc(c.valor); }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join(" ou "), unidade: "",
             referencia: l.map(function (c) { return c.referencia; }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join("; "),
@@ -1134,6 +1158,13 @@
         if (ex) { if (ex.motivos.indexOf(mot) < 0) ex.motivos.push(mot); } else vals.push({ valor: c.valor, motivos: [mot] });
       });
       vals.sort(function (p, q) { return p.valor - q.valor; });
+      /* AUDITORIA A1: com a envoltória do portão, p = q·(cpe − cpi) é linear em cpi e a análise é linear em p — os valores
+         intermediários ficam entre os extremos. Vão ao modelo só o menor e o maior cpi da direção (os outros ficam no memorial). */
+      if (CPL.envoltoriaPortao && vals.length > 2) {
+        var meio = vals.slice(1, vals.length - 1);
+        vals[vals.length - 1].motivos.push("cpi intermediários desta direção (" + meio.map(function (v) { return bts(v.valor, 2); }).join("; ") + ") ficam entre os extremos (pressão linear em cpi) — não geram caso próprio");
+        vals = [vals[0], vals[vals.length - 1]];
+      }
       vals.forEach(function (v) {
         var caso = { id: "V" + d + "_cpi" + idNum(v.valor), nome: "Vento " + d + "° — Cpi = " + bts(v.valor, 2), direcao: d, cpi: arred(v.valor, 4), cpiMotivo: v.motivos,
                      q: arred(pd.q, 6), classe: pd.classe, coef: { paredes: {}, cobertura: {} }, pressao: { paredes: {}, cobertura: [] } };

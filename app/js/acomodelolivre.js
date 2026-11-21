@@ -161,7 +161,8 @@
   ];
   /* categoria do γf dos permanentes de área (NBR 8800:2008, Tabela 1 — js/acocargas.js) */
   var CAT_G = { "G-industrializado": { id: "GI", nome: "Permanente — elementos industrializados (γ 1,35)" }, "G-insitu": { id: "GL", nome: "Permanente — industrializados com adições in loco (γ 1,40)" },
-                "G-geral": { id: "GE", nome: "Permanente — elementos construtivos em geral e equipamentos (γ 1,50)" } };
+                "G-geral": { id: "GE", nome: "Permanente — elementos construtivos em geral e equipamentos (γ 1,50)" },
+                "G-removivel": { id: "GR", nome: "Permanente removível — instalações, forro, placas solares (γ 1,50; favorável 0 — AUDITORIA A7)" } };
 
   /* ================================================================ LER AS PEÇAS */
   function papelDe(papelBim, X, sec) {
@@ -244,7 +245,7 @@
       }
       o.pecas.push({ id: id, nome: nome, cat: reg.nome, sec: sec, reg: reg, aco: { id: aco.id, fy: aco.fy, fu: aco.fu }, papelBim: m.papel, papel: papel,
                      a: a, b: b, L: L, X: X, ey: ey, ez: cross(X, ey), alt: alt, larg: larg, h: Math.max(alt, larg),
-                     tracao: sec.forma === "circ" || !!(calc && calc.tracao), calc: calc });   /* PÓRTICOS M4: o X de cantoneira da tipologia, só tração */
+                     tracao: (sec.forma === "circ" && !(calc && calc.compressao)) || !!(calc && calc.tracao), calc: calc });   /* calc.compressao (20/11, mão-francesa): nunca só tração */   /* PÓRTICOS M4: o X de cantoneira da tipologia, só tração */
     });
     function lerEstrutura(c) {
       var id = String(c.id), pf = c.perfil || {}, est = o.estrutura;
@@ -819,7 +820,8 @@
       else trav[cima] = tMesa.slice();
       var papelV = p.tracao ? "tirante" : (p.papel === "diagonal" ? "contravento" : (p.papel === "pilar" ? "pilar" : "viga"));
       var gk = p.papel + "|" + p.cat;
-      var m = { id: p.mid, peca: p.id, nome: p.nome, papel: papelV, papelLivre: p.papel, grupo: gk, segs: segs, nos: nosM, L: p.L, secao: p.sec, aco: p.aco, flambagem: fl, travamentos: trav, calc: p.calc || null,
+      var m = { id: p.mid, peca: p.id, nome: p.nome, papel: papelV, papelLivre: p.papel, grupo: gk, segs: segs, nos: nosM, L: p.L, secao: p.sec, aco: p.aco, ey: p.ey ? p.ey.slice() : null,   /* ey: eixo local (lado h) — nós tubo-tubo (AUDITORIA A3) */
+            flambagem: fl, travamentos: trav, calc: p.calc || null,
                 balanco: balanco, pontas: { ini: condI, fim: condF }, apoiosVao: lst.filter(function (q, k) { if (k === 0 || k === lst.length - 1) return condPontas[p.id + ":" + (k === 0 ? "ini" : "fim")].tipo !== "livre"; var o = papelNo(q.no, ip); return !!apoiosNo[q.no] || o.pilar > 0 || o.pilarPassa > 0; }).map(function (q) { return q.s; }),
                 ey: p.ey, X: p.X, a: p.a, b: p.b, frio: p.sec.forma === "frio" };
       if (balanco) m.cb = 1;
@@ -966,7 +968,7 @@
     var barrasT = OPC_EST.semPar ? mod.barras.filter(function (b) { return !(b.tracao && semPar[b.peca]); }) : mod.barras;
     var teste = { nos: mod.nos, apoios: mod.apoios, barras: barrasT.map(function (b) { var c = {}; Object.keys(b).forEach(function (k) { c[k] = b[k]; }); delete c.tracao; if (b.tracao) c.libera = { i: { ry: true, rz: true }, j: { ry: true, rz: true } }; return c; }),
                   casos: [{ id: "T", cargas: mod.nos.map(function (n0) { return { tipo: "no", no: n0.id, F: [1, 1, 1, 0, 0, 0] }; }) }] };
-    var r = A.analisar(teste, { combinacoes: [{ id: "T", fatores: { T: 1 } }], estacoes: 2 });
+    var r = A.analisar(teste, { combinacoes: [{ id: "T", fatores: { T: 1 } }], estacoes: 2, sanidade: false });   /* carga-teste de 1 kN: critério próprio (OPC_EST), não a sanidade L/50 */
     var diag = len(sub(G.layout.mx, G.layout.mn)) || 1, onde = null, umax = 0;
     if (r.ok && r.combinacoes.T && r.combinacoes.T.ok) {
       Object.keys(r.combinacoes.T.desloc).forEach(function (id) { var u = r.combinacoes.T.desloc[id], h = Math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); if (h > umax) { umax = h; onde = id; } });
@@ -1195,7 +1197,7 @@
     /* PÓRTICOS M4 (14/10/2026): duas águas SIMÉTRICAS (o envoltório conferiu a forma — js/acoenvoltorio.js formaCobertura) vão
        à Tabela 5 do motor, com a cumeeira no meio do vão (b/2); o resto, como sempre, é uma água (Tabela 6) */
     var duasV = cfg.cobertura === "duas-aguas";
-    var ent = { local: { lat: cfg.lat, lon: cfg.lon, v0: cfg.v0, descricao: cfg.endereco }, s1: cfg.s1 || { tipo: "plano" }, categoria: cfg.categoria || "II", grupoS3: num(cfg.grupoS3, 2),
+    var ent = { local: { lat: cfg.lat, lon: cfg.lon, v0: cfg.v0, descricao: cfg.endereco }, s1: cfg.s1 || { tipo: "plano" }, categoria: cfg.categoria || "II", grupoS3: num(cfg.grupoS3, 2), estanque: cfg.estanque, semAberturasDominantes: cfg.semAberturasDominantes === true,   /* AUDITORIA A1 */
                 geometria: { a: a, b: b, h: h, hCumeeira: h + (duasV ? b / 2 : b) * Math.tan(inc * Math.PI / 180), inclinacaoGraus: inc, cobertura: duasV ? "duas-aguas" : "uma-agua", ladoAlto: duasV ? undefined : (cfg.ladoAlto === "esquerda" ? "esquerda" : "direita"), aberta: abertas === 4 }, faces: faces };
     var R = Vn.calcular(ent, { isopletas: Iso(), todasDirecoes: true });
     if (!R || !R.ok) return { ok: false, motivo: R && R.erros ? R.erros.join("; ") : "falha no cálculo do vento", resultado: R };

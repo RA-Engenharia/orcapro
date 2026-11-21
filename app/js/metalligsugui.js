@@ -243,7 +243,9 @@
     return h;
   }
   function painelHtml(ctx, sg) {
-    var pecas = arr(ctx.pecas).map(function (p) { return esc(p.papel) + " " + esc(p.id) + " (" + esc(p.perfil && p.perfil.nome) + ")"; }).join(" · ");
+    /* sem id interno (met-…): o papel e o perfil, agrupados ("2 diagonais TQ 50 × 50 × 2,65") */
+    var grp = {}, ordemG = []; arr(ctx.pecas).forEach(function (p) { var k = (p.papel || "peça") + "|" + ((p.perfil && p.perfil.nome) || ""); if (!grp[k]) { grp[k] = 0; ordemG.push(k); } grp[k]++; });
+    var pecas = ordemG.map(function (k) { var q = k.split("|"); return (grp[k] > 1 ? grp[k] + " × " : "") + esc(q[0]) + (q[1] ? " " + esc(q[1]) : ""); }).join(" · ");
     var no = ctx.no || {}, rel = REL[ctx.relacao] || ctx.relacao;
     var h = '<div class="lsg" data-lsg="painel" data-modal-largo data-lsg-relacao="' + esc(ctx.relacao) + '" data-lsg-face="' + esc(ctx.face) + '">' +
       '<div class="lsg-topo"><span><b>Encontro:</b> ' + esc(rel) + (ctx.relacao === "viga-pilar" ? (ctx.face === "tubo" ? " — no <b data-lsg=\"face\">pilar tubular</b>" : " — na <b data-lsg=\"face\">" + esc(ctx.face) + "</b> do pilar") + (ctx.topoPilar ? " (topo do pilar)" : "") + (ctx.face === "alma" && ctx.cabeEntreMesas === false ? " — a viga NÃO cabe entre as mesas" : "") : "") + "</span>" +
@@ -384,7 +386,25 @@
       css();
       var cxs = o.manter && U.cxs ? U.cxs : selCaixas();
       if (!cxs.length) { var t = "Ligação inteligente: selecione as peças que se encontram — clique no PILAR e, com Ctrl, na VIGA (ou um pilar sozinho para a base)."; status(t); toast(t, "aviso", 8000); return null; }
-      var ctx = S0.analisar(cxs, { resultado: resultadoCalc(), fundacoes: fundacoes() });
+      /* 20/11/2026 (o Rogério selecionou o galpão inteiro e a tela tratou centenas de peças como UM nó): a Ligação inteligente é
+         para UM encontro. Seleção com mais de um nó → explica e oferece dimensionar todos os nós; sem cálculo → "calcule primeiro" */
+      if (!o.manter && cxs.length > 4 && this.nos) {
+        var pares0 = this.nos(cxs, todasCaixas()).filter(function (pp) { return !pp.pular; }), self0 = this;
+        if (pares0.length > 1) {
+          UI.modal("Ligação inteligente — um nó por vez", '<div class="lsg" data-lsg="multi"><p>A seleção tem <b>' + cxs.length + " peças</b> em <b>" + pares0.length + " encontros</b>. A Ligação inteligente mostra e ajusta <b>um</b> encontro: selecione só as peças de um nó (o pilar e a viga, a diagonal e o banzo…).</p><p>Para dimensionar todos de uma vez, use <b>Dimensionar todos os nós</b> (com os esforços do último cálculo).</p></div>",
+            [{ texto: "Dimensionar todos os nós", classe: "primary", onClick: function () { UI.fecharModal(); self0.tipos(); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return { ok: false, multi: true, nos: pares0.length };
+        }
+      }
+      var rcAb = resultadoCalc();
+      if (o.estimativa) U.aceitouEstimativa = true;   /* escolheu ver estimado: nesta sessão não pergunta de novo (até haver cálculo) */
+      if ((!rcAb || !rcAb.ok) && !o.estimativa && !o.manter && !U.aceitouEstimativa) {
+        UI.modal("Ligação inteligente — calcule primeiro", '<div class="lsg" data-lsg="sem-calculo"><p>As ligações são dimensionadas com os <b>esforços do cálculo</b> da estrutura. Ainda não há um cálculo que fechou para este modelo — calcule primeiro (o resultado fica guardado e a Ligação inteligente usa os esforços dele).</p></div>',
+          [{ texto: "Calcular a estrutura", classe: "primary", onClick: function () { UI.fecharModal(); try { global.MetalCalcLivreUI.abrir(3); global.MetalCalcLivreUI.calcular(); } catch (eC) {} } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        /* (sem botão de estimativa na tela — pedido do Rogério; abrir({ estimativa: true }) fica só para integração/teste) */
+        return { ok: false, semCalculo: true };
+      }
+      var ctx = S0.analisar(cxs, { resultado: rcAb, fundacoes: fundacoes() });
       if (!ctx.ok) { status("Ligação inteligente: " + ctx.motivo); toast(ctx.motivo, "aviso", 8000); return null; }
       var sg = S0.sugerir(ctx, opObra({ preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela(), materiais: opMat() }));
       U.cxs = cxs; U.ctx = ctx; U.sg = sg;

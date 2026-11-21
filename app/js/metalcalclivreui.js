@@ -223,7 +223,7 @@
     var e = estado(), L = U.lido;
     if (n === 1) return L ? L.pecas.length + " barras · bases " + (e.apoios.basePadrao === "engastada" ? "engastadas" : "rotuladas") : "—";
     if (n === 2) return e.areas.length + " área(s) · " + e.pontuais.length + " pontual(is)" + (arr(e.escadas).length ? " · " + e.escadas.length + " escada(s)" : "") + (e.vento.ativo ? " · vento" : "");
-    return U.r ? (U.r.ok ? (U.r.aprovado ? "Aprovado" : "Reprovado") + " · " + fmt(U.r.peso, 0) + " kg" : "Não calculou") : "Pronto para calcular";
+    return U.r ? (U.r.ok ? (U.r.aprovado ? "Aprovado" : U.r.situacao && U.r.situacao.id === "incompleto" ? "Incompleto" : "Reprovado") + " · " + fmt(U.r.peso, 0) + " kg" : "Não calculou") : "Pronto para calcular";
   }
   function cab() {
     var o = obra();
@@ -467,7 +467,7 @@
     /* VÍNCULOS: o resultado de ANTES de o modelo mudar não é "aprovado" de nada — diz que está velho e oferece recalcular */
     if (velho()) {
       sit = "desatualizado";
-      h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h3 style="margin:0 0 6px">DESATUALIZADO — recalcular</h3><p>O modelo mudou depois deste cálculo (peças movidas ou esticadas — inclusive as que acompanharam pelos vínculos — ou fundação deslocada). Os números abaixo são do modelo de antes e <b>não valem</b> para o de agora; memorial, pranchas, CYPE e a troca de perfis ficam bloqueados até recalcular.</p><button class="ml-bt pri" data-ml-acao="calcular">Recalcular</button></div>';
+      h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h3 style="margin:0 0 6px">DESATUALIZADO — recalcular</h3><p>O modelo mudou depois deste cálculo (peças movidas ou esticadas — inclusive as que acompanharam pelos vínculos — ou fundação deslocada). Os números abaixo são do modelo de antes e <b>não valem</b> para o de agora; memorial, pranchas e a troca de perfis ficam bloqueados até recalcular.</p><button class="ml-bt pri" data-ml-acao="calcular">Recalcular</button></div>';
     }
     var pr0 = r.parametros || {};
     if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
@@ -872,7 +872,7 @@
     var em = {}, logo = null, o = obra() || {}; try { if (global.Empresa && Empresa.dados) em = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {}
     var vt = estado().vento || {};
     return { empresa: em && em.nome ? em : "", responsavel: em.responsavel || "", registro: em.crea || "", tituloProfissional: em.titulo || "", obra: o.nome || "", proprietario: o.clienteNome || o.cliente || "", contratante: o.clienteNome || o.cliente || "",
-             local: vt.endereco || [o.endereco, o.cidade].filter(Boolean).join(", "), codigo: "EST-MET", revisao: "R00", data: hojeBR(), formato: "A1", logo: logo, ligacoes: U.ultimasLigacoesCompletas || null, caixas: caixas(), fundacoes: fundacoesModelo() };
+             local: [o.endereco, o.cidade].filter(Boolean).join(", ") || vt.endereco || "", codigo: "EST-MET", revisao: "R00", data: hojeBR(), formato: "A1", logo: logo, ligacoes: U.ultimasLigacoesCompletas || null, caixas: caixas(), fundacoes: fundacoesModelo() };
   }
   function fundacoesModelo() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return (st && st.fundacoes) || []; } catch (e) { return []; } }
   function pranchas() {

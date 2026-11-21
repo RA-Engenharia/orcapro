@@ -922,7 +922,24 @@
     ds.forEach(function (q) { if (Math.abs(num(q.N, 0)) > Math.abs(num(b1.N, 0))) b1 = q; });
     th = num(b1.theta, 90) * Math.PI / 180; sn = Math.sin(th); di = rhs ? num(b1.b1, 80) : num(b1.d1, 60); beta = di / d0; N1 = Math.abs(num(b1.N, 0));
     ds.forEach(function (q) { var bq = (rhs ? num(q.b1, 80) : num(q.d1, 60)) / d0; if (bq < (rhs ? 0.25 : 0.2) || bq > 1 || num(q.theta, 90) < 30) valido = false; });
-    if (rhs && tipo === "K") { var bmin = Math.max(0.35, 0.1 + 0.01 * d0 / t0); if (beta < bmin) blq.push("nó K retangular com β = " + br(beta, 2) + " < " + br(bmin, 2) + " (EN 1993-1-8, Tabela 7.8)"); blq.push("nó K retangular: cisalhamento do banzo, ruptura da diagonal e punção (EN 1993-1-8, Tabela 7.12) não verificados"); }
+    /* 20/11/2026 (Ligação inteligente no galpão leve, todas as opções "não passa"): os limites de validade que faltavam —
+       a PAREDE da diagonal/montante (b1/t1 ≤ 35 no tubo retangular, d1/t1 ≤ 50 no circular; EN 1993-1-8:2005 Tabelas 7.1/7.8,
+       adotada pela NBR 16239) e a espessura NOMINAL mínima de 2,5 mm dos tubos ligados por solda (EN 1993-1-8:2005, 7.1.1(5)) —
+       conferir os itens na NBR 16239. Fora deles o nó não tem fórmula: a barra precisa de parede mais grossa */
+    var paredes = [];
+    if (num(bz.t0, 6) < 2.5) paredes.push("banzo t0 = " + br(num(bz.t0, 6), 2) + " mm < 2,5 mm");
+    ds.forEach(function (q, iq) { var tq = num(q.t1, 4), bq2 = rhs ? Math.max(num(q.b1, 80), num(q.h1, num(q.b1, 80))) : num(q.d1, 60), lim = rhs ? 35 : 50;
+      if (tq < 2.5) paredes.push("barra " + (iq + 1) + ": t = " + br(tq, 2) + " mm < 2,5 mm"); if (bq2 / tq > lim) paredes.push("barra " + (iq + 1) + ": " + (rhs ? "b/t" : "d/t") + " = " + br(bq2 / tq, 1) + " > " + lim); });
+    if (paredes.length) { valido = false; blq.push("parede de tubo fora da validade do nó soldado: " + paredes.join("; ")); }
+    if (rhs && tipo === "K") { var bmin = Math.max(0.35, 0.1 + 0.01 * d0 / t0); if (beta < bmin) blq.push("nó K retangular com β = " + br(beta, 2) + " < " + br(bmin, 2) + " (EN 1993-1-8, Tabela 7.8)");
+      /* AUDITORIA A3 (20/11/2026): a Tabela 7.12 agora é verificada (cisalhamento do banzo, ruptura da diagonal, punção) — antes
+         ficava bloqueada; o afastamento g da Tabela 7.8 (0,5(1−β) ≤ g/b0 ≤ 1,5(1−β) e g ≥ t1 + t2) */
+      var gK = num(p.g, NaN), t12 = num(b1.t1, 4) + num((ds[1] || b1).t1, 4);
+      var ovK = num(p.ov, 0) > 0;
+      if (ovK) { var lov = num(p.ov, 0); if (lov < 25 - 1e-9 || lov > 100 + 1e-9) blq.push("nó K retangular sobreposto com λov = " + br(lov, 0) + " % fora de 25…100 % (EN 1993-1-8, Tabela 7.8): sem fórmula — afaste as barras (g ≥ t1 + t2) ou aumente a sobreposição"); }
+      else if (!(gK > 0)) blq.push("nó K retangular sem o afastamento g entre as diagonais (Tabela 7.8)");
+      else if (gK < t12 - 1e-9) blq.push("nó K retangular com g = " + br(gK, 1) + " mm < t1 + t2 = " + br(t12, 2) + " mm (Tabela 7.8): nó com sobreposição — não verificado");
+      else if (gK / d0 < 0.5 * (1 - beta) - 1e-9 || gK / d0 > 1.5 * (1 - beta) + 1e-9) nv.push("afastamento g/b0 = " + br(gK / d0, 2) + " fora de 0,5(1−β)…1,5(1−β) (Tabela 7.8, nota): fora dele a EN pede verificar também como dois nós T — conferido a seguir pela plastificação T de cada diagonal"); }
     if (rhs && tipo === "T" && beta > 0.85) blq.push("nó T retangular com β > 0,85: alma do banzo e largura efetiva não verificadas");
     if (!rhs) {
       var kp = np > 0 ? 1 - 0.3 * np * (1 + np) : 1;
@@ -951,7 +968,45 @@
         R = 8.9 * kn * fy0 * t0 * t0 * Math.sqrt(gam) / sn * (soma / (4 * d0)) / g.a1 / 1000; nome = "Nó K com afastamento (tubo retangular): plastificação da face do banzo";
         ps = [passo("N1,Rd", "8,9·kn·fy0·t0²·√γ/sen θ1·(b1 + b2 + h1 + h2)/(4·b0)/γa1", br(R, 1) + " kN")];
       }
-      vs.push(verif(nome, ED16239, ps, R, N1));
+      if (!(tipo === "K" && num(p.ov, 0) > 0)) vs.push(verif(nome, ED16239, ps, R, N1));
+      /* AUDITORIA A3 — nó K/N SOBREPOSTO (EN 1993-1-8:2005 Tabela 7.12, linhas de sobreposição): governa a ruptura da barra que
+         sobrepõe, pela largura efetiva no banzo (beff) e na outra barra (be,ov); λov = q/p·100 % */
+      if (tipo === "K" && num(p.ov, 0) > 0) {
+        var lv = num(p.ov, 0);
+        ds.slice(0, 2).forEach(function (q, iq) {
+          var o2 = ds[1 - iq] || q, bi = num(q.b1, 80), hi = num(q.h1, bi), ti = num(q.t1, 4), fyi = num(q.fy1, fy0), Ni = Math.abs(num(q.N, 0));
+          var bj = num(o2.b1, 80), tj = num(o2.t1, 4), fyj = num(o2.fy1, fy0);
+          var beff = Math.min(bi, 10 / (d0 / t0) * fy0 * t0 / (fyi * ti) * bi), beov = Math.min(bi, 10 / (bj / tj) * fyj * tj / (fyi * ti) * bi);
+          var larg = lv < 50 ? beff + beov + 2 * hi * lv / 50 - 4 * ti : lv < 80 ? beff + beov + 2 * hi - 4 * ti : bi + beov + 2 * hi - 4 * ti;
+          var Rov = fyi * ti * larg / g.a1 / 1000;
+          vs.push(verif("Nó K sobreposto (λov = " + br(lv, 0) + " %): ruptura da barra " + (iq + 1), ED16239 + " (EN 1993-1-8, Tabela 7.12)",
+            [passo("beff; be,ov", "10/(b0/t0)·fy0t0/(fyi·ti)·bi ≤ bi; 10/(bj/tj)·fyj·tj/(fyi·ti)·bi ≤ bi", br(beff, 1) + "; " + br(beov, 1) + " mm"),
+             passo("largura", lv < 50 ? "beff + be,ov + 2hi·λov/50 − 4ti" : lv < 80 ? "beff + be,ov + 2hi − 4ti" : "bi + be,ov + 2hi − 4ti", br(larg, 1) + " mm"),
+             passo("Ni,Rd", "fyi·ti·largura/γa1", br(Rov, 1) + " kN")], Rov, Ni));
+          if (bi / bj < 0.75 - 1e-9 && iq === 0) nv.push("sobreposição com bi/bj < 0,75 (Tabela 7.8): fora da validade — conferir");
+        });
+        nv.push("Nó sobreposto: a solda oculta da barra sobreposta e o cisalhamento do banzo com λov > 80 % não verificados aqui.");
+      }
+      /* AUDITORIA A3 — EN 1993-1-8:2005 Tabela 7.12 (nó K/N com afastamento, banzo e diagonais retangulares), γM5 → γa1 */
+      if (tipo === "K" && !(num(p.ov, 0) > 0)) {
+        var h0 = num(bz.h0, d0), gk2 = Math.max(num(p.g, 0), 0), alfa = 1 / Math.sqrt(1 + 4 * gk2 * gk2 / (3 * t0 * t0)), Av = (2 * h0 + alfa * d0) * t0;
+        var Rv = fy0 * Av / (Math.sqrt(3) * sn) / g.a1 / 1000;
+        vs.push(verif("Nó K: cisalhamento do banzo no afastamento", ED16239 + " (EN 1993-1-8, Tabela 7.12)", [passo("α", "1/√(1 + 4g²/(3t0²))", br(alfa, 3), "g = " + br(gk2, 1) + " mm"), passo("Av", "(2h0 + α·b0)·t0", br(Av, 0) + " mm²"), passo("N1,Rd", "fy0·Av/(√3·sen θ1)/γa1", br(Rv, 1) + " kN")], Rv, N1));
+        ds.forEach(function (q, iq) {
+          var bq = num(q.b1, 80), hq = num(q.h1, bq), tq = num(q.t1, 4), fyq = num(q.fy1, fy0), thq = Math.sin(num(q.theta, 90) * Math.PI / 180), Nq = Math.abs(num(q.N, 0));
+          var beff = Math.min(bq, 10 / (d0 / t0) * fy0 * t0 / (fyq * tq) * bq), Rb = fyq * tq * (2 * hq - 4 * tq + bq + beff) / g.a1 / 1000;
+          vs.push(verif("Nó K: ruptura da barra " + (iq + 1) + " (largura efetiva)", ED16239 + " (EN 1993-1-8, Tabela 7.12)", [passo("beff", "10/(b0/t0)·fy0·t0/(fy1·t1)·b1 ≤ b1", br(beff, 1) + " mm"), passo("Ni,Rd", "fy1·t1·(2h1 − 4t1 + b1 + beff)/γa1", br(Rb, 1) + " kN")], Rb, Nq));
+          if (bq / d0 <= 1 - 1 / gam + 1e-9) {
+            var bep = Math.min(bq, 10 / (d0 / t0) * bq), Rpq = fy0 * t0 / (Math.sqrt(3) * thq) * (2 * hq / thq + bq + bep) / g.a1 / 1000;
+            vs.push(verif("Nó K: punção da face do banzo (barra " + (iq + 1) + ")", ED16239 + " (EN 1993-1-8, Tabela 7.12)", [passo("be,p", "10/(b0/t0)·b1 ≤ b1", br(bep, 1) + " mm"), passo("Ni,Rd", "fy0·t0/(√3·sen θi)·(2hi/sen θi + bi + be,p)/γa1", br(Rpq, 1) + " kN")], Rpq, Nq));
+          }
+          /* nó T de cada diagonal: só quando g/b0 sai da faixa 0,5(1−β)…1,5(1−β) da Tabela 7.8 (a EN pede tratar como dois nós T) */
+          if (!(gk2 / d0 < 0.5 * (1 - beta) - 1e-9 || gk2 / d0 > 1.5 * (1 - beta) + 1e-9)) return;
+          var etq = hq / d0, bqq = Math.min(bq / d0, 0.85), Rt = kn * fy0 * t0 * t0 / ((1 - bqq) * thq) * (2 * etq / thq + 4 * Math.sqrt(1 - bqq)) / g.a1 / 1000;
+          vs.push(verif("Nó: plastificação da face do banzo como nó T (barra " + (iq + 1) + ")", ED16239 + " (EN 1993-1-8, Tabela 7.10)", [passo("N1,Rd", "kn·fy0·t0²/((1 − β)·sen θ)·(2η/sen θ + 4√(1 − β))/γa1", br(Rt, 1) + " kN")], Rt, Nq));
+        });
+        nv.push("Banzo no afastamento sob N + V (EN 1993-1-8, Tabela 7.12, N0,gap,Rd): não verificado aqui — o banzo foi verificado como barra no cálculo.");
+      }
     }
     if (!valido) { blq.push("nó tubular fora dos limites de validade da NBR 16239"); nv.push("Fora dos limites de validade (β, d0/t0 ou θ) da NBR 16239:2013 — nó NÃO verificado pela fórmula."); vs.push(verif("Limites de validade do nó", ED16239, [passo("β; d0/t0; θ", "", br(beta, 2) + "; " + br(d0 / t0, 1) + "; " + br(num(b1.theta, 90), 0) + "°")], 0, 1, "")); }
     nv.push("Solda do nó: dimensionar para a resistência da barra (EN 1993-1-8, 7.3) — não verificada aqui.");

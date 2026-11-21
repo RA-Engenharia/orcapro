@@ -1089,7 +1089,7 @@
     var cx = Object.keys(r.finais || {}).map(function (k) { return r.finais[k]; }), ent = entradaDe(r.tipo, M.normalizar(r.tipo, r.par), cx, cx), res = null;
     if (!ent.ok) { o.criticos.push("não verificado: estrutura — " + ent.motivo + " (CRÍTICO)"); return o; }
     try { res = L.calcular(ent.entrada); } catch (e) { res = { ok: false, motivo: "erro no cálculo: " + (e && e.message) }; }
-    o._estrutura = { ok: !!(res && res.ok), aprovado: !!(res && res.ok && res.aprovado), motivo: res && res.motivo, premissa: ent.premissa };
+    o._estrutura = { ok: !!(res && res.ok), aprovado: !!(res && res.ok && res.aprovado), barrasAprovadas: !!(res && res.ok && (res.barrasAprovadas != null ? res.barrasAprovadas : res.aprovado)), situacao: res && res.situacao ? res.situacao.id : null, motivo: res && res.motivo, premissa: ent.premissa };   /* AUDITORIA A3: aprovado = situação aprovada; barrasAprovadas = só as barras */
     var ED = "Cálculo › Estrutura desenhada (js/acodimlivre.js): NBR 8800 com 2ª ordem; cargas da NBR 6120 (área de piso e força do guarda-corpo, 6.3)";
     if (!res || !res.ok) { o.externas.push({ nome: "Estrutura desenhada — análise", item: ED, passos: [{ rotulo: "o modelo não fechou", formula: "", valor: (r.tipo === "piso" ? "SAÍDA: diminua \"Apoios a cada (m)\" no diálogo do piso (mais pilaretes, X menos deitado) — " : "") + String(res && res.motivo || "sem resultado") }], resistencia: 1, solicitante: 9.99, unidade: "", razao: 9.99, ok: false }); return o; }
     var porPeca = {}; cx.forEach(function (c) { porPeca[String(c.id)] = c; });
@@ -1100,7 +1100,9 @@
     (res.servico || []).forEach(function (sv) { o.externas.push({ nome: "Estrutura desenhada — flecha " + sv.membro, item: ED + " (" + (sv.ref || "Anexo C") + ")", passos: [{ rotulo: "flecha", formula: "", valor: br(sv.valor * 1000, 1) + " mm ≤ " + br(sv.limite * 1000, 1) + " mm" }], resistencia: sv.limite, solicitante: sv.valor, unidade: "m", razao: num(sv.razao, 0), ok: num(sv.razao, 0) <= 1 + 1e-9, els: true }); });
     /* REVISÃO S6 (regra de ouro): a Estrutura desenhada NÃO aprovou por algo que não é de barra (grande deslocabilidade,
        estabilidade global, escada como único travamento…) — vira FALHA aqui também, nunca "aprovado" com o motor reprovando */
-    if (!res.aprovado && !o.externas.some(function (v) { return v.ok === false; })) {
+    /* AUDITORIA A3: res.aprovado agora também cai com a situação "incompleto" (não verificado) — aqui vale só REPROVAÇÃO */
+    var resReprovou = !(res.barrasAprovadas != null ? res.barrasAprovadas : res.aprovado) || (res.situacao && res.situacao.id === "reprovado");
+    if (resReprovou && !o.externas.some(function (v) { return v.ok === false; })) {
       var porque = arr(res.avisos).filter(function (a) { return /deslocabilidade|instáv|mecanismo|estabilidade|trava|não fech|NÃO/i.test(a); }).slice(0, 2).join(" | ") || ("a Estrutura desenhada não aprovou (" + num(res.falhas, 0) + " falha(s))");
       if (r.tipo === "piso") porque = "SAÍDA: diminua \"Apoios a cada (m)\" no diálogo do piso (mais pilaretes, X menos deitado) ou desenhe o apoio embaixo — " + porque;
       o.externas.push({ nome: "Estrutura desenhada — situação global", item: ED, passos: [{ rotulo: "não aprovada", formula: "", valor: porque.slice(0, 400) }], resistencia: 1, solicitante: 9.99, unidade: "", razao: 9.99, ok: false });

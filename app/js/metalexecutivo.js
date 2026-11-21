@@ -671,7 +671,7 @@
     var p = c.d.par, calc = c.op.calculo || null, itens = [];
     var b1 = { titulo: "NOTAS GERAIS", numerar: true, itens: [
       "Unidades em milímetros; níveis em metros.",
-      "Aço dos perfis formados a frio: " + txt(p.acoFrio || "-") + "; tubos: " + txt(p.acoTubo || "-") + "; cantoneiras e barras: " + txt(p.acoBarra || "-") + "; chapas: ASTM A36.",
+      "Aço dos perfis formados a frio: " + txt(p.acoFrio || "-") + "; tubos sem costura: " + txt(p.acoTubo || "-") + "; tubos com costura (Tuper): " + txt(p.acoTuboCostura || "NBR 8261 Gr A") + " — comprar pela NBR 8261 com certificado de usina (sem a norma o escoamento não é garantido)" + "; cantoneiras e barras: " + txt(p.acoBarra || "-") + "; chapas: ASTM A36.",
       "Solda: eletrodo E70XX (AWS A5.1) ou arame ER70S-6 (AWS A5.18); simbologia AWS A2.4.",
       "Parafusos de ligação (quando houver): ASTM A325; chumbadores ASTM F1554 Gr.36.",
       "Desenhos gerados do modelo da estrutura (" + txt((c.tipo && c.tipo.rotulo) || c.d.M.tipo) + "): vão " + br(c.d.vao, 2) + " m, " + p.nPorticos + " pórticos a cada " + br(p.espacamento, 2) + " m, pé-direito " + br(c.d.pe, 2) + " m.",

@@ -54,7 +54,7 @@
     }
     function asa(a, b, hCum, faces) {
       var g = ext({ nervuras: "retangulares" }, (q.vento && q.vento.geometria) || {}, { a: a, b: b, h: h0, hCumeeira: hCum - p.baseZ, inclinacaoGraus: th, cobertura: "duas-aguas" }), e = ext({}, ent, { geometria: g, faces: faces });
-      var ra = Dm.VE.calcular(e, { todasDirecoes: true, obliquos: false }); if (!ra.ok) throw new Error("vento (asa " + br(a) + " × " + br(b) + "): " + JSON.stringify(ra.erros)); return ra;
+      var ra = Dm.VE.calcular(e, { todasDirecoes: true, obliquos: false, aberturaDominantePropria: true /* AUDITORIA A1: idem o caminho com oblíquos (DCPI) */ }); if (!ra.ok) throw new Error("vento (asa " + br(a) + " × " + br(b) + "): " + JSON.stringify(ra.erros)); return ra;
     }
     var fB = {}; Object.keys(FACES_B).forEach(function (k) { fB[k] = facesGlobais[FACES_B[k]]; });
     r.alas = { A: asa(p.a, p.b, I.hA, facesGlobais), B: asa(p.c, p.bb, I.hB, fB) };

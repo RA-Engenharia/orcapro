@@ -449,7 +449,7 @@
     var th = Math.atan(lido.incl / 100) * 180 / Math.PI, geo = { a: lido.a, b: lido.b, h: Math.max(lido.peDireito, 1.2), hCumeeira: Math.max(lido.cotaCumeeira - lido.baseZ, lido.peDireito + 0.1), inclinacaoGraus: th, cobertura: lido.tipo === "T1" ? "uma-agua" : "duas-aguas", nervuras: "retangulares" };
     if (lido.tipo === "T1") geo.ladoAlto = "esquerda";
     var ent = { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), geometria: geo, faces: clone(ob.faces) };
-    var r; try { r = VE.calcular(ent, { todasDirecoes: true, obliquos: false }); } catch (e) { return { ok: false, motivo: "vento: " + (e && e.message ? e.message : e) }; }
+    var r; try { r = VE.calcular(ent, { todasDirecoes: true, obliquos: false, aberturaDominantePropria: true /* AUDITORIA A1: madeira trata a abertura dominante à parte (pendência) */ }); } catch (e) { return { ok: false, motivo: "vento: " + (e && e.message ? e.message : e) }; }
     if (!r || !r.ok) return { ok: false, motivo: "vento: " + JSON.stringify(r && r.erros || "sem resultado").slice(0, 160) };
     var pmin = 0, pmax = 0; arr(r.casos).forEach(function (c) { arr(c.pressao && c.pressao.cobertura).forEach(function (z) { if (fin(z.p)) { if (z.p < pmin) pmin = z.p; if (z.p > pmax) pmax = z.p; } }); });
     return { ok: true, pmin: r4(pmin), pmax: r4(pmax), q: r4(num(r.q, 0)), v0: r.v0, premissa: lido.tipo === "T2" ? null : "vento: a NBR 6123 não traz coeficientes de cobertura para " + ((lido.tipo === "T3" || lido.tipo === "T3L") ? "4 águas" : "1 água") + " — campo de pressões de 2 águas (Tabela 5) adotado como premissa; confirmar com o RT",

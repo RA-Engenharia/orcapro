@@ -105,7 +105,7 @@
     });
     if (!v.categoria) avisos.push("Vento: categoria de rugosidade não informada — adotada a II (terreno aberto, a favor da segurança).");
     var ent = { local: { lat: v.lat, lon: v.lon, v0: v.v0, descricao: v.endereco || v.descricao }, s1: v.s1 || { tipo: "plano" },
-                categoria: v.categoria || "II", grupoS3: num(v.grupoS3, 2), classe: v.classe, estanque: v.estanque,
+                categoria: v.categoria || "II", grupoS3: num(v.grupoS3, 2), classe: v.classe, estanque: v.estanque, semAberturasDominantes: v.semAberturasDominantes === true,   /* AUDITORIA A1: só com declaração explícita */
                 geometria: { a: a, b: b, h: h, hCumeeira: aguas === 1 ? h + b * i : h + b / 2 * i, inclinacaoGraus: Math.atan(i) * 180 / Math.PI,
                              cobertura: aguas === 1 ? "uma-agua" : "duas-aguas", aberta: abertas === 4, ladoAlto: aguas === 1 ? "direita" : gp.ladoAlto, nervuras: v.nervuras },   /* uma água: o modelo sobe a DIREITA (eixo B) — o vento tem de usar o mesmo lado, senão sai espelhado (a tela achou) */
                 faces: faces };
@@ -302,7 +302,7 @@
       var r = umaRodada(parI, op, ventoAd);
       historico.push({ iteracao: iter, perfis: JSON.parse(JSON.stringify(perfis)), ok: r.ok, falhas: r.falhas, peso: r.peso });
       final = r;
-      if (!r.ok && !op.semOtimizar && enrijecidas < 3 && /instável|mecanismo/.test(String(r.motivo || "")) && /flambagem global/.test(String(r.motivo || ""))) {
+      if (!op.semOtimizar && enrijecidas < 3 && (r.instavel2a || (!r.ok && /instável|mecanismo/.test(String(r.motivo || "")) && /flambagem global/.test(String(r.motivo || ""))))) {
         var antes = perfis.pilar + " / " + perfis.viga;
         if (enrijecer(perfis, r)) { enrijecidas++; log.push("Iteração " + iter + ": a 2ª ordem instabilizou com " + antes + " — inércia dobrada: " + perfis.pilar + " / " + perfis.viga); continue; }
       }
@@ -523,6 +523,13 @@
     var elu = combs.filter(function (c) { return c.tipo === "ELU"; }), els = combs.filter(function (c) { return c.tipo !== "ELU"; });
     /* 1ª ordem das ELU (para a classificação) e 2ª ordem */
     var res = A.analisar(G.modelo, { combinacoes: elu.concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
+    /* 20/11/2026: 2ª ordem instável "acima da crítica" → refaz em 1ª ordem; fechando, é sobrecarga (REPROVADO, falha de
+       instabilidade global + razões de 1ª ordem), não mecanismo. Mesmo critério de js/acodimlivre.js; o otimizador enrijece */
+    var instab2a = null;
+    if (!res.ok && /flambagem global/.test(String(res.motivo || ""))) {
+      var res1 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, nocional: c.nocional, segundaOrdem: false }; }).concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
+      if (res1.ok) { instab2a = res.motivo; res = res1; }
+    }
     if (!res.ok) {
       return { ok: false, motivo: "Análise: " + res.motivo, problemas: [{ tipo: "analise", texto: res.motivo, solucoes: [] }], decisoes: G.decisoes };
     }
@@ -690,6 +697,11 @@
       G.decisoes.push({ tema: "Flambagem global", decisao: "fator de carga crítica λcr = " + br(lmin, 2) + " (a combinação de cálculo teria de ser multiplicada por " + br(lmin, 2) + " para a estrutura flambar)", motivo: "análise de autovalor da rigidez geométrica; com λcr > 10 os efeitos de 2ª ordem globais são pequenos" });
       if (lmin < 3) avisos.push("λcr = " + br(lmin, 2) + " < 3: estrutura muito flexível em 2ª ordem — aumentar a rigidez.");
     }
+    if (instab2a) {
+      falhas++;
+      avisos.push("REPROVA: a análise de 2ª ordem não converge (" + instab2a + ") — a carga de cálculo passa da carga crítica de flambagem global (λcr < 1 nessa combinação). Razões das barras em 1ª ordem (limite inferior): contraventar, engastar as bases ou aumentar os perfis.");
+      G.decisoes.push({ tema: "Instabilidade global (2ª ordem)", decisao: "REPROVADO: 2ª ordem instável — " + instab2a, motivo: "a 1ª ordem fecha (estrutura geometricamente estável): carga acima da crítica, não mecanismo" });
+    }
     /* sugestão para quem não passa: o perfil seguinte da família que deve passar (estimativa por massa; a próxima rodada confirma) */
     Object.keys(resultadosM).forEach(function (id) {
       var v = resultadosM[id], m = G.membros.filter(function (x) { return x.id === id; })[0];
@@ -699,7 +711,7 @@
       if (!v.sugestao) v.sugestao = "Nenhum perfil da família " + m.secao.nome.split(" ")[0] + " resolve: usar perfil soldado, travar mais a barra ou reduzir o vão.";
     });
     return {
-      ok: true, aprovado: falhas === 0, falhas: falhas, modelo: G, casos: casos, combinacoes: combs, sobrecarga: sob, analise: res, deslocabilidade: { razao: razaoDesl, classe: classe },
+      ok: true, aprovado: falhas === 0, falhas: falhas, instavel2a: instab2a, modelo: G, casos: casos, combinacoes: combs, sobrecarga: sob, analise: res, deslocabilidade: { razao: razaoDesl, classe: classe },
       membros: resultadosM, grupos: grupos, contravento: cvRes, servico: servico, reacoes: reacoes,
       peso: peso, pesoGrupos: pesoG, taxa: peso / area, decisoes: G.decisoes, avisos: avisos.concat(G.avisos), flambagem: flamb, parametros: par
     };

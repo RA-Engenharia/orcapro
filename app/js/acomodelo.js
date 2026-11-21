@@ -323,6 +323,7 @@
     var acr = 1 + num(par.acrescimoLigacoes, 0.05);
     /* ------------------------------------------ G */
     var cG = [{ tipo: "pesoProprio", fator: acr, barras: memPP }], cG2 = [];
+    var cG3 = [];   /* AUDITORIA A7 (20/11/2026): instalações/forro/solar — removível, não alivia a sucção (NBR 8681) */
     var gTelha = num(cfg.telhaPeso, 0.05), gExtra = num(cfg.permanenteExtra, 0.10), mT = num(cfg.tercaMassa, 6) * 9.81 / 1000;
     lt.forEach(function (t) {
       var fx = faixaX(t), dx = fx[1] - fx[0];
@@ -331,7 +332,8 @@
         var fz = faixaZ(k), dz = fz[1] - fz[0];
         /* terças (aço) no G; telha (na superfície → em planta ÷ cosθ) e instalações/forro no G2 */
         cG.push({ tipo: "no", no: nid, F: [0, -mT * dz, 0, 0, 0, 0] });
-        cG2.push({ tipo: "no", no: nid, F: [0, -(gTelha / L.co + gExtra) * dx * dz, 0, 0, 0, 0] });
+        cG2.push({ tipo: "no", no: nid, F: [0, -(gTelha / L.co) * dx * dz, 0, 0, 0, 0] });
+        if (gExtra > 0) cG3.push({ tipo: "no", no: nid, F: [0, -gExtra * dx * dz, 0, 0, 0, 0] });   /* AUDITORIA A7 */
       });
     });
     /* fechamento lateral de telha: peso nos pilares (distribuído ao longo da altura com telha) */
@@ -346,7 +348,8 @@
       });
     });
     casos.push({ id: "G", tipo: "G", categoria: "G-metalica", nome: "Permanente — estrutura metálica", cargas: cG });
-    casos.push({ id: "G2", tipo: "G", categoria: "G-industrializado", nome: "Permanente — telhas, fechamentos e instalações", cargas: cG2 });
+    casos.push({ id: "G2", tipo: "G", categoria: "G-industrializado", nome: "Permanente — telhas e fechamentos", cargas: cG2 });
+    if (cG3.length) casos.push({ id: "G3", tipo: "G", categoria: "G-removivel", nome: "Permanente removível — instalações, forro, placas solares (γ 1,50; favorável 0)", cargas: cG3 });
     /* ------------------------------------------ Q */
     var cQ = [], qk = num(cfg.sobrecarga, 0.25);
     lt.forEach(function (t) {

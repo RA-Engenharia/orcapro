@@ -101,7 +101,7 @@
     var membros = arr(G.membros).map(function (m) {
       var mm0 = (m.secao && m.secao.mm) || {};
       return { id: m.id, peca: m.peca, nome: m.nome, papel: m.papelLivre, a: m.a, b: m.b, L: m.L, perfil: m.secao ? m.secao.nome : "", massa: num(m.secao && m.secao.massa, num(mm0.massa, 0)),
-               d: num(mm0.d, 200) / 1000, bf: num(mm0.bf, num(mm0.b, 100)) / 1000, tw: num(mm0.tw, 6) / 1000, tf: num(mm0.tf, 9) / 1000, forma: mm0.forma || "", ey: m.ey || [0, 1, 0], aco: m.aco && (m.aco.id || m.aco) };
+               d: num(mm0.d, 200) / 1000, bf: num(mm0.bf, num(mm0.b, 100)) / 1000, tw: num(mm0.tw, 6) / 1000, tf: num(mm0.tf, 9) / 1000, forma: mm0.forma || "", ey: m.ey || [0, 1, 0], aco: m.aco && (m.aco.id || m.aco), sec: mm0 };
     });
     var pil = membros.filter(function (m) { return m.papel === "pilar"; }).map(function (m) { var lo = m.a[1] <= m.b[1] ? m.a : m.b, hi = lo === m.a ? m.b : m.a; return { m: m, x: lo[0], z: lo[2], base: lo[1], topo: hi[1] }; });
     var eixos = env ? arr(env.eixos) : [];
@@ -500,7 +500,7 @@
 
   /* ================================================================ FOLHA 05 — LISTA DE MATERIAIS */
   function linhasMateriais(d) {
-    var L = d.membros.slice().sort(function (a, b) { var o = { pilar: 0, viga: 1, terca: 2, diagonal: 3 }; return (o[a.papel] - o[b.papel]) || (a.id < b.id ? -1 : 1); });
+    var L = d.membros.slice().sort(function (a, b) { var o = { pilar: 0, viga: 1, terca: 2, diagonal: 3 }; var na = /^([A-Z]+)(\d+)$/.exec(a.id), nb = /^([A-Z]+)(\d+)$/.exec(b.id); return (o[a.papel] - o[b.papel]) || (na && nb && na[1] === nb[1] ? +na[2] - +nb[2] : (a.id < b.id ? -1 : 1)); });
     return L.map(function (m) { var kg = m.L * m.massa; return { m: m, kg: kg, c: [m.id, { pilar: "pilar", viga: "viga", terca: "terça", diagonal: "contravent." }[m.papel] || m.papel, perfilCurto(m.perfil), txt(m.aco).replace(/^ASTM\s*/, ""), mm(m.L), br(m.massa, 1), br(kg, 1)] }; });
   }
   function folhaMateriais(c, pagina, linhas, total) {
@@ -521,27 +521,61 @@
     return { escala: "SEM ESCALA" };
   }
 
-  /* ================================================================ NOTAS (coluna da direita) */
+  /* ================================================================ NOTAS (coluna da direita)
+   * 20/11/2026 (pranchas v2): notas gerais completas (aços por uso, parafusos, solda/eletrodo, pintura, tolerâncias, graute,
+   * montagem), normas com a edição, legenda das marcas e, na folha 01, o ÍNDICE DAS FOLHAS. O que o cálculo não decidiu sai
+   * "A DIMENSIONAR"/"[a preencher]" — nada inventado (docs/PADRAO-PRANCHA-METALICA.md). */
+  function familia(perfil) { var q = /^([A-Za-z]+)/.exec(txt(perfil)); return q ? q[1].toUpperCase() : "?"; }
   function notas(c) {
-    var r = c.r, d = c.d, sit = r.situacao ? r.situacao.id : (r.aprovado ? "aprovado" : "reprovado"), acos = {};
-    d.membros.forEach(function (m) { if (m.aco) acos[txt(m.aco)] = true; });
-    var L = ["COTAS EM MILÍMETROS E NÍVEIS EM METROS, SALVO INDICAÇÃO.", "AÇO DOS PERFIS: " + Object.keys(acos).join("; ") + ".", "NORMAS: ABNT NBR 8800, NBR 14762, NBR 6120, NBR 8681" + (r.vento ? ", NBR 6123" : "") + " (edições no memorial de cálculo).",
-             "LIGAÇÕES E PLACAS DE BASE CONFORME AS FOLHAS DE DETALHE E O MEMORIAL; PARAFUSOS DE ALTA RESISTÊNCIA COM ARRUELA; SOLDA AWS A2.4 NOS DETALHES DE FABRICAÇÃO.", "CONFERIR AS COTAS NA OBRA ANTES DA FABRICAÇÃO."];
+    var r = c.r, d = c.d, porAco = {};
+    d.membros.forEach(function (m) { var k = txt(m.aco) || "[a preencher]"; (porAco[k] = porAco[k] || {})[familia(m.perfil)] = 1; });
+    var nomeFam = { TR: "TUBO RETANGULAR", TQ: "TUBO QUADRADO", U: "PERFIL U", UE: "PERFIL Ue", BR: "BARRA REDONDA", W: "PERFIL W", L: "CANTONEIRA", HP: "PERFIL HP" };
+    var acos = Object.keys(porAco).map(function (k) { return k + " (" + Object.keys(porAco[k]).map(function (f) { return nomeFam[f] || f; }).join(", ") + ")"; }).join("; ");
+    var temTubo = d.membros.some(function (m) { return /^T[RQ]\b/.test(txt(m.perfil)); });
+    var L = [
+      "COTAS EM MILÍMETROS E NÍVEIS EM METROS, SALVO INDICAÇÃO. NÃO MEDIR NO DESENHO.",
+      "AÇOS: " + acos + ". CHAPAS DE LIGAÇÃO E PLACAS DE BASE: ASTM A36.",
+      { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: A DIMENSIONAR (O CÁLCULO DAS BARRAS NÃO OS DIMENSIONA). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", cor: d.ligs.length ? null : VERMELHO },
+      "SOLDA: ELETRODO E70XX (AWS A5.1); FILETE CONTÍNUO COM A PERNA DO DETALHE, NUNCA MENOR QUE A MÍNIMA DA NBR 8800; SIMBOLOGIA AWS A2.4; SOLDADORES E PROCEDIMENTOS QUALIFICADOS (AWS D1.1)." + (temTubo ? " NÓS DE TUBO SOLDADOS EM TODO O CONTORNO, PONTAS RECORTADAS NO ENCONTRO (NBR 16239)." : ""),
+      { t: "PINTURA: PREPARO DE SUPERFÍCIE E SISTEMA CONFORME A AGRESSIVIDADE DO AMBIENTE DA OBRA - [a preencher]." + (temTubo ? " TUBOS COM AS PONTAS VEDADAS." : ""), cor: VERMELHO },
+      { t: "TOLERÂNCIAS DE FABRICAÇÃO E DE MONTAGEM: ABNT NBR 8800 (FABRICAÇÃO, MONTAGEM E CONTROLE DE QUALIDADE) - VALORES [a preencher pelo RT].", cor: VERMELHO },
+      "MARCA = PEÇA IGUAL (MESMO PAPEL, PERFIL E COMPRIMENTO). CONJUNTOS: CL = COLUNA TRELIÇADA, TS = TESOURA. COMPRIMENTO PELO EIXO (NÓ A NÓ); O DE CORTE SAI DO DESENHO DE FABRICAÇÃO.",
+      "GRAUTE NÃO RETRÁTIL SOB AS PLACAS DE BASE (25 mm), DEPOIS DO NIVELAMENTO E DO PRUMO.",
+      "CONTRAVENTOS MONTADOS JUNTO COM OS PÓRTICOS E TENSIONADOS (PORCA E CONTRAPORCA) DEPOIS DO PRUMO, DO NÍVEL E DO ALINHAMENTO.",
+      "CONFERIR A LOCAÇÃO E AS COTAS NA OBRA ANTES DA FABRICAÇÃO."
+    ];
     if (r.envoltorio && r.envoltorio.situacao === "interna") L.push("ESTRUTURA DENTRO DE OUTRA EDIFICAÇÃO: SEM VENTO (DECLARADO).");
-    if (arr(d.bloq).length) L.push({ t: "NÃO EMITIR: " + d.bloq.join("; ") + " (ver o memorial).", cor: VERMELHO });
+    if (arr(d.bloq).length) L.push({ t: "NÃO EMITIR PARA FABRICAÇÃO: " + d.bloq.join("; ") + " (VER O MEMORIAL).", cor: VERMELHO });
     return L;
   }
-  function colunaNotas(F, geo, linhas, E) {
+  var NORMAS = ["ABNT NBR 8800:2024 - ESTRUTURAS DE AÇO", "ABNT NBR 14762:2010 - PERFIS FORMADOS A FRIO", "ABNT NBR 16239:2013 - ESTRUTURAS DE AÇO COM PERFIS TUBULARES", "ABNT NBR 6120:2019 - AÇÕES", "ABNT NBR 6123:2023 - VENTO", "ABNT NBR 8681:2003 - AÇÕES E SEGURANÇA", "AWS A2.4 (SÍMBOLOS DE SOLDA) E AWS D1.1 (SOLDAGEM)"];
+  /* a coluna da direita: [ÍNDICE (folha 01)] + NOTAS GERAIS + NORMAS UTILIZADAS — a letra desce até 70 % para caber acima do carimbo */
+  function colunaNotas(F, geo, linhas, E, indice) {
     var col = geo.coluna, car = geo.carimbo; if (!col || geo.semColuna) return;
-    var x = col.x + 3, y = col.y + 3, wmax = col.w - 6;
-    F.texto(x, y + E.T.titulo * 0.76, "NOTAS", E.T.titulo, {});
-    var yy = y + E.T.titulo + 3;
-    linhas.forEach(function (l, i) { var it = typeof l === "object" ? l : { t: l }; yy += F.textos(x, yy, [{ t: (i + 1) + ". " + it.t, cor: it.cor }], E.T.nota * 0.9, { wmax: wmax, recuo: 3 }) + 1; });
-    if (yy > car.y - 2) F.texto(x, car.y - 3, "(notas além do espaço: ver o memorial)", E.T.nota * 0.8, { cor: VERMELHO });
+    var x = col.x + 3, wmax = col.w - 6;
+    function montar(Fx, f) {
+      var h = E.T.nota * f, yy = col.y + 3;
+      function tit(s) { Fx.texto(x, yy + E.T.titulo * f * 0.76, s, E.T.titulo * Math.max(0.8, f), {}); yy += E.T.titulo * f + 2.4; }
+      if (indice && indice.length) { tit("ÍNDICE DAS FOLHAS"); indice.forEach(function (q) { yy += Fx.textos(x, yy, [q], h, { wmax: wmax, recuo: 3 }); }); yy += 2.5; }
+      tit("NOTAS GERAIS");
+      linhas.forEach(function (l, i) { var it = typeof l === "object" ? l : { t: l }; yy += Fx.textos(x, yy, [{ t: (i + 1) + ". " + it.t, cor: it.cor }], h, { wmax: wmax, recuo: 3 }) + 0.8; });
+      yy += 2.5; tit("NORMAS UTILIZADAS");
+      NORMAS.forEach(function (l, i) { yy += Fx.textos(x, yy, [(i + 1) + ". " + l], h, { wmax: wmax, recuo: 3 }); });
+      return yy;
+    }
+    var fs = [0.9, 0.82, 0.76, 0.7], f = fs[fs.length - 1];
+    for (var i = 0; i < fs.length; i++) { var Dm = new (AP().Desenho)(E, null); if (montar(Dm, fs[i]) <= car.y - 3) { f = fs[i]; break; } }
+    var yFim = montar(F, f);
+    if (yFim > car.y - 2) F.texto(x, car.y - 3, "(notas além do espaço: ver o memorial)", E.T.nota * 0.8, { cor: VERMELHO });
   }
 
   /* ================================================================ GERAR */
   function hoje() { var dt = new Date(); return dois(dt.getDate()) + "/" + dois(dt.getMonth() + 1) + "/" + dt.getFullYear(); }
+  function perfilTxt(nome) {
+    var s = txt(nome), q = /^BR\s+([\d\/]+)"?\s*\(D\s*([\d,\.]+)\s*mm\)/i.exec(s);
+    if (q) return "BR Ø " + br(Number(q[2].replace(",", ".")), 1) + " (" + q[1] + "\")";
+    return perfilCurto(s);
+  }
   function gerar(r, opcoes) {
     opcoes = opcoes || {};
     var avisos = [], A = AP(), P = PR();
@@ -585,41 +619,66 @@
     else if (d.ligs.some(function (l) { return !(l.resultado && l.resultado.ok); })) avisos.push(d.ligs.filter(function (l) { return !(l.resultado && l.resultado.ok); }).length + " ligação(ões) que NÃO atende(m) com os esforços deste cálculo: em vermelho no quadro das ligações.");
     var formato = P.FORMATOS[opcoes.formato] ? opcoes.formato : "A1", geo = P.geometria(formato, "paisagem", "RA");
     var codigo = txt(opcoes.codigo).trim() || "EST-MET", rev = (txt(opcoes.revisao).trim() || "R00").toUpperCase(), data = txt(opcoes.data).trim() || hoje();
-    var defs = [{ id: "locacao", titulo: "LOCAÇÃO DOS PILARES E DOS CHUMBADORES", fn: folhaLocacao }];
-    d.niveis.forEach(function (nv) { defs.push({ id: "nivel-" + nv.id, titulo: "PLANTA DO NÍVEL " + nivelTxt(nv.cota), fn: function (c) { return folhaNivel(c, nv); } }); });
-    var pls = planosElevacao(d);
-    for (var k = 0; k < pls.length; k += 4) (function (gr, kk) { defs.push({ id: "elevacoes" + (kk ? "-" + (kk / 4 + 1) : ""), titulo: "ELEVAÇÕES - " + gr.map(function (q) { return q.nome; }).join(", "), fn: function (c) { return folhaElevacoes(c, gr); } }); })(pls.slice(k, k + 4), k);
-    if (!pls.length) avisos.push("Nenhum eixo com 2 pilares ou mais: sem folha de elevação.");
-    defs.push({ id: "detalhes", titulo: "DETALHES - PLACA DE BASE E LIGAÇÕES", fn: folhaDetalhes });
-    var lm = linhasMateriais(d), porPag = Math.max(10, Math.floor((geo.area.h - 30) / 4.6));
-    for (var q = 0; q < lm.length; q += porPag) (function (ls, pg, ult) { defs.push({ id: "materiais" + (pg ? "-" + (pg + 1) : ""), titulo: "LISTA DE MATERIAIS" + (pg ? " (CONTINUAÇÃO)" : ""), fn: function (c) { return folhaMateriais(c, pg, ls, ult); } }); })(lm.slice(q, q + porPag), q / porPag, q + porPag >= lm.length);
-    var ctx0 = { d: d, r: r, E: E, geo: geo, op: opcoes, avisos: avisos };
+    var defs, TRm = dep("AcoPranchasTrelica", "./acopranchastrelica.js");
+    if (TRm && TRm.detectar(d)) {
+      /* GALPÃO TRELIÇADO (coluna treliçada + tesoura): o jogo de escritório — js/acopranchastrelica.js */
+      TRm.preparar(d); defs = TRm.defs(d);
+    } else {
+      defs = [{ id: "locacao", titulo: "LOCAÇÃO DOS PILARES E DOS CHUMBADORES", fn: folhaLocacao }];
+      d.niveis.forEach(function (nv) { defs.push({ id: "nivel-" + nv.id, titulo: "PLANTA DO NÍVEL " + nivelTxt(nv.cota), fn: function (c) { return folhaNivel(c, nv); } }); });
+      var pls = planosElevacao(d);
+      for (var k = 0; k < pls.length; k += 4) (function (gr, kk) { defs.push({ id: "elevacoes" + (kk ? "-" + (kk / 4 + 1) : ""), titulo: "ELEVAÇÕES - " + gr.map(function (q) { return q.nome; }).join(", "), fn: function (c) { return folhaElevacoes(c, gr); } }); })(pls.slice(k, k + 4), k);
+      if (!pls.length) avisos.push("Nenhum eixo com 2 pilares ou mais: sem folha de elevação.");
+      defs.push({ id: "detalhes", titulo: "DETALHES - PLACA DE BASE E LIGAÇÕES", fn: folhaDetalhes });
+      var lm = linhasMateriais(d), porPag = Math.max(10, Math.floor((geo.area.h - 40) / 4.6));
+      for (var q = 0; q < lm.length; q += porPag) (function (ls, pg, ult) { defs.push({ id: "materiais" + (pg ? "-" + (pg + 1) : ""), titulo: "LISTA DE MATERIAIS" + (pg ? " (CONTINUAÇÃO)" : ""), fn: function (c) { return folhaMateriais(c, pg, ls, ult); } }); })(lm.slice(q, q + porPag), q / porPag, q + porPag >= lm.length);
+    }
+    /* a faixa do "NÃO EMITIR" (embaixo da área, quebrada em linhas) é RESERVADA: nenhum desenho nem tabela entra nela */
+    var hB = E.T.nota * 1.2, txB = bloq.length ? A.quebrar("NÃO EMITIR - " + bloq.join(" · "), hB, geo.area.w - 8) : [], resB = txB.length ? txB.length * hB * 1.45 + 4 : 0;
+    function geoDe(fmt) {
+      var g = P.geometria(P.FORMATOS[fmt] ? fmt : formato, "paisagem", "RA"), lb = bloq.length ? A.quebrar("NÃO EMITIR - " + bloq.join(" · "), hB, g.area.w - 8) : [];
+      var res = lb.length ? lb.length * hB * 1.45 + 4 : 0, g2 = {}; Object.keys(g).forEach(function (k2) { g2[k2] = g[k2]; });
+      g2.area = { x: g.area.x, y: g.area.y, w: g.area.w, h: g.area.h - res }; g2.areaTotal = g.area; g2.faixaB = lb; return g2;
+    }
+    void resB; void txB;
+    var ids = defs.map(function (q2) { return q2.id; });
+    var ctx0 = { d: d, r: r, E: E, op: opcoes, avisos: avisos, br: br, perfil: perfilTxt, nivel: function (y) { return (y >= 0 ? (Math.abs(y) < 0.0005 ? "±" : "+") : "") + br(y, 3); },
+                 numFolha: function (id) { var i = ids.indexOf(id); return i >= 0 ? dois(i + 1) : "--"; }, reservaBaixo: 0 };
     var feitas = defs.map(function (def, i) {
-      var D = novoDesenho(E, opcoes.depurar ? [] : null), c = {}; Object.keys(ctx0).forEach(function (kk) { c[kk] = ctx0[kk]; }); c.D = D; c.n = i + 1;
+      var g = geoDe(def.formato || formato), D = novoDesenho(E, opcoes.depurar ? [] : null), c = {}; Object.keys(ctx0).forEach(function (kk) { c[kk] = ctx0[kk]; }); c.D = D; c.n = i + 1; c.geo = g; c.area = g.area;
       var res = {};
-      try { res = def.fn(c) || {}; } catch (e) { avisos.push("Folha " + dois(i + 1) + " (" + def.titulo + "): " + (e && e.message ? e.message : String(e))); D.texto(geo.area.x + 10, geo.area.y + 20, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: VERMELHO }); }
-      if (bloq.length) D.texto(geo.area.x + geo.area.w - 4, geo.area.y + geo.area.h - 4, "NÃO EMITIR - " + bloq.join(" · "), E.T.titulo, { al: "D", cor: VERMELHO });
-      return { def: def, D: D, escala: res.escala || "INDICADA", rotulo: dois(i + 1) };
+      try { res = def.fn(c) || {}; } catch (e) { avisos.push("Folha " + dois(i + 1) + " (" + def.titulo + "): " + (e && e.message ? e.message : String(e))); D.texto(g.area.x + 10, g.area.y + 20, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: VERMELHO }); }
+      if (g.faixaB.length) { var yb = g.areaTotal.y + g.areaTotal.h - 2 - (g.faixaB.length - 1) * hB * 1.45; g.faixaB.forEach(function (s, k3) { D.texto(g.areaTotal.x + g.areaTotal.w - 4, yb + k3 * hB * 1.45, s, hB, { al: "D", cor: VERMELHO }); }); }
+      return { def: def, D: D, geo: g, formato: P.FORMATOS[def.formato] ? def.formato : formato, escala: res.escala || "INDICADA", rotulo: dois(i + 1) };
     });
     var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00";
+    /* carimbo: dado da OBRA que falta sai "[a preencher]" (visível) — nunca o endereço do escritório no lugar do da obra */
+    function oObra(v) { return txt(v).trim() || "[a preencher]"; }
     var pr = P.normalizar({ id: "acopranchaslivre", nome: "Estrutura metálica - projeto executivo", formato: formato, orientacao: "paisagem", origem: "metalica",
-      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: txt(opcoes.obra), proprietario: txt(opcoes.proprietario),
-                 contratante: txt(opcoes.contratante), local: txt(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
+      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: oObra(opcoes.obra), proprietario: oObra(opcoes.proprietario),
+                 contratante: oObra(opcoes.contratante || opcoes.proprietario), local: oObra(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
-    var nt = notas(ctx0), W = geo.papel.w, H = geo.papel.h, M = geo.moldura;
+    /* o carimbo RA sem a empresa, o RT ou o logo sai com o bloco do escritório em branco: avisa (a tela passa Empresa.dados()) */
+    if (!empObj || !txt(empObj.nome).trim()) avisos.push("Carimbo sem a razão social da empresa (cadastro da conta): o bloco do escritório sai em branco.");
+    if (!txt(opcoes.responsavel).trim() && !(empObj && txt(empObj.responsavel).trim())) avisos.push("Carimbo sem o responsável técnico.");
+    if (!opcoes.logo) avisos.push("Carimbo sem o logo da empresa.");
+    var nt = notas(ctx0);
+    var indice = feitas.map(function (f) { return codigo + "-" + f.rotulo + "  " + f.def.titulo + " (" + f.formato + ", " + f.escala + ")"; });
     var folhas = feitas.map(function (f, i) {
+      var g = f.geo, W = g.papel.w, H = g.papel.h, M = g.moldura;
       var F = novoDesenho(E), fl = pr.folhas[i];
       F.ret(M.x, M.y, M.w, M.h, "MET-MOLDURA");
-      if (!geo.semColuna && geo.coluna) F.linha(geo.coluna.x, geo.coluna.y, geo.coluna.x, geo.coluna.y + geo.coluna.h, "MET-MOLDURA");
-      colunaNotas(F, geo, nt, E);
-      A.carimbo(F, pr, fl, geo, empObj, opcoes.logo || null, f.rotulo + "/" + dois(feitas.length));
+      if (!g.semColuna && g.coluna) F.linha(g.coluna.x, g.coluna.y, g.coluna.x, g.coluna.y + g.coluna.h, "MET-MOLDURA");
+      colunaNotas(F, g, nt, E, i === 0 ? indice : null);
+      A.carimbo(F, pr, fl, g, empObj, opcoes.logo || null, f.rotulo + "/" + dois(feitas.length));
       var numero = codigo + "-" + f.rotulo;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + 'mm" height="' + H + 'mm" viewBox="0 0 ' + W + " " + H + '" font-family="' + A.FONTE + '" data-folha="' + f.def.id + '" data-numero="' + numero + '">' +
         "<title>" + (numero + " - " + f.def.titulo + " - " + rev).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</title>" + '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#fff"/><g data-corpo="1">' + f.D.svg() + "</g>" + F.svg() + "</svg>";
-      return { id: f.def.id, rotulo: f.rotulo, numero: numero, titulo: f.def.titulo, formato: formato, escala: f.escala, svg: svg, ent: f.D.ent.concat(F.ent), caixasTexto: opcoes.depurar ? f.D.caixas : undefined, carimbo: { pr: pr, folha: fl, geo: geo, empresa: empObj, rotulo: f.rotulo + "/" + dois(feitas.length), logo: !!opcoes.logo }, E: E };
+      return { id: f.def.id, rotulo: f.rotulo, numero: numero, titulo: f.def.titulo, formato: f.formato, escala: f.escala, svg: svg, ent: f.D.ent.concat(F.ent), nCorpo: f.D.ent.length, area: g.areaTotal, areaUtil: g.area,
+               caixasTexto: opcoes.depurar ? f.D.caixas : undefined, carimbo: { pr: pr, folha: fl, geo: g, empresa: empObj, rotulo: f.rotulo + "/" + dois(feitas.length), logo: !!opcoes.logo }, E: E };
     });
     folhas.forEach(function (f) { if (/NaN|undefined/.test(f.svg)) avisos.push("Folha " + f.numero + ": há valor inválido (NaN/undefined) no desenho."); });
-    return { ok: true, folhas: folhas, avisos: avisos };
+    return { ok: true, folhas: folhas, avisos: avisos, trelica: !!d.tr };
   }
 
   /* ================================================================ DXF DA FOLHA
@@ -669,7 +728,7 @@
     return s.replace(/(\r?\n)RA-ARIAL(\r?\n)/g, "$1RA_TQS$2").replace(/(\r?\n)arial\.ttf(\r?\n)/g, "$1romans.shx$2");
   }
 
-  var AcoPranchasLivre = { gerar: gerar, dxf: dxf, _int: { extrair: extrair, planosElevacao: planosElevacao, linhasMateriais: linhasMateriais, perfilCurto: perfilCurto } };
+  var AcoPranchasLivre = { gerar: gerar, dxf: dxf, _int: { perfilTxt: perfilTxt, extrair: extrair, planosElevacao: planosElevacao, linhasMateriais: linhasMateriais, perfilCurto: perfilCurto } };
   global.AcoPranchasLivre = AcoPranchasLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoPranchasLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

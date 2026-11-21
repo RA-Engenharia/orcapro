@@ -252,10 +252,28 @@
     ["cachorroTerca", "cachorroContravento", "cachorroCorrente"].forEach(function (k) {
       if (nCach[k] > 0) { var p = acharPend(k, nCach[k]); add2(nCach[k], pend(k).descricao, { tipo: "cachorro", codigo: p.codigo, status: p.status, unidade: "un" }); }
     });
-    /* parafusos c/ porca e as porcas dos tirantes */
+    /* FIXAÇÃO (js/metalfixacao.js): parafuso, PORCA e ARRUELA em linhas separadas, por diâmetro × comprimento × classe;
+     * chumbador com seus acessórios. O que o modelo não dimensiona sai "A DIMENSIONAR", sem quantidade inventada. */
+    var FX = dep("BimMetalFixacao", "./metalfixacao.js"), fxOrdem = { parafuso: 1, chumbador: 2, porca: 3, arruela: 4, "chumbador-acessorio": 5 }, fx = {}, fxChaves = [];
     arr(L.parafusos).forEach(function (p) {
       if (/^Porca e arruela do tirante/.test(txt(p.tipo))) { if (p.porcas > 0) add2(p.porcas, "PORCA SEXTAVADA " + txt(p.diametro), { tipo: "porca" }); return; }
-      if (p.quantidade > 0) add2(p.quantidade, "PARAFUSO SEXTAVADO " + txt(p.diametro) + (p.comprimento ? " X " + p.comprimento + " MM" : "") + " C/ PORCA" + (p.arruelas ? " E ARRUELA" : "") + (p.classe ? " (" + p.classe + ")" : ""), { tipo: "parafuso" });
+      if (!FX) {
+        if (p.quantidade > 0) add2(p.quantidade, "PARAFUSO SEXTAVADO " + txt(p.diametro) + (p.comprimento ? " X " + p.comprimento + " MM" : "") + " C/ PORCA" + (p.arruelas ? " E ARRUELA" : "") + (p.classe ? " (" + p.classe + ")" : ""), { tipo: "parafuso" });
+        return;
+      }
+      FX.itensDoGrupo(p).forEach(function (it) {
+        var k = it.chave;
+        if (!fx[k]) { fx[k] = { it: it, qtd: 0, kg: 0, kgOk: true }; fxChaves.push(k); }
+        if (it.qtd != null) fx[k].qtd += it.qtd;
+        if (it.massa_kg != null && it.qtd != null) fx[k].kg += it.massa_kg * it.qtd; else if (it.qtd != null) fx[k].kgOk = false;
+      });
+    });
+    fxChaves.sort(function (a, b) { return (fxOrdem[fx[a].it.tipo] || 9) - (fxOrdem[fx[b].it.tipo] || 9) || (a < b ? -1 : a > b ? 1 : 0); });
+    var fixKg = 0;
+    fxChaves.forEach(function (k) {
+      var g = fx[k], it = g.it, dim = it.estado === (FX && FX.A_DIMENSIONAR);
+      if (g.kgOk && g.kg > 0) fixKg += g.kg;
+      add2(it.tipo === "chumbador-acessorio" ? 0 : g.qtd, it.descricao, { tipo: it.tipo, status: dim ? "A DIMENSIONAR" : "", obs: it.obs || "", kg: g.kgOk && g.kg > 0 ? r3(g.kg) : null });
     });
     arr(C.extras.barrasRoscadas).forEach(function (x) { add2(x.qtd, "BARRA ROSCADA " + (x.rotulo || "") + " X 1000", { tipo: "roscada" }); });
     /* calha e condutores: não existem no modelo */
@@ -299,7 +317,7 @@
     h += '<h4 style="margin:8px 0 4px;font-size:13px">Componentes da estrutura</h4><table class="tbl tbl-compacta" data-mrf="parte1"><thead><tr><th class="num">ITEM</th><th class="num">QTDE</th><th>DESCRIÇÃO</th><th class="num">TAMANHO (m)</th></tr></thead><tbody>' +
       R.parte1.map(function (x) { return '<tr><td class="num">' + x.item + '</td><td class="num">' + x.qtd + "</td><td>" + esc(x.descricao) + '</td><td class="num">' + (x.tamanho == null ? "" : br(x.tamanho, 2)) + "</td></tr>"; }).join("") + "</tbody></table>";
     h += '<h4 style="margin:12px 0 4px;font-size:13px">Relação de materiais</h4><table class="tbl tbl-compacta" data-mrf="parte2"><thead><tr><th class="num">ITEM</th><th class="num">QTDE</th><th>DESCRIÇÃO</th><th>Situação</th></tr></thead><tbody>' +
-      R.parte2.map(function (x) { return '<tr><td class="num">' + x.item + '</td><td class="num">' + br(x.qtd, x.qtd % 1 ? 2 : 0) + "</td><td>" + esc(x.descricao) + "</td><td>" + (x.status ? esc(x.codigo + " — " + x.status) : "") + (x.obs ? " " + esc(x.obs) : "") + "</td></tr>"; }).join("") + "</tbody></table>";
+      R.parte2.map(function (x) { return '<tr><td class="num">' + x.item + '</td><td class="num">' + br(x.qtd, x.qtd % 1 ? 2 : 0) + "</td><td>" + esc(x.descricao) + "</td><td>" + (x.status ? esc((x.codigo ? x.codigo + " — " : "") + x.status) : "") + (x.obs ? " " + esc(x.obs) : "") + "</td></tr>"; }).join("") + "</tbody></table>";
     h += '<p style="font-size:12px;margin:8px 0 0" data-mrf="rotulo-indice"><b>' + esc(textoIndice(R)) + "</b>. Aço do modelo: " + br(R.totais.acoKg, 0) + " kg (" + br(R.totais.acoTon, 3) + " t). Eletrodo, thinner, zarcão e discos = índice por tonelada × aço; sem preço (pendente — cotar).</p>";
     R.avisos.forEach(function (a) { h += '<p style="font-size:12px;margin:4px 0;color:#a86a10">' + esc(a) + "</p>"; });
     return h + "</div>";
@@ -324,7 +342,7 @@
     R.parte1.forEach(function (x) { lin(r++, [x.item, x.qtd, x.descricao, x.tamanho], [null, "0", null, "#,##0.00"]); });
     r++; ws.getCell("A" + r).value = "RELAÇÃO DE MATERIAIS"; ws.getCell("A" + r).font = { bold: true }; r++;
     cab(r++, ["ITEM", "QTDE", "DESCRIÇÃO", "", "SITUAÇÃO"]);
-    R.parte2.forEach(function (x) { lin(r++, [x.item, x.qtd, x.descricao, "", x.status ? x.codigo + " — " + x.status + (x.obs ? " (" + x.obs + ")" : "") : (x.obs || "")], [null, x.qtd % 1 ? "#,##0.00" : "0"]); });
+    R.parte2.forEach(function (x) { lin(r++, [x.item, x.qtd, x.descricao, "", x.status ? (x.codigo ? x.codigo + " — " : "") + x.status + (x.obs ? " (" + x.obs + ")" : "") : (x.obs || "")], [null, x.qtd % 1 ? "#,##0.00" : "0"]); });
     r++; ws.getCell("A" + r).value = ROTULO_INDICE + " — aço do modelo " + br(R.totais.acoKg, 0) + " kg (" + br(R.totais.acoTon, 3) + " t)"; ws.getCell("A" + r).font = { italic: true };
     var wc = wb.addWorksheet("Consumíveis (índice)");
     wc.columns = [{ header: "Consumível", width: 34 }, { header: "Código", width: 14 }, { header: "Unid.", width: 8 }, { header: "Índice por tonelada de aço", width: 26 }, { header: "Qtd. nesta obra", width: 16 }, { header: "Situação", width: 20 }];
@@ -335,6 +353,11 @@
     wp.columns = [{ header: "Código", width: 14 }, { header: "Item de catálogo", width: 44 }, { header: "Unid.", width: 8 }, { header: "Preço", width: 12 }, { header: "Situação", width: 22 }];
     wp.getRow(1).font = { bold: true };
     catalogoPendente().forEach(function (c) { wp.addRow([c.codigo, c.descricao, c.unidade, "", c.status]); });
+    var wf = wb.addWorksheet("Fixação (massa)");
+    wf.columns = [{ header: "Descrição", width: 62 }, { header: "Qtde", width: 9 }, { header: "Massa total (kg)", width: 18 }, { header: "Situação", width: 18 }, { header: "Observação", width: 60 }];
+    wf.getRow(1).font = { bold: true };
+    R.parte2.forEach(function (x) { if (/^(parafuso|chumbador|porca|arruela|chumbador-acessorio)$/.test(x.tipo || "")) wf.addRow([x.descricao, x.qtd, x.kg == null ? "" : x.kg, x.status || "ok", x.obs || ""]); });
+    wf.addRow([]); wf.addRow(["Massa de porca/arruela/parafuso: valor do fabricante onde existe; senão estimativa pela geometria (sem chanfro, 10-20 % acima). Fonte e regra: js/metalfixacao.js."]);
     var wl = wb.addWorksheet("Leia-me");
     ["OrçaPRO Modela — Metálica: relação de materiais no formato da fábrica (Parte 1 componentes, Parte 2 materiais).",
      "Barras comerciais: da lista de corte (6 e 12 m) do modelo. Chapas: peça a peça. Parafusos, porcas: do modelo. Cachorro: 1 por ligação (2 pontas por peça, fator editável).",

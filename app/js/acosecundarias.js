@@ -155,7 +155,9 @@
         } else {
           combs.push({ nome: "1,25·G + 1,35·G2 + 1,50·Q" + (Wp > 0 ? " + 0,84·W" : ""), n: GAMA.G * Gn + GAMA.G2 * G2n + GAMA.Q * Qn + (Wp > 0 ? GAMA.W * GAMA.psiW * Wp : 0), t: GAMA.G * Gt + GAMA.G2 * G2t + GAMA.Q * Qt, suc: false });
           if (Wp > 0) combs.push({ nome: "1,25·G + 1,35·G2 + 1,40·W + 1,20·Q", n: GAMA.G * Gn + GAMA.G2 * G2n + GAMA.W * Wp + GAMA.Q * GAMA.psiQ * Qn, t: GAMA.G * Gt + GAMA.G2 * G2t + GAMA.Q * GAMA.psiQ * Qt, suc: false });
-          if (Ws < 0) combs.push({ nome: "1,00·(G + G2) + 1,40·W (sucção)", n: Gn + G2n + GAMA.W * Ws, t: Gt + G2t, suc: true });
+          /* AUDITORIA A7 (20/11/2026): na sucção só a telha (gSup) alivia — instalações/forro/solar (gPlano) podem faltar (NBR 8681) */
+          var g2f = d.gSup * d.s;
+          if (Ws < 0) combs.push({ nome: "1,00·(G + telha) + 1,40·W (sucção; instalações/solar não aliviam)", n: Gn + g2f * cs + GAMA.W * Ws, t: Gt + g2f * sn, suc: true });
           /* carga concentrada de 1 kN no meio do vão, no lugar da sobrecarga distribuída (NBR 6120:2019, 6.4): entra como
              a distribuída equivalente no MOMENTO (P·L/4 = qeq·L²/8 → qeq = 2P/L) */
           if (d.P > 0) { var qeq = 2 * d.P / L; combs.push({ nome: "1,25·G + 1,35·G2 + 1,50·P (1 kN no meio do vão)", n: GAMA.G * Gn + GAMA.G2 * G2n + GAMA.Q * qeq * cs, t: GAMA.G * Gt + GAMA.G2 * G2t + GAMA.Q * qeq * sn, suc: false, concentrada: true }); }

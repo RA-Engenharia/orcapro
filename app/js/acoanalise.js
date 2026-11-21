@@ -570,7 +570,12 @@
       ["ux", "uy", "uz", "rx", "ry", "rz"].forEach(function (c, k) {
         var v = a[c], g = pos[n] * 6 + k;
         if (v === true) restr[g] = true;
-        else if (typeof v === "number" && v > 0) molas[g] = (molas[g] || 0) + v;
+        else if (typeof v === "number" && v > 0) {
+          molas[g] = (molas[g] || 0) + v;
+          /* AUDITORIA A9 (20/11/2026): número é MOLA (kN/m ou kN·m/rad), não apoio — "ux: 1" era mola de 1 kN/m e o solver
+             devolvia flecha de 15 m como resultado válido. Mola irrisória avisa (a sanidade L/50 em analisar() barra o resultado) */
+          if (v < (k < 3 ? 100 : 10)) avisos.push("Apoio no nó " + a.no + ": " + c + " = " + v + " é MOLA de rigidez irrisória (" + v + (k < 3 ? " kN/m" : " kN·m/rad") + ") — para apoio fixo use " + c + ": true");
+        } else if (v != null && v !== false && v !== 0) avisos.push("Apoio no nó " + a.no + ": " + c + " = " + JSON.stringify(v) + " não reconhecido (use true para apoio fixo ou um número > 0 de rigidez de mola) — IGNORADO");
       });
     });
     return { nos: nos, idx: idx, pos: pos, barras: barras, elems: elems, nGL: nos.length * 6, banda: bGL, primeira: primeira, restr: restr, molas: molas, avisos: avisos, simb: md ? Simbolico(nos.length, md.colunas) : null };
@@ -962,6 +967,29 @@
       /* PROGRESSO (20/11/2026): quem calcula pode ouvir cada combinação pronta — só AVISA, não muda nada do cálculo */
       if (OPC.aoProgresso) { try { OPC.aoProgresso({ k: i + 1, n: combs.length, comb: cb.id }); } catch (eP) {} }
     }
+    /* AUDITORIA A9 (20/11/2026): sanidade — deslocamento maior que L/50 (L = maior dimensão do modelo) não é resultado de
+       estrutura real: mecanismo, apoio esquecido ou mola irrisória. Erro explícito, nunca "ok" (antes: 15 m numa viga de 8 m) */
+    var cx = [Infinity, -Infinity], cy = [Infinity, -Infinity], cz = [Infinity, -Infinity];
+    M.nos.forEach(function (q) { var x = q.p[0], y = q.p[1], z = q.p[2]; cx = [Math.min(cx[0], x), Math.max(cx[1], x)]; cy = [Math.min(cy[0], y), Math.max(cy[1], y)]; cz = [Math.min(cz[0], z), Math.max(cz[1], z)]; });
+    var Lmod = Math.max(cx[1] - cx[0], cy[1] - cy[0], cz[1] - cz[0], 1e-6), lim50 = Lmod / 50;
+    /* op.sanidade === false: só para teste de EQUILÍBRIO puro do solver (modelo matemático, seção arbitrária) — nunca no cálculo */
+    if (op.sanidade !== false) Object.keys(saida.combinacoes).forEach(function (cid) {
+      var rc = saida.combinacoes[cid]; if (!rc || !rc.ok) return;
+      var dmax = 0, noMax = null;
+      Object.keys(rc.desloc || {}).forEach(function (id) { var u = rc.desloc[id]; var d = Math.sqrt(num(u[0], 0) * num(u[0], 0) + num(u[1], 0) * num(u[1], 0) + num(u[2], 0) * num(u[2], 0)); if (d > dmax) { dmax = d; noMax = id; } });
+      /* > L (a maior dimensão do modelo): absurdo físico (mecanismo, apoio faltando, mola irrisória) → ERRO, não segue.
+         L/50 a L: resultado marcado (saida.sanidade) — quem dimensiona NUNCA o aprova (js/acodimlivre.js), mas o otimizador
+         pode trocar o perfil fraco da partida */
+      if (dmax > Lmod) {
+        rc.ok = false; rc.motivo = "deslocamento de " + dmax.toFixed(4) + " m no nó " + noMax + " > L = " + Lmod.toFixed(4) + " m (L = " + Lmod.toFixed(2) + " m): estrutura instável (mecanismo), apoio faltando ou mola de rigidez irrisória — resultado descartado";
+        if (saida.ok) saida.motivo = cid + ": " + rc.motivo;   /* o diagnóstico do próprio solver (pivô) tem prioridade */
+        saida.ok = false; saida.sanidade = { dmax: dmax, no: noMax, limite: Lmod, L: Lmod, grave: true };
+      } else if (dmax > lim50 && (!saida.sanidade || dmax > saida.sanidade.dmax)) {
+        rc.sanidade = { dmax: dmax, no: noMax, limite: lim50 };
+        saida.sanidade = { dmax: dmax, no: noMax, limite: lim50, L: Lmod, grave: false, comb: cid };
+      }
+    });
+    if (saida.sanidade && !saida.sanidade.grave) saida.avisos.push("SANIDADE (AUDITORIA A9): deslocamento de " + saida.sanidade.dmax.toFixed(4) + " m no nó " + saida.sanidade.no + " (" + saida.sanidade.comb + ") > L/50 = " + saida.sanidade.limite.toFixed(4) + " m — estrutura muito flexível ou mal apoiada: o resultado NÃO pode ser aprovado");
     saida.tempoMs = Date.now() - t0;
     return saida;
   }

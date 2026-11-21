@@ -151,6 +151,19 @@
     }
     return o;
   }
+  /* AUDITORIA A5 (20/11/2026): tubo COM COSTURA conformado a frio (aço NBR 8261) — a NBR 8800 não é a norma dele: largura
+     efetiva pela NBR 14762:2010, 9.2.2 (elemento AA, k = 4): λp = (b/t)/(0,95·√(k·E/σ)); bef = b se λp ≤ 0,673, senão
+     bef = b·(1 − 0,22/λp)/λp; compressão 9.7.2 com γ = 1,20; flexão 9.8.2.1 pelo módulo efetivo Wef com γ = 1,10. */
+  function conformadoFrio(s, aco) { return s && (s.forma === "tubo-ret" || s.forma === "tubo-circ") && !!aco && (aco.conformadoFrio === true || /8261/.test(String(aco.id || "") + String(aco.norma || ""))); }
+  function bef14762(b, t, E, sigma) { var lp = (b / t) / (0.95 * Math.sqrt(4 * E / sigma)); return { lp: lp, bef: lp <= 0.673 ? b : Math.max(0, Math.min(b, b * (1 - 0.22 / lp) / lp)) }; }
+  function areaEfetiva14762(s, sigma, E) {
+    var passos = [], Aef = s.A;
+    [["paredes maiores", num(s.hPlana, s.h - 3 * s.t)], ["paredes menores", num(s.bPlana, s.b - 3 * s.t)]].forEach(function (el) {
+      var r = bef14762(el[1], s.t, E, sigma); Aef -= 2 * (el[1] - r.bef) * s.t;
+      passos.push({ rotulo: "Largura efetiva (NBR 14762:2010, 9.2.2) — " + el[0] + ": b/t = " + br(el[1] / s.t, 2), formula: "λp = (b/t)/(0,95·√(4E/σ)), σ = χ·fy = " + br(sigma, 1) + " MPa", valor: "λp = " + br(r.lp, 3) + " → bef = " + br(r.bef, 1) + " mm (de " + br(el[1], 1) + ")" });
+    });
+    return { Aef: Aef, passos: passos };
+  }
   function areaEfetiva(s, fy, E, chi) {
     var passos = [], Aef = s.A;
     if (s.forma === "tubo-circ") {
@@ -175,8 +188,10 @@
     var g = gamas(), fy = aco.fy, Lx = fl.Lx * 1000, Ly = fl.Ly * 1000, Lz = num(fl.Lz, fl.Ly) * 1000, passos = [], avisos = [];
     var e = Ne(s, E, G, Lx, Ly, Lz);
     var l0 = Math.sqrt(s.A * fy / e.Ne), chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0);
-    var ae = areaEfetiva(s, fy, E, chi);
-    var NRd = chi * ae.Aef * fy / g.a1;
+    var frio = conformadoFrio(s, aco) && s.forma === "tubo-ret", gC = frio ? 1.20 : g.a1;
+    var ae = frio ? areaEfetiva14762(s, chi * fy, E) : areaEfetiva(s, fy, E, chi);
+    var NRd = chi * ae.Aef * fy / gC;
+    if (frio) avisos.push("Tubo com costura conformado a frio (" + (aco.id || "NBR 8261") + "): compressão pela NBR 14762:2010, 9.7.2 (largura efetiva 9.2.2, γ = 1,20).");
     var esb = Math.max(Lx / num(s.rx, Math.sqrt(s.Ix / s.A)), Ly / num(s.ry, Math.sqrt(s.Iy / s.A)));
     if (s.forma === "L" && s.rz) esb = Math.max(esb, Math.min(Lx, Ly) / s.rz);
     passos.push({ rotulo: "Comprimentos de flambagem (K = 1: análise de 2ª ordem com imperfeições)", valor: "Lx = " + br(Lx / 1000, 2) + " m; Ly = " + br(Ly / 1000, 2) + " m; Lz = " + br(Lz / 1000, 2) + " m" });
@@ -185,7 +200,7 @@
     passos.push({ rotulo: "Fator de redução χ", formula: l0 <= 1.5 ? "χ = 0,658^(λ0²)" : "χ = 0,877/λ0²", valor: br(chi, 3) });
     ae.passos.forEach(function (q) { passos.push(q); });
     passos.push({ rotulo: "Área efetiva", formula: "Aef = Ag − Σ(b − bef)·t", valor: br(ae.Aef, 0) + " mm²", extra: "Ag = " + br(s.A, 0) + " mm²" });
-    passos.push({ rotulo: "Força axial resistente de cálculo", formula: "Nc,Rd = χ·Aef·fy/γa1", valor: br(NRd / 1000, 1) + " kN" });
+    passos.push({ rotulo: "Força axial resistente de cálculo" + (frio ? " (NBR 14762:2010, 9.7.2)" : ""), formula: frio ? "Nc,Rd = χ·Aef·fy/γ, γ = 1,20" : "Nc,Rd = χ·Aef·fy/γa1", valor: br(NRd / 1000, 1) + " kN" });
     passos.push({ rotulo: "Índice de esbeltez KL/r (recomendado ≤ 200 — 5.3.7.1 da 2024)", valor: br(esb, 0), extra: esb > 200 ? "⚠ acima de 200" : "ok" });
     if (esb > 200) avisos.push("Esbeltez " + br(esb, 0) + " > 200 na compressão (NBR 8800).");
     return { NRd: NRd / 1000, passos: passos, avisos: avisos, chi: chi, Q: ae.Aef / s.A, Aef: ae.Aef, esbeltez: esb, Ne: e.Ne / 1000 };
@@ -264,6 +279,7 @@
     return { MRd: MRd / 1e6, passos: passos, aviso: aviso, lam: lam, lp: lp, lr: lr, Mcr: Mcr / 1e6 };
   }
   function flexaoTuboRet(s, aco, E, Lb, Cb, eixo) {
+    if (conformadoFrio(s, aco)) return flexaoTuboRet14762(s, aco, E, eixo);
     var g = gamas(), fy = aco.fy, passos = [];
     var W = eixo === "y" ? s.Wy : s.Wx, Z = eixo === "y" ? s.Zy : s.Zx, Mpl = Math.min(Z * fy, 1.5 * W * fy);
     var bM = (eixo === "y" ? num(s.hPlana, s.h - 3 * s.t) : num(s.bPlana, s.b - 3 * s.t)) / s.t, hA = (eixo === "y" ? num(s.bPlana, s.b - 3 * s.t) : num(s.hPlana, s.h - 3 * s.t)) / s.t;
@@ -282,6 +298,17 @@
     var MRd = Math.min(Mflt, Mflm, Mfla) / g.a1;
     passos.push({ rotulo: "Momento resistente de cálculo (eixo " + (eixo === "y" ? "y" : "x") + ")", valor: br(MRd / 1e6, 2) + " kN·m" });
     return { MRd: MRd / 1e6, passos: passos };
+  }
+  /* AUDITORIA A5: NBR 14762:2010, 9.8.2.1 — MRd = Wef·fy/γ (γ = 1,10), Wef com a mesa comprimida pela largura efetiva (σ = fy);
+     as almas (gradiente, k ≥ 24) ficam inteiras nas proporções do catálogo — conferido: b/t ≤ 60. FLT de tubo fechado não governa. */
+  function flexaoTuboRet14762(s, aco, E, eixo) {
+    var fy = aco.fy, passos = [], I = eixo === "y" ? s.Iy : s.Ix, H = eixo === "y" ? s.b : s.h, bF = eixo === "y" ? num(s.hPlana, s.h - 3 * s.t) : num(s.bPlana, s.b - 3 * s.t);
+    var r = bef14762(bF, s.t, E, fy), Ar = (bF - r.bef) * s.t, d = H / 2 - s.t / 2, e = Ar > 0 ? Ar * d / (s.A - Ar) : 0;
+    var Ief = I - Ar * d * d - (s.A - Ar) * e * e, Wef = Ief / (H / 2 + e), MRd = Wef * fy / 1.10;
+    passos.push({ rotulo: "Mesa comprimida (NBR 14762:2010, 9.2.2): b/t = " + br(bF / s.t, 2), formula: "λp = (b/t)/(0,95·√(4E/fy))", valor: "λp = " + br(r.lp, 3) + " → bef = " + br(r.bef, 1) + " mm" });
+    passos.push({ rotulo: "Módulo efetivo", formula: "Wef = Ief/(H/2 + e)", valor: br(Wef / 1000, 2) + " cm³", extra: "W bruto = " + br((eixo === "y" ? s.Wy : s.Wx) / 1000, 2) + " cm³" });
+    passos.push({ rotulo: "Momento resistente de cálculo (NBR 14762:2010, 9.8.2.1)", formula: "MRd = Wef·fy/γ, γ = 1,10", valor: br(MRd / 1e6, 2) + " kN·m" });
+    return { MRd: MRd / 1e6, passos: passos, aviso: null, norma: "NBR 14762:2010" };
   }
   function flexaoTuboCirc(s, aco, E) {
     var g = gamas(), fy = aco.fy, Dt = s.D / s.t, W = s.Wx, Z = s.Zx, Mk;

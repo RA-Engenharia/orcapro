@@ -42,6 +42,9 @@
     "G-industrializado": { desf: 1.35, fav: 1.00, nome: "peso próprio de estruturas moldadas no local e de elementos construtivos industrializados" },
     "G-insitu":        { desf: 1.40, fav: 1.00, nome: "peso próprio de elementos construtivos industrializados com adições in loco" },
     "G-geral":         { desf: 1.50, fav: 1.00, nome: "peso próprio de elementos construtivos em geral e equipamentos" },
+    /* AUDITORIA A7 (20/11/2026): instalações, forro e placas solares podem não existir ou ser retirados — NBR 8681: só o que
+       existe com certeza alivia. Desfavorável como equipamento (1,50); FAVORÁVEL = 0 (não entra na combinação de sucção) */
+    "G-removivel":     { desf: 1.50, fav: 0.00, nome: "permanente removível (instalações, forro, placas solares): desfavorável 1,50, favorável 0" },
     "Q-temperatura":   { desf: 1.20, nome: "efeito de temperatura" },
     "W":               { desf: 1.40, nome: "ação do vento" },
     "Q-truncada":      { desf: 1.20, nome: "ações truncadas" },

@@ -232,6 +232,9 @@
     var ent = { local: loc, s1: { tipo: v.s1tipo || "plano", valor: num(v.s1, 1) }, categoria: v.categoria || "II", grupoS3: num(v.grupoS3, 2),
       geometria: { a: geo.a, b: geo.b, h: geo.hBeiral, hCumeeira: Math.max(hCum, geo.hBeiral), inclinacaoGraus: inclG, cobertura: uma ? "uma-agua" : "duas-aguas", nervuras: "retangulares" }, faces: faces };
     if (uma) ent.geometria.ladoAlto = ladoAlto;
+    /* AUDITORIA A1 (20/11/2026, metálica): o motor de vento passou a supor portão aberto em cada face fechada (NBR 6123:2023
+       6.3.2.1-c). Na casa de wood frame isso NÃO foi avaliado nesta frente — fica como antes (6.3.2.1-b) e o memorial avisa */
+    if (ent && ent.aberturaDominantePropria == null && ent.semAberturasDominantes == null) ent.aberturaDominantePropria = true;
     var r; try { r = m.AV.calcular(ent, { todasDirecoes: true }); } catch (e) { return { ok: false, motivo: "vento: " + (e && e.message ? e.message : e) }; }
     if (!r || !r.ok) return { ok: false, motivo: "vento: " + JSON.stringify((r && r.erros) || "sem resultado").slice(0, 200) };
     var tg = Math.tan(inclG * Math.PI / 180), pv = { lateral: 0, oitao: 0 }, up = 0, FxMax = 0, FzMax = 0, FxB = 0, FzB = 0, casoX = null, casoZ = null;
@@ -258,7 +261,7 @@
     });
     return { ok: true, v0: r.v0, q: r.q, vk: r.vk, s2: r.s2 && r.s2.valor, s3: r.s3 && (r.s3.valor != null ? r.s3.valor : r.s3), categoria: ent.categoria, grupoS3: ent.grupoS3, s1: ent.s1, edicao: r.edicao || "NBR 6123:1988 (conferir na 2023)",
       pFace: pv, succaoCobertura: up, F: { across: FxMax, ridge: FzMax }, Fbase: { across: FxB, ridge: FzB }, trianguloOitao: 0.5 * geo.b * Math.max(0, hCum - geo.hBeiral), casoAcross: casoX, casoRidge: casoZ, geometria: ent.geometria, inclGraus: inclG,
-      memoria: arr(r.memoria).slice(0, 40), avisos: arr(r.avisos).slice(0, 6), nCasos: arr(r.casos).length };
+      memoria: arr(r.memoria).slice(0, 40), avisos: ["ABERTURA DOMINANTE NÃO AVALIADA (pendência da auditoria A1, 20/11/2026): cpi pelo 6.3.2.1-b (−0,3/0), sem porta/janela aberta em temporal — conferir com a NBR 6123:2023 6.3.2.1-c"].concat(arr(r.avisos).slice(0, 6)), nCasos: arr(r.casos).length };
   }
 
   /* ============================================================ SEÇÕES DO CATÁLOGO (a mesma cadeia das vergas do quadro) */

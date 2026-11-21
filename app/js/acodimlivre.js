@@ -304,6 +304,16 @@
     var elu = combs.filter(function (c) { return c.tipo === "ELU"; }), els = combs.filter(function (c) { return c.tipo !== "ELU"; });
     avisar("analise", 0, 0);
     var res = A.analisar(G.modelo, { combinacoes: elu.concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
+    /* 20/11/2026 (auditoria A9, controles negativos): a 2ª ordem caiu com pivô nulo "acima da crítica de flambagem global".
+       Refaz em 1ª ordem: se ELA fecha, a estrutura é geometricamente estável e o problema é SOBRECARGA (λcr < 1 na combinação
+       que caiu) — o resultado é REPROVADO, com as razões das barras (1ª ordem: limite inferior) e a falha de instabilidade
+       global, nunca "não calculou" para perfil fraco. Se nem a 1ª ordem fecha, é mecanismo de verdade: segue a recusa abaixo.
+       O resultado de 1ª ordem NUNCA aprova: instab2a soma falha. */
+    var instab2a = null;
+    if (!res.ok && /flambagem global/.test(String(res.motivo || ""))) {
+      var res1 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, nocional: c.nocional, segundaOrdem: false }; }).concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
+      if (res1.ok) { instab2a = res.motivo; res = res1; }
+    }
     if (!res.ok) {
       var tr = G.modelo.barras.some(function (b) { return b.tracao; });
       var tx = "A análise não fechou (" + res.motivo + ")." + (tr && /mecanismo|instável/i.test(res.motivo) ? " Com barra redonda (só tração), a diagonal fica frouxa quando comprimida: sem a do outro sentido (X), o plano vira mecanismo nessa combinação — desenhe o X ou use cantoneira/tubo." : (/instável|mecanismo/i.test(res.motivo) ? " A 2ª ordem pode ter passado da carga crítica de flambagem global: aumente a rigidez (perfis maiores, bases engastadas, contraventamento)." : ""));
@@ -352,6 +362,9 @@
     var estabGlobal = { ok: classe !== "grande", razao: razaoDesl, classe: classe,
       texto: classe === "grande" ? "Estrutura de GRANDE deslocabilidade (Δ2/Δ1 = " + br(razaoDesl, 2) + " > 1,55): a NBR 8800 (4.10) exige análise rigorosa, fora do método deste cálculo — aumente a rigidez lateral (pilares maiores, bases engastadas, ligações rígidas ou contraventamento)." : null };
     if (classe === "grande") avisos.push(estabGlobal.texto);
+    /* 2ª ordem instável (carga acima da crítica): a estabilidade global REPROVA — o Δ2/Δ1 = 1 da 1ª ordem não vale; esta é a
+       falha que conta (falhas parte de 1 abaixo) */
+    if (instab2a) estabGlobal = { ok: false, razao: null, classe: "instavel", texto: "Estabilidade global REPROVADA: a análise de 2ª ordem não converge (" + instab2a + ") — carga de cálculo acima da crítica de flambagem global." };
     /* 1.2.148 — cpe MÉDIO das faixas de borda/canto (NBR 6123:2023, 6.1.2/6.1.3) só na VERIFICAÇÃO LOCAL das terças e
        travessas: a análise global (vigas, pilares, contraventamento) continua com o cpe da zona, como a norma manda */
     var bordaLista = OPC.cpeMedioLocal && CG.resumo.vento ? arr(CG.resumo.vento.cpeMedioNaoAplicado) : [], bordaPorMid = {};
@@ -474,6 +487,11 @@
         if (lmin < 1) { falhas++; avisos.push("REPROVA: λcr = " + br(lmin, 2) + " < 1 — a carga de cálculo passa da carga crítica de flambagem global (análise de autovalor): contraventar, engastar as bases ou aumentar os perfis."); }
       }
     }
+    if (instab2a) {
+      /* a falha já entrou pela estabilidade global (estabGlobal.ok = false) */
+      avisos.push("REPROVA: a análise de 2ª ordem não converge (" + instab2a + ") — a carga de cálculo passa da carga crítica de flambagem global (λcr < 1 nessa combinação). As razões das barras abaixo são de 1ª ordem (limite inferior): contraventar, engastar as bases ou aumentar os perfis.");
+      G.decisoes.push({ tema: "Instabilidade global (2ª ordem)", decisao: "REPROVADO: 2ª ordem instável — " + instab2a, motivo: "a 1ª ordem fecha (estrutura geometricamente estável), então é carga acima da crítica e não mecanismo; razões de 1ª ordem só para orientar a troca de perfis" });
+    }
     /* #49 d) (16/10/2026, revisor da 1.2.148) — Mj,Ed GRAVADO × ANÁLISE DE AGORA: a ligação desenhada guarda os esforços com que
        foi dimensionada (entrada.esforcos, tirados da ponta da barra: M = √(Mz² + My²), V = √(Vy² + Vz²), N — js/acoligsugere.js);
        se a análise de agora dá MAIS que isso na mesma ponta (o modelo, as cargas ou a rigidez mudaram depois), a ligação está
@@ -544,7 +562,7 @@
       if (!v.sugestao) v.sugestao = "Nenhum perfil da família " + String(m.secao.nome).split(" ")[0] + " resolve: perfil maior/soldado, travar mais a barra ou reduzir o vão.";
     });
     return {
-      ok: true, tipo: "livre", aprovado: falhas === 0, falhas: falhas, modelo: G, casos: casos, combinacoes: combs, analise: res,
+      ok: true, tipo: "livre", aprovado: falhas === 0, falhas: falhas, instavel2a: instab2a, modelo: G, casos: casos, combinacoes: combs, analise: res,
       deslocabilidade: { razao: razaoDesl, classe: classe }, estabilidadeGlobal: estabGlobal, escadaTrava: escTrava, membros: resultadosM, grupos: grupos, contravento: null, servico: servico, reacoes: reacoes,
       peso: peso, pesoGrupos: pesoG, pesoTotal: peso, taxa: areaT > 0 ? peso / areaT : null, areaCarregada: areaT, cargasResumo: CG.resumo,
       vento: CG.resumo.vento ? CG.resumo.vento.resultado : null, ventoCasos: CG.resumo.vento ? CG.resumo.vento.casos : null,
@@ -670,6 +688,10 @@
     if (r.ok && !(alvo && !alvo.length)) {
       var proib = {}, maxIt = num(op.maxIteracoes, 10), it = 0, hist = [{ perfis: perfisAtuais(lido), falhas: r.falhas, peso: r.peso }];
       /* grupos-alvo pela chave ORIGINAL (a chave muda quando o perfil muda: o grupo é o conjunto de peças) */
+      /* 20/11/2026: peça declarada "tubo de nó soldado" (alma e travejamento da tesoura leve) só troca para tubo que tenha nó possível
+         pela NBR 16239: parede ≥ 2,5 mm e b/t ≤ 35 (EN 1993-1-8, 7.1.1 e Tabela 7.8) — senão o cálculo aprovava barra sem ligação */
+      var tuboNoOk = function (nome) { var x = Cat() && Cat().obter(nome); if (!x || !/^tubo/.test(x.forma)) return true; var t = num(x.t, 0), b = Math.max(num(x.h, 0), num(x.b, 0), num(x.d, 0)); return t >= 2.5 - 1e-9 && b / t <= (x.forma === "tubo-circ" ? 50 : 35) + 1e-9; };
+      var famDe = function (gk, nome) { var l = familia(nome), p0 = conj[gk] && conj[gk][0]; return p0 && p0.calc && p0.calc.tuboSoldado ? l.filter(function (n) { return n === nome || tuboNoOk(n); }) : l; };
       var conj = {}; lido.pecas.forEach(function (p) { var gk = p.papel + "|" + orig[p.id]; if (!alvo || alvo.indexOf(gk) >= 0 || alvo.indexOf(chaveGrupo(p)) >= 0) (conj[gk] = conj[gk] || []).push(p); });
       var razoes = function (res, ps) {
         var o = { e: 0, s: 0 };
@@ -682,13 +704,13 @@
         var q = razoes(r, ps), falha = q.e > 1 || q.s > 1;
         /* grande deslocabilidade: os PILARES sobem pela rigidez (Ix e Iy × 1,5 — a deslocabilidade é dos dois eixos) */
         if (sobe && !falha && r.estabilidadeGlobal && !r.estabilidadeGlobal.ok && ps[0].papel === "pilar") {
-          var rig = familia(atual).map(info).filter(function (x) { return x && x.Ix >= 1.5 * i0.Ix && x.Iy >= 1.5 * i0.Iy && !(proib[gk] && proib[gk][x.nome]); }).sort(function (a, b) { return a.massa - b.massa; })[0];
-          return rig ? { gk: gk, de: atual, para: rig.nome, motivo: "deslocabilidade grande (Δ2/Δ1 = " + br(r.estabilidadeGlobal.razao, 2) + ")" } : null;
+          var rig = famDe(gk, atual).map(info).filter(function (x) { return x && x.Ix >= 1.5 * i0.Ix && x.Iy >= 1.5 * i0.Iy && !(proib[gk] && proib[gk][x.nome]); }).sort(function (a, b) { return a.massa - b.massa; })[0];
+          return rig ? { gk: gk, de: atual, para: rig.nome, motivo: r.estabilidadeGlobal.razao == null ? "2ª ordem instável (carga acima da crítica)" : "deslocabilidade grande (Δ2/Δ1 = " + br(r.estabilidadeGlobal.razao, 2) + ")" } : null;
         }
         if (sobe !== falha) return null;
         if (!sobe && Math.max(q.e, q.s) > 0.85) return null;   /* sem folga para estimar a descida: fica para a descida conferida */
         var wReq = q.e > 1 ? i0.Wx * q.e / 0.95 : i0.Wx * q.e / 0.85, iReq = q.s > 1 ? i0.Ix * q.s / 0.95 : i0.Ix * q.s / 0.9;
-        var fam = familia(atual).map(info).filter(function (x) { return x && !(proib[gk] && proib[gk][x.nome]); });
+        var fam = famDe(gk, atual).map(info).filter(function (x) { return x && !(proib[gk] && proib[gk][x.nome]) && (x.nome === atual || !ps[0].calc || !ps[0].calc.tuboSoldado || tuboNoOk(x.nome)); });
         var esc = fam.filter(function (x) { return x.Wx >= wReq && x.Ix >= iReq && (sobe ? x.massa >= i0.massa : x.massa < i0.massa); }).sort(function (a, b) { return a.massa - b.massa; })[0] || null;
         if (sobe && (!esc || esc.nome === atual)) esc = fam.filter(function (x) { return x.Wx > i0.Wx * 1.02 && x.Ix >= i0.Ix; }).sort(function (a, b) { return a.massa - b.massa; })[0] || null;
         if (!esc || esc.nome === atual) return null;
@@ -725,7 +747,7 @@
       while (r.ok && r.aprovado && tent < maxDesc && Date.now() - t0 < tMax) {
         var aceitou = false;
         Object.keys(conj).forEach(function (gk) {
-          var ps = conj[gk], atual = ps[0].cat, fam = familia(atual), j = fam.indexOf(atual) - 1, i0 = info(atual);
+          var ps = conj[gk], atual = ps[0].cat, fam = famDe(gk, atual).filter(function (n) { return n === atual || !ps[0].calc || !ps[0].calc.tuboSoldado || tuboNoOk(n); }), j = fam.indexOf(atual) - 1, i0 = info(atual);
           if (j < 0 || !i0) return;
           /* candidatos: o SALTO (o mais leve que a razão atual deixa — Wx e Ix na proporção exata; uma vez a cada
              mudança do grupo) e o VIZINHO */
@@ -806,6 +828,33 @@
         r.decisoes.push({ tema: "Apoios declarados", decisao: kx.length + " apoio(s) " + ex[kx[0]] + " declarado(s) pelo engenheiro: " + ptos.join("; "), motivo: "a estrutura se apoia numa parede/estrutura existente nesses pontos — confirmar na obra que ela recebe as reações do quadro de cargas" });
       }
     }
+    /* AUDITORIA A3 (20/11/2026): os nós SOLDADOS tubo-tubo verificados com os esforços deste cálculo (js/metalnostubo.js) — aqui, no fim do cálculo, para valer na tela (worker), no comparativo e nos testes */
+    var NT = dep("MetalNosTubo", "./metalnostubo.js");
+    if (r && r.ok && r.modelo && NT && arr(r.modelo.membros).some(function (m) { return m.calc && m.calc.tuboSoldado; })) {
+      var vn = NT.verificar(r); r.nosTubo = vn;
+      var nvs = arr(r.naoVerificados).map(function (x) {
+        if (x.tema !== "Ligações da tipologia" || !vn.n) return x;
+        return { tema: x.tema, motivo: x.motivo.replace(/nós SOLDADOS de tubo das treliças\/travejamento \(NBR 16239 — não está no motor\); ?/, "") };
+      });
+      if (vn.naoVerificados) nvs.push({ tema: "Nós soldados de tubo fora da validade (NBR 16239)", motivo: vn.naoVerificados + " nó(s) sem fórmula (parede < 2,5 mm, b/t > 35, β fora da faixa ou diagonais sobrepostas): " + vn.nos.filter(function (o) { return o.bloqueante.length; }).slice(0, 4).map(function (o) { return o.no + " (" + o.banzoPerfil + "): " + o.bloqueante[0]; }).join("; ") + " — troque a barra ou o banzo por parede maior" });
+      if (vn.foraDoEscopo) nvs.push({ tema: "Nós de tubo em perfil U (chapa de nó)", motivo: vn.foraDoEscopo + " ponta(s) de tubo soldadas no U da coluna: a chapa de nó/solda não é verificada pelo motor — dimensionar à parte" });
+      r.naoVerificados = nvs;
+      r.decisoes = arr(r.decisoes).concat([{ tema: "Nós soldados tubo-tubo (NBR 16239 / EN 1993-1-8 cap. 7)", decisao: vn.resumo, motivo: "esforço de cada barra = o maior |N| das combinações (envoltória); face do banzo: o pior dos dois lados; g com excentricidade zero; γa1 = 1,10 no lugar do γM5" }]);
+      if (vn.reprovados) { r.aprovado = false; r.falhas = num(r.falhas, 0) + vn.reprovados; }
+      r.situacao = Env() ? Env().situacao({ ok: true, aprovado: r.barrasAprovadas !== false && !vn.reprovados }, r.naoVerificados) : r.situacao;
+      if (r.situacao && r.situacao.id !== "aprovado") r.aprovado = false;
+    }
+    /* AUDITORIA A3 (20/11/2026): verificação obrigatória não feita (situação "incompleto") ⇒ NUNCA aprovado. Antes as barras
+       passavam, a situação era "incompleto" e mesmo assim r.aprovado = true (o preset dizia que os perfis "passaram").
+       r.barrasAprovadas guarda o resultado só das barras (é o que o otimizador olha). */
+    /* AUDITORIA A9: deslocamento > L/50 numa combinação (acoanalise saida.sanidade) — nunca aprovado */
+    var sanA = r.analise && r.analise.sanidade;
+    if (r.ok && sanA && !sanA.grave) {
+      r.naoVerificados = arr(r.naoVerificados).concat([{ tema: "Sanidade do deslocamento (L/50)", motivo: "deslocamento de " + br(sanA.dmax, 3) + " m no nó " + sanA.no + " > L/50 = " + br(sanA.limite, 3) + " m: estrutura muito flexível ou mal apoiada — resultado não aprovável" }]);
+      r.aprovado = false; r.situacao = Env() ? Env().situacao({ ok: true, aprovado: false }, r.naoVerificados) : { id: "reprovado", texto: "Reprovado" };
+    }
+    if (r.ok && r.situacao && r.situacao.id !== "aprovado") { r.barrasAprovadas = !!r.aprovado; r.aprovado = false; }
+    else if (r.ok) r.barrasAprovadas = !!r.aprovado;
     r.tempoMs = Date.now() - t0;
     return r;
   }

@@ -44,7 +44,7 @@
     var Dm = D(), geo = ventoGeo(q, G), ent = ext({}, q.vento, { geometria: geo }), key = JSON.stringify(ent);
     var emCache = !!(q._vento && q._ventoKey === key), r;
     if (!ent.faces) { ent.faces = {}; ["frente", "fundo", "esquerda", "direita"].forEach(function (k) { ent.faces[k] = { fechada: false }; }); }
-    if (emCache) r = q._vento; else { r = Dm.VE.calcular(ent, { todasDirecoes: true }); if (!r.ok) throw new Error("vento: " + JSON.stringify(r.erros)); }
+    if (emCache) r = q._vento; else { r = Dm.VE.calcular(ent, { todasDirecoes: true, aberturaDominantePropria: true /* AUDITORIA A1: madeira trata a abertura dominante à parte (pendência) */ }); if (!r.ok) throw new Error("vento: " + JSON.stringify(r.erros)); }
     if (G.p.comCob) {
       avisos.push("T5: vento (norma) — cobertura ISOLADA, NBR 6123:2023, 7.2.1 (Tabela 24, uma água plana; 0 ≤ tg θ ≤ 0,7 e h ≥ 0,5·ℓ2; na edição de 1988 é 8.2/Tabela 17, que o motor transcreve) " + (G.info.obstrucao ? "+ 7.2.1, último parágrafo (obstrução sob/junto à cobertura: edificação fechada de mesma cobertura com cpi = +0,8 e −0,3) " : "") + "+ 7.2.2 (atrito no vento paralelo à geratriz: o texto impresso da 2023 traz «Ft = 0,5 q a b», ERRO TIPOGRÁFICO; adotado Ft = 0,05·q·a·b, da edição de 1988, 8.2.5, coerente com o 6.1.5 da 2023 (Ct de 0,01 a 0,04 por face) — PENDÊNCIA: conferir errata da ABNT). " + r.casos.length + " casos; vento oblíquo não montado.");
       if (!G.info.encostado && !G.p.obstrucao) avisos.push("T5: PENDÊNCIA — obstrução lateral sob/junto à cobertura NÃO informada (NBR 6123:2023, 7.2.1): informe se há fechamento/obstrução (vidro, parede, cortina); sem a informação o vento da cobertura isolada vale só para pergolado totalmente aberto.");
