@@ -76523,7 +76523,7 @@ if (global.TesteModulo && global.TesteModulo.marcarArquivo) { var w = global.Tes
 var d = global.document; if (!d) return false;
 try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
 },
-pranchas: function (calc) {
+pranchas: function (calc, saida) {
 var WP = global.WoodFramePranchas, PDF = global.SvgPdf;
 if (!WP || !PDF) { status("O gerador de pranchas do Wood Frame não carregou."); return false; }
 var est = this._estado();
@@ -76532,8 +76532,18 @@ var opc = this._opcoes(); if (calc && calc.ok) opc.calculo = calc;
 var x = WP.gerar(est, opc);
 try { global.localStorage.setItem(opc._chave || "ra:wf:painel:geral", JSON.stringify(opc.numeracao || {})); } catch (eL) { }
 if (!x.ok) { status("Pranchas Wood Frame: " + (x.avisos[x.avisos.length - 1] || "não há parede de Wood Frame no modelo.")); return false; }
+if (saida === "dxf") return this._dxf(x);
 var ok = this._baixar("pranchas-wood-frame.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: "Pranchas Wood Frame" }), "application/pdf");
 status(ok ? (x.folhas.length + " pranchas Wood Frame em PDF (A1): " + x.paineis.length + " painéis" + (x.avisos.length ? " · " + x.avisos.length + " aviso(s): " + x.avisos[0] : "") + ".") : "Não foi possível baixar o PDF das pranchas.");
+return !!ok;
+},
+_dxf: function (x) {
+var PX = global.PranchasDxf, Z = global.BimBcf;
+if (!PX || !Z || !Z.zipEscrever) { status("O DXF das pranchas (ou o gerador de .zip) não carregou."); return false; }
+var r = null; try { r = PX.arquivos(x); } catch (e) { status("DXF das pranchas Wood Frame: " + (e && e.message ? e.message : String(e))); return false; }
+if (!r || !r.nomes.length) { status("DXF das pranchas Wood Frame: " + ((r && r.avisos[0]) || "nada gerado") + "."); return false; }
+var ok = this._baixar("pranchas-wood-frame-dxf.zip", Z.zipEscrever(r.arquivos), "application/zip");
+status(ok ? r.nomes.length + " DXF das pranchas Wood Frame (R2000, mm de papel 1:1, layers do Padrão RA)" + (r.avisos.length ? " · " + r.avisos.length + " aviso(s): " + r.avisos[0] : "") + ". O AutoCAD abre direto e salva em DWG." : "Não foi possível baixar o DXF das pranchas.");
 return !!ok;
 },
 _opcCalc: function (est) {
@@ -76577,15 +76587,15 @@ var WC = global.WoodFrameCalc;
 try { var r = WC && global.MadLigCalc && global.MadWoodFrame ? WC.calcular(entrada) : null; if (r) fim(r); else fim(null, "o Worker não abriu e os motores não estão na página"); } catch (e4) { fim(null, e4 && e4.message ? e4.message : String(e4)); }
 return true;
 },
-pranchasCalculadas: function () {
+pranchasCalculadas: function (saida) {
 var self = this, est = this._estado(), WQ = global.WoodFrameQuadro, resp = null, assinc = false;
 if (!est) { status("Abra o editor 3D para gerar as pranchas do Wood Frame."); return false; }
-if (!WQ || !(est.caixas || []).some(function (c) { return WQ.ehWf(c); })) return this.pranchas();
+if (!WQ || !(est.caixas || []).some(function (c) { return WQ.ehWf(c); })) return this.pranchas(null, saida);
 status("Wood Frame: calculando as paredes (NBR 7190-1:2022)…");
 this.calcular(est, function (calc, msg) {
 var r;
-if (!calc || !calc.ok) { status("Cálculo do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + " — pranchas sem o cálculo."); r = self.pranchas(); }
-else r = self.pranchas(calc);
+if (!calc || !calc.ok) { status("Cálculo do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + " — pranchas sem o cálculo."); r = self.pranchas(null, saida); }
+else r = self.pranchas(calc, saida);
 resp = r; if (assinc) return;
 });
 assinc = true;
@@ -76633,11 +76643,13 @@ R.acrescentar("vista", "Vista", "Exibir", [
 ]);
 R.acrescentar("vista", "Vista", "Composição da folha", [
 { id: "wf-pranchas", rotulo: "Pranchas\nWood Frame", icone: "prancha", grande: true, dica: "Gera o jogo de pranchas do Wood Frame num PDF A1 com o carimbo RA: planta de painéis (P01, P02… e o sentido de montagem), a elevação de cada painel (montantes com eixo e cotas acumuladas, guias, vãos com verga, ombreiras e cripples, bloqueadores, OSB com as juntas, chumbadores e hold-downs) com a lista de corte, a lista consolidada da obra (m³ e peças por seção) e os detalhes típicos desenhados do tipo de parede (canto, encontro, junta de OSB, esquadria, base, topo e verga)." },
+{ id: "wf-pranchas-dxf", rotulo: "Baixar DXF\nWood Frame", icone: "prancha", dica: "Baixa as mesmas pranchas do Wood Frame em DXF (R2000, mm de papel 1:1, layers e penas do Padrão RA, textos e cotas como entidades, carimbo RA), um arquivo por folha dentro de um .zip. O AutoCAD abre direto e salva em DWG. Roda o cálculo antes, como as pranchas em PDF." },
 { id: "wf-memorial", rotulo: "Memorial\nWood Frame", icone: "prancha", dica: "Calcula as paredes de Wood Frame pela NBR 7190-1:2022 (montante, verga, contraventamento por OSB, hold-down, ligações) e baixa o MEMORIAL DE CÁLCULO em HTML. Sai PRELIMINAR enquanto o vento não estiver calculado (informe a localização da obra no módulo Madeira) ou houver premissa sem confirmação do RT." },
 { id: "wf-aplicar", rotulo: "Aplicar seção\ncalculada", icone: "camadas", dica: "Aplica o resultado do último cálculo do Wood Frame: troca o tipo das paredes que reprovam (38×89 → 38×140 …), o espaçamento dos montantes e o prego de borda do OSB, e recalcula. É uma ação sua; um Ctrl+Z desfaz tudo de uma vez. Precisa de um cálculo vigente (rode o Memorial ou as Pranchas antes)." }
 ]);
 reg["wf-quadro"] = function (e) { return self.alternar(e && e.ligado !== undefined ? !!e.ligado : undefined); };
 reg["wf-pranchas"] = function () { return self.pranchasCalculadas(); };
+reg["wf-pranchas-dxf"] = function () { return self.pranchasCalculadas("dxf"); };
 reg["wf-memorial"] = function () { return self.memorial(); };
 reg["wf-aplicar"] = function () { return self.aplicarSecaoCalculada(); };
 return true;
@@ -174027,7 +174039,7 @@ var notas = [
 { t: "Elevação vista pelo lado interno (quadro à vista, OSB atrás). Ponta A = início da parede no modelo; B = fim. Cotas acumuladas a partir da ponta de origem do alinhamento." },
 { t: "Marca da peça: <painel>-<tipo><n>. Peças de mesma marca são iguais (seção e corte). Bruta = seção de compra do catálogo; final = beneficiada, premissa a confirmar com o fornecedor." },
 { t: calc ? "Montantes, vergas, prego de borda do OSB, hold-down (força Td) e chumbador CALCULADOS pela NBR 7190-1:2022 (memorial de cálculo). Seção calculada vale sobre a do modelo; modelo comercial do hold-down pelo fabricante." : "Vergas pré-dimensionadas por tabela RA (a confirmar no cálculo: NBR 7190-1:2022 e Diretriz SINAT nº 005). Chumbador e hold-down: esquema; diâmetro, modelo e capacidade pelo cálculo." },
-{ t: "Sem código SINAPI: nenhum item de Wood Frame tem composição neste sistema (orçar à parte)." },
+{ t: "Orçamento: os itens com código SINAPI vão ao orçamento (madeira, pregos, gesso, cimentícia, lã, selante e espuma); OSB, membrana, hold-down e fita de vedação entram como COTAÇÃO (sem código, só a quantidade). Nenhum código é inventado." },
 { t: "VERMELHO = o que impede emitir: junta de OSB fora do montante, vão fora da tabela" + (calc ? ", verificação do modelo que reprova e premissa a confirmar (situação do cálculo)." : ".") }];
 var blocos = [{ titulo: "NOTAS GERAIS", itens: notas }];
 var camadas = {}; Object.keys(Q.MP.PADRAO_MAD.camadas).forEach(function (k) { camadas[k] = Q.MP.PADRAO_MAD.camadas[k]; }); Object.keys(Q.PADRAO_ENG.layers).forEach(function (k) { camadas[k] = Q.PADRAO_ENG.layers[k]; });
@@ -174897,7 +174909,7 @@ function coberturaDeEntrada(opc) {
 var c = opc.cobertura; if (!ehObj(c)) return null;
 var g = num(c.g, null); if (g == null) return null;
 var incl = num(c.inclPct, 0), cosT = incl > 0 ? Math.cos(Math.atan(incl / 100)) : 1;
-return { tipo: c.tipo || "T2", g: g, gPlano: g / cosT, forro: num(c.forro, 0), estrutura: num(c.estrutura, 0), sc: c.sc != null ? num(c.sc, 0.5) : null, scForro: num(c.scForro, 0), inclPct: incl, beiral: num(c.beiral, 0), hBeiral: num(c.hBeiral, 0) > 0 ? num(c.hBeiral, 0) : null, ladoAlto: c.ladoAlto === "direita" ? "direita" : (c.ladoAlto === "esquerda" ? "esquerda" : null), beiralOitao: c.beiralOitao != null ? num(c.beiralOitao, 0) : null, oitao: ehObj(c.oitao) ? c.oitao : null, eixoCumeeira: c.eixoCumeeira || null, fonte: c.fonte || "informada" };
+return { tipo: c.tipo || "T2", g: g, gPlano: g / cosT, forro: num(c.forro, 0), estrutura: num(c.estrutura, 0), sc: c.sc != null ? num(c.sc, 0.5) : null, scForro: num(c.scForro, 0), inclPct: incl, beiral: num(c.beiral, 0), hBeiral: num(c.hBeiral, 0) > 0 ? num(c.hBeiral, 0) : null, ladoAlto: c.ladoAlto === "direita" ? "direita" : (c.ladoAlto === "esquerda" ? "esquerda" : null), ladoAltoFonte: c.ladoAlto === "direita" || c.ladoAlto === "esquerda" ? (c.ladoAltoFonte || "manual") : "padrão", beiralOitao: c.beiralOitao != null ? num(c.beiralOitao, 0) : null, oitao: ehObj(c.oitao) ? c.oitao : null, eixoCumeeira: c.eixoCumeeira || null, fonte: c.fonte || "informada" };
 }
 function coberturaDoEstado(estado, extra) {
 var MC = dep("MadCobertura", "./madcobertura.js"), tl = arr(estado && estado.telhados);
@@ -174908,7 +174920,13 @@ var modelo = MC.modeloMadeira("tesoura", lido), tr = MC.trama(lido, modelo), pe 
 var be = typeof lido.beiral === "number" ? lido.beiral : (lido.beiral && lido.beiral.eave && lido.beiral.eave.length ? lido.beiral.eave[0] : 0);
 var bo = lido.beiral && lido.beiral.gable && lido.beiral.gable.length ? lido.beiral.gable[0] : null;
 var o = { tipo: lido.tipo, g: pe.total, inclPct: lido.incl, beiral: be, beiralOitao: bo, hBeiral: lido.peDireito > 0 ? lido.peDireito : null, eixoCumeeira: lido.eixoA === "x" || lido.eixoA === "z" ? lido.eixoA : null, fonte: "telhado " + t.id + " do modelo (MadCobertura.pesos: " + arr(pe.fontes).join("; ") + ")" };
-if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k) && extra[k] != null) o[k] = extra[k];
+if (lido.tipo === "T1" && arr(lido.eave).length && arr(lido.contorno).length === 4 && (lido.eixoA === "x" || lido.eixoA === "z")) {
+var kE = lido.eave[0], pA = lido.contorno[kE], pB = lido.contorno[(kE + 1) % 4], ic = lido.eixoA === "x" ? 1 : 0, cc = 0;
+lido.contorno.forEach(function (q) { cc += q[ic] / 4; });
+var sE = (pA[ic] + pB[ic]) / 2;
+if (Math.abs(sE - cc) > 0.05) { o.ladoAlto = sE < cc ? "direita" : "esquerda"; o.ladoAltoFonte = "modelo"; }
+}
+if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k) && extra[k] != null) { o[k] = extra[k]; if (k === "ladoAlto") o.ladoAltoFonte = "manual"; }
 return o;
 }
 function calcular(entrada) {
@@ -174952,7 +174970,7 @@ var hMaxP = geo.hBeiral, hCob = cob && cob.hBeiral > 0 ? cob.hBeiral : null, uma
 if (uma) {
 var lat = paredes.filter(function (p) { return p.ext && paraleloA(p, geo.R); }), hMinL = lat.length ? Math.min.apply(null, lat.map(function (p) { return p.H; })) : hMaxP;
 geo.hBeiral = hCob || hMinL;
-ctx.pendencia("vento de telhado de 1 água: confirmar RT (Tab. 6 da NBR 6123 sem vento oblíquo; lado alto '" + (cob.ladoAlto || "esquerda") + "' adotado; parede alta = beiral baixo + b·tg θ)");
+ctx.pendencia("vento de telhado de 1 água: confirmar RT (Tab. 6 da NBR 6123 sem vento oblíquo; lado alto '" + (cob.ladoAlto || "esquerda") + "' adotado (fonte: " + (cob.ladoAltoFonte || "padrão") + (cob.ladoAltoFonte === "modelo" ? " — oposto à parede onde a água cai" : "") + "); parede alta = beiral baixo + b·tg θ)");
 } else if (hCob) {
 if (Math.abs(hCob - hMaxP) / Math.max(hCob, hMaxP) > 0.10) ctx.pendencia("altura do beiral do telhado (" + br(hCob, 2) + " m) difere em mais de 10 % da maior parede (" + br(hMaxP, 2) + " m): conferir o pé-direito");
 geo.hBeiral = Math.max(hCob, hMaxP);
@@ -175105,7 +175123,7 @@ var wfNovo = { espac: mc.espac, osbE: wf.osbE, canto: wf.canto };
 if (sNovo != null) wfNovo.espOsbBorda = sNovo; else if (wf.espOsbBorda != null) wfNovo.espOsbBorda = wf.espOsbBorda;
 var campos = null, desc = [];
 if (mudaSec) {
-var base = String(tp.id).replace(/-\d+$/, ""), novoId = mc.secao[1] === 89 ? base : base + "-" + mc.secao[1], t = AT.TIPOS && AT.TIPOS[novoId] ? AT.tipo(novoId, { wf: wfNovo }) : null;
+var base = String(tp.id).replace(/-\d+$/, ""), hNovo = mc.secao[1], cand = [base + "-" + hNovo].concat(hNovo === 89 ? [base] : []), novoId = cand.filter(function (k) { return AT.TIPOS && AT.TIPOS[k]; })[0] || cand[0], t = AT.TIPOS && AT.TIPOS[novoId] ? AT.tipo(novoId, { wf: wfNovo }) : null;
 if (!t || !t.ok) { pend.push(c.id + ": não existe o tipo '" + novoId + "' (núcleo 38×" + mc.secao[1] + ") — criar o núcleo antes de aplicar"); return; }
 campos = { tipoParede: BA.tipoParede(t) }; desc.push("tipo " + tp.id + " → " + novoId);
 } else campos = { wf: wfNovo };

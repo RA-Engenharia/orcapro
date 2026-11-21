@@ -21,7 +21,7 @@
  *     Ponta A = início da parede no modelador, ponta B = fim. As cotas acumuladas partem da ponta de ORIGEM do alinhamento dos montantes e do OSB (parâmetro `origem` do tipo).
  *   · Marca da peça = <painel>-<tipo><n> (P01-M3): peças iguais (tipo, seção e comprimento) no painel têm a mesma marca.
  *   · Hold-down e chumbador são ESQUEMA: modelo, diâmetro e capacidade ficam para o cálculo (nada inventado — mesma regra do quantitativo da fase 1).
- *   · Nenhum código SINAPI aqui.
+ *   · Nenhum código SINAPI aqui (o orçamento do quadro, js/woodframequadro.js, é quem traz os códigos que EXISTEM na base; OSB, membrana, hold-down e fita vão como cotação, sem código).
  * Teste: node tools/test-woodframe-pranchas.js
  * ===================================================================== */
 (function (global) {
@@ -660,7 +660,7 @@
       { t: "Elevação vista pelo lado interno (quadro à vista, OSB atrás). Ponta A = início da parede no modelo; B = fim. Cotas acumuladas a partir da ponta de origem do alinhamento." },
       { t: "Marca da peça: <painel>-<tipo><n>. Peças de mesma marca são iguais (seção e corte). Bruta = seção de compra do catálogo; final = beneficiada, premissa a confirmar com o fornecedor." },
       { t: calc ? "Montantes, vergas, prego de borda do OSB, hold-down (força Td) e chumbador CALCULADOS pela NBR 7190-1:2022 (memorial de cálculo). Seção calculada vale sobre a do modelo; modelo comercial do hold-down pelo fabricante." : "Vergas pré-dimensionadas por tabela RA (a confirmar no cálculo: NBR 7190-1:2022 e Diretriz SINAT nº 005). Chumbador e hold-down: esquema; diâmetro, modelo e capacidade pelo cálculo." },
-      { t: "Sem código SINAPI: nenhum item de Wood Frame tem composição neste sistema (orçar à parte)." },
+      { t: "Orçamento: os itens com código SINAPI vão ao orçamento (madeira, pregos, gesso, cimentícia, lã, selante e espuma); OSB, membrana, hold-down e fita de vedação entram como COTAÇÃO (sem código, só a quantidade). Nenhum código é inventado." },
       { t: "VERMELHO = o que impede emitir: junta de OSB fora do montante, vão fora da tabela" + (calc ? ", verificação do modelo que reprova e premissa a confirmar (situação do cálculo)." : ".") }];
     var blocos = [{ titulo: "NOTAS GERAIS", itens: notas }];
     var camadas = {}; Object.keys(Q.MP.PADRAO_MAD.camadas).forEach(function (k) { camadas[k] = Q.MP.PADRAO_MAD.camadas[k]; }); Object.keys(Q.PADRAO_ENG.layers).forEach(function (k) { camadas[k] = Q.PADRAO_ENG.layers[k]; });

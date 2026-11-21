@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.424",
+versao: "1.2.425",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -90562,6 +90562,12 @@ rotulo: "Wood Frame · interna 38×64 (gesso + lã + gesso)",
 funcao: "vedacao", nucleo: "wf_64", wf: { espac: 400, montante: [38, 64], osbE: 11.1, canto: "3montantes" },
 dentro: ["gesso_acart"], fora: ["gesso_acart"],
 nota: "Divisória interna leve em quadro 38×64: verga simples (parede não portante)."
+},
+"wf-int-140": {
+rotulo: "Wood Frame · interna 38×140 (gesso + lã + gesso)",
+funcao: "vedacao", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
+dentro: ["gesso_acart"], fora: ["gesso_acart"],
+nota: "Divisória interna em quadro 38×140 com lã de 140 mm e gesso 12,5 mm nas duas faces (shaft, parede de instalações ou vão que o 38×89 não vence). É o destino do 'Aplicar seção calculada' para a interna 38×89."
 },
 "wf-molhada": {
 rotulo: "Wood Frame · área molhada (cimentícia + impermeabilização)",

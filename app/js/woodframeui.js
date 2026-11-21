@@ -104,7 +104,7 @@
       try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
     },
     /* PRANCHAS WOOD FRAME: planta de painéis, uma elevação por painel (com a lista de corte), lista consolidada e detalhes típicos → PDF vetorial A1 */
-    pranchas: function (calc) {
+    pranchas: function (calc, saida) {
       var WP = global.WoodFramePranchas, PDF = global.SvgPdf;
       if (!WP || !PDF) { status("O gerador de pranchas do Wood Frame não carregou."); return false; }
       var est = this._estado();
@@ -113,8 +113,19 @@
       var x = WP.gerar(est, opc);
       try { global.localStorage.setItem(opc._chave || "ra:wf:painel:geral", JSON.stringify(opc.numeracao || {})); } catch (eL) { /* sem armazenamento: a numeração vale só desta geração */ }
       if (!x.ok) { status("Pranchas Wood Frame: " + (x.avisos[x.avisos.length - 1] || "não há parede de Wood Frame no modelo.")); return false; }
+      if (saida === "dxf") return this._dxf(x);
       var ok = this._baixar("pranchas-wood-frame.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: "Pranchas Wood Frame" }), "application/pdf");
       status(ok ? (x.folhas.length + " pranchas Wood Frame em PDF (A1): " + x.paineis.length + " painéis" + (x.avisos.length ? " · " + x.avisos.length + " aviso(s): " + x.avisos[0] : "") + ".") : "Não foi possível baixar o PDF das pranchas.");
+      return !!ok;
+    },
+    /* DXF das pranchas: o MESMO exportador das pranchas de madeira/galpão (js/pranchasdxf.js, a partir do SVG de cada folha) → .zip com um DXF R2000 por folha */
+    _dxf: function (x) {
+      var PX = global.PranchasDxf, Z = global.BimBcf;
+      if (!PX || !Z || !Z.zipEscrever) { status("O DXF das pranchas (ou o gerador de .zip) não carregou."); return false; }
+      var r = null; try { r = PX.arquivos(x); } catch (e) { status("DXF das pranchas Wood Frame: " + (e && e.message ? e.message : String(e))); return false; }
+      if (!r || !r.nomes.length) { status("DXF das pranchas Wood Frame: " + ((r && r.avisos[0]) || "nada gerado") + "."); return false; }
+      var ok = this._baixar("pranchas-wood-frame-dxf.zip", Z.zipEscrever(r.arquivos), "application/zip");
+      status(ok ? r.nomes.length + " DXF das pranchas Wood Frame (R2000, mm de papel 1:1, layers do Padrão RA)" + (r.avisos.length ? " · " + r.avisos.length + " aviso(s): " + r.avisos[0] : "") + ". O AutoCAD abre direto e salva em DWG." : "Não foi possível baixar o DXF das pranchas.");
       return !!ok;
     },
     /* dados da obra para o vento e a umidade: o mesmo cadastro que a cobertura calculada usa (módulo Madeira) */
@@ -162,15 +173,15 @@
       return true;
     },
     /* PRANCHAS: calcula, depois gera (a folha de resumo e a seção calculada entram sozinhas) */
-    pranchasCalculadas: function () {
+    pranchasCalculadas: function (saida) {
       var self = this, est = this._estado(), WQ = global.WoodFrameQuadro, resp = null, assinc = false;
       if (!est) { status("Abra o editor 3D para gerar as pranchas do Wood Frame."); return false; }
-      if (!WQ || !(est.caixas || []).some(function (c) { return WQ.ehWf(c); })) return this.pranchas();      /* sem parede de quadro: o aviso de sempre, sem cálculo */
+      if (!WQ || !(est.caixas || []).some(function (c) { return WQ.ehWf(c); })) return this.pranchas(null, saida);      /* sem parede de quadro: o aviso de sempre, sem cálculo */
       status("Wood Frame: calculando as paredes (NBR 7190-1:2022)…");
       this.calcular(est, function (calc, msg) {
         var r;
-        if (!calc || !calc.ok) { status("Cálculo do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + " — pranchas sem o cálculo."); r = self.pranchas(); }
-        else r = self.pranchas(calc);
+        if (!calc || !calc.ok) { status("Cálculo do Wood Frame: " + (msg || (calc && calc.motivo) || "sem resultado") + " — pranchas sem o cálculo."); r = self.pranchas(null, saida); }
+        else r = self.pranchas(calc, saida);
         resp = r; if (assinc) return;
       });
       assinc = true;
@@ -222,11 +233,13 @@
       /* junto das pranchas da folha: o mesmo painel "Composição da folha" (a fita junta pelo nome do painel) */
       R.acrescentar("vista", "Vista", "Composição da folha", [
         { id: "wf-pranchas", rotulo: "Pranchas\nWood Frame", icone: "prancha", grande: true, dica: "Gera o jogo de pranchas do Wood Frame num PDF A1 com o carimbo RA: planta de painéis (P01, P02… e o sentido de montagem), a elevação de cada painel (montantes com eixo e cotas acumuladas, guias, vãos com verga, ombreiras e cripples, bloqueadores, OSB com as juntas, chumbadores e hold-downs) com a lista de corte, a lista consolidada da obra (m³ e peças por seção) e os detalhes típicos desenhados do tipo de parede (canto, encontro, junta de OSB, esquadria, base, topo e verga)." },
+        { id: "wf-pranchas-dxf", rotulo: "Baixar DXF\nWood Frame", icone: "prancha", dica: "Baixa as mesmas pranchas do Wood Frame em DXF (R2000, mm de papel 1:1, layers e penas do Padrão RA, textos e cotas como entidades, carimbo RA), um arquivo por folha dentro de um .zip. O AutoCAD abre direto e salva em DWG. Roda o cálculo antes, como as pranchas em PDF." },
         { id: "wf-memorial", rotulo: "Memorial\nWood Frame", icone: "prancha", dica: "Calcula as paredes de Wood Frame pela NBR 7190-1:2022 (montante, verga, contraventamento por OSB, hold-down, ligações) e baixa o MEMORIAL DE CÁLCULO em HTML. Sai PRELIMINAR enquanto o vento não estiver calculado (informe a localização da obra no módulo Madeira) ou houver premissa sem confirmação do RT." },
         { id: "wf-aplicar", rotulo: "Aplicar seção\ncalculada", icone: "camadas", dica: "Aplica o resultado do último cálculo do Wood Frame: troca o tipo das paredes que reprovam (38×89 → 38×140 …), o espaçamento dos montantes e o prego de borda do OSB, e recalcula. É uma ação sua; um Ctrl+Z desfaz tudo de uma vez. Precisa de um cálculo vigente (rode o Memorial ou as Pranchas antes)." }
       ]);
       reg["wf-quadro"] = function (e) { return self.alternar(e && e.ligado !== undefined ? !!e.ligado : undefined); };
       reg["wf-pranchas"] = function () { return self.pranchasCalculadas(); };
+      reg["wf-pranchas-dxf"] = function () { return self.pranchasCalculadas("dxf"); };
       reg["wf-memorial"] = function () { return self.memorial(); };
       reg["wf-aplicar"] = function () { return self.aplicarSecaoCalculada(); };
       return true;

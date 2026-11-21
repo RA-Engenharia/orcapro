@@ -529,7 +529,7 @@
     var c = opc.cobertura; if (!ehObj(c)) return null;
     var g = num(c.g, null); if (g == null) return null;
     var incl = num(c.inclPct, 0), cosT = incl > 0 ? Math.cos(Math.atan(incl / 100)) : 1;
-    return { tipo: c.tipo || "T2", g: g, gPlano: g / cosT, forro: num(c.forro, 0), estrutura: num(c.estrutura, 0), sc: c.sc != null ? num(c.sc, 0.5) : null, scForro: num(c.scForro, 0), inclPct: incl, beiral: num(c.beiral, 0), hBeiral: num(c.hBeiral, 0) > 0 ? num(c.hBeiral, 0) : null, ladoAlto: c.ladoAlto === "direita" ? "direita" : (c.ladoAlto === "esquerda" ? "esquerda" : null), beiralOitao: c.beiralOitao != null ? num(c.beiralOitao, 0) : null, oitao: ehObj(c.oitao) ? c.oitao : null, eixoCumeeira: c.eixoCumeeira || null, fonte: c.fonte || "informada" };
+    return { tipo: c.tipo || "T2", g: g, gPlano: g / cosT, forro: num(c.forro, 0), estrutura: num(c.estrutura, 0), sc: c.sc != null ? num(c.sc, 0.5) : null, scForro: num(c.scForro, 0), inclPct: incl, beiral: num(c.beiral, 0), hBeiral: num(c.hBeiral, 0) > 0 ? num(c.hBeiral, 0) : null, ladoAlto: c.ladoAlto === "direita" ? "direita" : (c.ladoAlto === "esquerda" ? "esquerda" : null), ladoAltoFonte: c.ladoAlto === "direita" || c.ladoAlto === "esquerda" ? (c.ladoAltoFonte || "manual") : "padrão", beiralOitao: c.beiralOitao != null ? num(c.beiralOitao, 0) : null, oitao: ehObj(c.oitao) ? c.oitao : null, eixoCumeeira: c.eixoCumeeira || null, fonte: c.fonte || "informada" };
   }
 
   /* A COBERTURA DESENHADA NO BIM → cargas: o telhado do modelo lido pelo MadCobertura (telha do catálogo + ripas/caibros = peso por m² de água, inclinação,
@@ -543,7 +543,15 @@
     var be = typeof lido.beiral === "number" ? lido.beiral : (lido.beiral && lido.beiral.eave && lido.beiral.eave.length ? lido.beiral.eave[0] : 0);
     var bo = lido.beiral && lido.beiral.gable && lido.beiral.gable.length ? lido.beiral.gable[0] : null;
     var o = { tipo: lido.tipo, g: pe.total, inclPct: lido.incl, beiral: be, beiralOitao: bo, hBeiral: lido.peDireito > 0 ? lido.peDireito : null, eixoCumeeira: lido.eixoA === "x" || lido.eixoA === "z" ? lido.eixoA : null, fonte: "telhado " + t.id + " do modelo (MadCobertura.pesos: " + arr(pe.fontes).join("; ") + ")" };
-    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k) && extra[k] != null) o[k] = extra[k];
+    /* 1 ÁGUA: a aresta que DEFINE a inclinação (lido.eave[0]) é o beiral BAIXO, onde a água cai; o lado alto é o OPOSTO. "esquerda" = lado de MENOR coordenada no eixo
+       através da cumeeira (o mesmo eixo S do vento: z se a cumeeira corre em x, x se corre em z); "direita" = o de maior. Sem contorno legível: fica sem ladoAlto (o padrão "esquerda" e a pendência valem). */
+    if (lido.tipo === "T1" && arr(lido.eave).length && arr(lido.contorno).length === 4 && (lido.eixoA === "x" || lido.eixoA === "z")) {
+      var kE = lido.eave[0], pA = lido.contorno[kE], pB = lido.contorno[(kE + 1) % 4], ic = lido.eixoA === "x" ? 1 : 0, cc = 0;
+      lido.contorno.forEach(function (q) { cc += q[ic] / 4; });
+      var sE = (pA[ic] + pB[ic]) / 2;
+      if (Math.abs(sE - cc) > 0.05) { o.ladoAlto = sE < cc ? "direita" : "esquerda"; o.ladoAltoFonte = "modelo"; }
+    }
+    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k) && extra[k] != null) { o[k] = extra[k]; if (k === "ladoAlto") o.ladoAltoFonte = "manual"; }
     return o;
   }
 
@@ -591,7 +599,7 @@
     if (uma) {
       var lat = paredes.filter(function (p) { return p.ext && paraleloA(p, geo.R); }), hMinL = lat.length ? Math.min.apply(null, lat.map(function (p) { return p.H; })) : hMaxP;
       geo.hBeiral = hCob || hMinL;
-      ctx.pendencia("vento de telhado de 1 água: confirmar RT (Tab. 6 da NBR 6123 sem vento oblíquo; lado alto '" + (cob.ladoAlto || "esquerda") + "' adotado; parede alta = beiral baixo + b·tg θ)");
+      ctx.pendencia("vento de telhado de 1 água: confirmar RT (Tab. 6 da NBR 6123 sem vento oblíquo; lado alto '" + (cob.ladoAlto || "esquerda") + "' adotado (fonte: " + (cob.ladoAltoFonte || "padrão") + (cob.ladoAltoFonte === "modelo" ? " — oposto à parede onde a água cai" : "") + "); parede alta = beiral baixo + b·tg θ)");
     } else if (hCob) {
       if (Math.abs(hCob - hMaxP) / Math.max(hCob, hMaxP) > 0.10) ctx.pendencia("altura do beiral do telhado (" + br(hCob, 2) + " m) difere em mais de 10 % da maior parede (" + br(hMaxP, 2) + " m): conferir o pé-direito");
       geo.hBeiral = Math.max(hCob, hMaxP);
@@ -758,7 +766,7 @@
       if (sNovo != null) wfNovo.espOsbBorda = sNovo; else if (wf.espOsbBorda != null) wfNovo.espOsbBorda = wf.espOsbBorda;
       var campos = null, desc = [];
       if (mudaSec) {
-        var base = String(tp.id).replace(/-\d+$/, ""), novoId = mc.secao[1] === 89 ? base : base + "-" + mc.secao[1], t = AT.TIPOS && AT.TIPOS[novoId] ? AT.tipo(novoId, { wf: wfNovo }) : null;
+        var base = String(tp.id).replace(/-\d+$/, ""), hNovo = mc.secao[1], cand = [base + "-" + hNovo].concat(hNovo === 89 ? [base] : []), novoId = cand.filter(function (k) { return AT.TIPOS && AT.TIPOS[k]; })[0] || cand[0], t = AT.TIPOS && AT.TIPOS[novoId] ? AT.tipo(novoId, { wf: wfNovo }) : null;
         if (!t || !t.ok) { pend.push(c.id + ": não existe o tipo '" + novoId + "' (núcleo 38×" + mc.secao[1] + ") — criar o núcleo antes de aplicar"); return; }
         campos = { tipoParede: BA.tipoParede(t) }; desc.push("tipo " + tp.id + " → " + novoId);
       } else campos = { wf: wfNovo };

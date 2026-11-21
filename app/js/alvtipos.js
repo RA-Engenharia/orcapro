@@ -354,6 +354,12 @@
         dentro: ["gesso_acart"], fora: ["gesso_acart"],
         nota: "Divisória interna leve em quadro 38×64: verga simples (parede não portante)."
       },
+      "wf-int-140": {
+        rotulo: "Wood Frame · interna 38×140 (gesso + lã + gesso)",
+        funcao: "vedacao", nucleo: "wf_140", wf: { espac: 400, montante: [38, 140], osbE: 11.1, canto: "3montantes" },
+        dentro: ["gesso_acart"], fora: ["gesso_acart"],
+        nota: "Divisória interna em quadro 38×140 com lã de 140 mm e gesso 12,5 mm nas duas faces (shaft, parede de instalações ou vão que o 38×89 não vence). É o destino do 'Aplicar seção calculada' para a interna 38×89."
+      },
       "wf-molhada": {
         rotulo: "Wood Frame · área molhada (cimentícia + impermeabilização)",
         funcao: "vedacao", nucleo: "wf_89", wf: { espac: 400, montante: [38, 89], osbE: 11.1, canto: "3montantes" },
