@@ -43113,7 +43113,7 @@ sistemaTrelica: "cantoneira", chapaNo: 8, fckFundacao: 25,
 banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",
 montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
 travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
-escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 80 x 80 x 4,5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",
+escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 130 x 130 x 5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",
 barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "L 63,5 x 4,76 (serie pol) ArcelorMittal", ligMaoFrancesa: "parafusada",
 vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },
 sistemas: {
@@ -137468,7 +137468,7 @@ return sInf != null ? sInf : p.L / 2;
 }
 var avisosPontual = [];
 var OPC_TRAV = { pendular: true };
-var OPC_COR = { correntes: true, sentido: true, alturaTelhado: true };
+var OPC_COR = { correntes: true, sentido: true, alturaTelhado: true, zonaParede: true };
 var OPC_EST = { semPar: true, fator: 100 };
 function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function montar(lido, op) {
@@ -138269,6 +138269,10 @@ if (face) {
 var sa = sFace(face) === 2 ? za : xa, sb = sFace(face) === 2 ? zb : xb, pw = null;
 arr((lc.paredes || {})[face]).forEach(function (f) { if (isFinite(f.p) && sob(sa, sb, f.s0, f.s1) && (!pw || f.p < pw.p)) pw = { zona: "faixa de borda da parede " + face, cpe: f.cpe, p: f.p }; });
 if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p, dir: dirParede(face) });
+else if (OPC_COR.zonaParede !== false) {
+var pzw = pZona(m, face);
+if (pzw < -1e-9) papeis.push({ tipo: "parede", face: face, zona: "parede " + face + " fora das faixas de borda, Ce da zona", cpe: null, p: pzw, dir: dirParede(face), soZona: true });
+}
 }
 if ((!face || noBeiral(m)) && !cobertoPorOutro(m) && (OPC_COR.alturaTelhado === false || naAlturaDoTelhado(m))) {
 var pr = null, xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
@@ -138280,7 +138284,7 @@ if (pr) papeis.push({ tipo: "cobertura", face: null, zona: pr.zona, cpe: pr.cpe,
 }
 if (!papeis.length) return;
 var wL = 0;
-papeis.forEach(function (q) { q.s = faixaInf(m, q.face); q.pZonaA = pZona(m, q.face); q.pUso = Math.min(q.p, q.pZonaA); q.governa = q.pUso < q.p - 1e-9 ? "zona (classe A)" : "cpe médio"; wL += Math.abs(q.pUso) * q.s; });
+papeis.forEach(function (q) { q.s = faixaInf(m, q.face); q.pZonaA = pZona(m, q.face); q.pUso = Math.min(q.p, q.pZonaA); q.governa = q.soZona || q.pUso < q.p - 1e-9 ? "zona (classe A)" : "cpe médio"; wL += Math.abs(q.pUso) * q.s; });
 var pior = papeis.slice().sort(function (a, b) { return a.p - b.p; })[0];
 var ipT = arr(G.pecas).map(function (pc) { return pc.id; }).indexOf(m.peca), nosM = arr(m.nos);
 var apo = nosM.filter(function (id, k) {
@@ -138507,10 +138511,11 @@ var t64 = tiposAtrito["6.4"], t825 = tiposAtrito["8.2.5"];
 decisoes.push({ tema: "Vento — atrito", decisao: nAtrito + " caso(s) de vento com a força de ATRITO" + (t64 ? " (NBR 6123, 6.4: Cf = " + br(t64.cf, 2) + " × q, só no trecho de " + br(t64.inicio, 1) + " a " + br(t64.fim, 1) + " m na direção do vento — depois de 4h/4l1 da face de barlavento —, na cobertura e nas paredes paralelas fechadas, nos pilares delas)" : "") + (t825 ? " (NBR 6123, 8.2.5: cobertura isolada, 0,05·q por m² na cobertura toda)" : ""),
 motivo: t64 ? "F' = Cf·q·l1·(l2 − 4h) + Cf·q·2h·(l2 − 4h) — 6.4.2 e 6.4.3; a cobertura recebe a 1ª parcela pelas vigas da área de cobertura e as paredes a 2ª pelos pilares da face" : "cobertura isolada com vento paralelo à geratriz (8.2.5)" });
 }
-var bordaLivre = tercasNaBorda(G, VL);
-if (bordaLivre.length) {
-var txB = "Vento: " + bordaLivre.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.1; Tabela 6 nota 4, Tabelas 7/8 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
-bordaLivre.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + fcp(q.cpe) + ", p = " + fcp(q.p, 3) + " kN/m²)"; }).join("; ") + ". Verifique estas peças à parte com essa pressão.";
+var bordaLivre = tercasNaBorda(G, VL), bordaMed = bordaLivre.filter(function (q) { return arr(q.papeis).some(function (z) { return !z.soZona; }); });
+if (bordaLivre.length) resumo.vento.cpeMedioNaoAplicado = bordaLivre;
+if (bordaMed.length) {
+var txB = "Vento: " + bordaMed.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.1; Tabela 6 nota 4, Tabelas 7/8 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
+bordaMed.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + fcp(q.cpe) + ", p = " + fcp(q.p, 3) + " kN/m²)"; }).join("; ") + ". Verifique estas peças à parte com essa pressão.";
 if (avisos.indexOf(txB) < 0) avisos.push(txB);
 resumo.vento.cpeMedioNaoAplicado = bordaLivre;
 }
@@ -138646,9 +138651,10 @@ var nAncL = num(q.correntesAncoradas, 0), nSoltas = arr(q.correntes).filter(func
 var origemZ = Lz < Ls - 1e-9 ? "entre as " + nAncL + " linha(s) de corrente ANCORADA(S) do modelo (" + arr(q.correntes).filter(function (c) { return c.ancorada; }).map(function (c) { return "s = " + br(c.s, 2) + " m, ancorada n" + (/^o /.test(String(c.onde)) ? "" : "o ") + String(c.onde || "ponto rígido"); }).join("; ") + ")"
 : (nSoltas ? "o vão inteiro — " + nSoltas + " corrente(s) SEM ancoragem (a linha só vai de terça a terça, sem diagonal na cumeeira nem pórtico/contraventamento): corrente sem ancoragem não trava" : "o vão inteiro — nenhuma linha de corrente ligada à terça");
 q.local.origemZ = origemZ;
-var nome = "Vento local — cpe médio da faixa de borda (" + q.zona + ")";
+var soZ = arr(q.papeis).length > 0 && arr(q.papeis).every(function (z) { return z.soZona; });
+var nome = (soZ ? "Vento local — travessa de fechamento, Ce da zona (" : "Vento local — cpe médio da faixa de borda (") + q.zona + ")";
 v.verificacoes = arr(v.verificacoes).concat([{ nome: nome, item: "NBR 6123:2023, 6.1.2/6.1.3 + " + (vl.norma || vl.edicao || "verificação da barra"),
-passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
+passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: (soZ ? "fora das faixas de borda: só o Ce da zona" : "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3)) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
 { rotulo: "Carga na peça (1,4·W, sucção)", formula: "1,4 × Σ |p|·faixa = 1,4 × (" + arr(q.papeis).map(function (z) { return br(Math.abs(z.pUso), 3) + " × " + br(z.s, 2) + " m (" + z.tipo + ")"; }).join(" + ") + ")", valor: br(w, 3) + " kN/m" },
 { rotulo: "Vão em cada eixo", formula: "forte: " + br(Ls, 2) + " m entre os apoios (viga/pilar); fraco: " + br(Lz, 2) + " m — " + origemZ, valor: br(Ls, 2) + " / " + br(Lz, 2) + " m" },
 { rotulo: "Momento (forte no trecho de " + br(Ls, 2) + " m; fraco no de " + br(Lz, 2) + " m)", formula: "w·L²/8 em cada eixo, com o vão dele (os dois sentidos)", valor: br(wy * Ls * Ls / 8, 3) + " kN·m (forte) / " + br(wz * Lz * Lz / 8, 3) + " kN·m (fraco)" },
@@ -138658,12 +138664,12 @@ passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A
 resistencia: 1, solicitante: rzL, unidade: "", razao: rzL }]);
 if (!(rzL <= num(v.razao, 0))) { v.razao = rzL; v.governante = nome + ": " + (vl.governante || ""); }
 var rv = num(v.razao, Infinity); v.ok = isFinite(rv) && rv <= 1 + 1e-9;
-if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local da faixa de borda (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(rzL, 3) + " — " + (vl.governante || "")]);
+if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(rzL, 3) + " — " + (vl.governante || "")]);
 }
 function servicoLocal(m, q) {
 var F = q.local && q.local.flecha; if (!F) return [];
 var soParede = arr(q.papeis).some(function (z) { return z.tipo === "parede"; }) && !arr(q.papeis).some(function (z) { return z.tipo === "cobertura"; });
-var base = (soParede ? "travessa de fechamento: L/120 perpendicular ao fechamento" : "terça: L/120 (sucção — só a variável de sentido oposto ao permanente)") + " — cpe médio da faixa de borda (" + q.zona + "; NBR 6123:2023 6.1.2), valor característico, biapoiada";
+var base = (soParede ? "travessa de fechamento: L/120 perpendicular ao fechamento" : "terça: L/120 (sucção — só a variável de sentido oposto ao permanente)") + (arr(q.papeis).every(function (z) { return z.soZona; }) ? " — Ce da zona, classe A (" + q.zona + "; NBR 6123:2023 6.1.1)" : " — cpe médio da faixa de borda (" + q.zona + "; NBR 6123:2023 6.1.2)") + ", valor característico, biapoiada";
 var o = [{ membro: m.id, tipo: "ventoLocal", eixo: "forte", valor: F.dy, limite: F.limite, razao: F.razaoY, comb: "W característico (cpe médio local)", vao: [0, q.local.Ls],
 texto: base + " — eixo FORTE no vão " + br(q.local.Ls, 2) + " m entre os apoios: δ = 5·wk·L⁴/(384·E·Ix) = " + br(F.dy * 1000, 1) + " mm; E = 200 000 MPa, seção bruta", ref: REF_C1 + "; NBR 6123:2023, 6.1.2/6.1.3" }];
 if (F.dz > 0 || Math.abs(num(F.wkz, 0)) > 1e-12) o.push({ membro: m.id, tipo: "ventoLocal", eixo: "fraco", valor: F.dz, limite: F.limiteZ, razao: F.razaoZ, comb: "W característico (cpe médio local)", vao: [0, q.local.Lz],
@@ -138841,7 +138847,7 @@ CG.resumo.vento.cpeMedioVerificado = feitas;
 CG.resumo.vento.cpeMedioNaoAplicado = bordaLista.filter(function (q) { return feitas.indexOf(q) < 0; });
 if (!CG.resumo.vento.cpeMedioNaoAplicado.length) avisos = avisos.filter(function (x) { return !/cpe MÉDIO.*NÃO foi aplicado/.test(x); });
 if (feitas.length) G.decisoes.push({ tema: "Vento — cpe médio nas terças/travessas de borda",
-decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", cpe médio " + br(q.cpe, 2) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão forte " + br(L.Ls, 2) + " m, fraco " + br(L.Lz, 2) + " m [" + L.origemZ + "]; razão " + br(L.razao, 3) + ")"; }).join("; "),
+decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", " + (q.cpe == null ? "Ce da zona" : "cpe médio " + br(q.cpe, 2)) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão forte " + br(L.Ls, 2) + " m, fraco " + br(L.Lz, 2) + " m [" + L.origemZ + "]; razão " + br(L.razao, 3) + ")"; }).join("; "),
 motivo: "NBR 6123:2023, 6.1.2 e 6.1.3 (q da classe A, cpi mais desfavorável; o pior entre o cpe médio e o da zona). Peça biapoiada em cada trecho entre apoios (M = w·L²/8 nos dois sentidos; cortante 0,625·w·L se contínua), combinação 1,4·W na sucção SEM o peso próprio e a telha (aliviam — a favor da segurança). A estrutura principal (vigas, pilares, contraventamento) continua com o cpe da zona." });
 }
 G.membros.filter(function (m) { return m.papel === "tirante"; }).forEach(function (m) {
@@ -139151,7 +139157,7 @@ r.situacao = Env().situacao(r, r.naoVerificados);
 var cmL = r.cargasResumo && r.cargasResumo.vento && arr(r.cargasResumo.vento.cpeMedioNaoAplicado);
 if (cmL && cmL.length && Env()) {
 var nvC = { tema: "Vento — cpe médio nas terças/travessas de borda (NBR 6123:2023 6.1.2/6.1.3)",
-motivo: cmL.length + " peça(s) nas faixas de borda/canto verificadas só com o cpe da zona, sem o cpe médio: " + cmL.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + String(q.cpe).replace(".", ",") + ")"; }).join("; ") };
+motivo: cmL.length + " peça(s) nas faixas de borda/canto verificadas só com o cpe da zona, sem o cpe médio: " + cmL.map(function (q) { return q.peca + " (" + q.zona + ", " + (q.cpe == null ? "Ce da zona" : "cpe médio " + String(q.cpe).replace(".", ",")) + ")"; }).join("; ") };
 r.naoVerificados = arr(r.naoVerificados).slice();
 if (!r.naoVerificados.some(function (q) { return q.tema === nvC.tema; })) r.naoVerificados.push(nvC);
 if (r.ok) { var tC = "NÃO VERIFICADO — " + nvC.tema + ": " + nvC.motivo; r.avisos = arr(r.avisos); if (r.avisos.indexOf(tC) < 0) r.avisos.unshift(tC); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(tC) < 0) r.naoAbrangidos.unshift(tC); }

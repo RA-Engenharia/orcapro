@@ -1630,7 +1630,7 @@
               banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",   /* 21/11 (ângulo 35°–60°): a alma passou a 1 painel por terça (41°, era 2 a 62°) e a diagonal de 2,04 m em 2L 50,8×4,5 reprovava a 1,02 no PD 8 com solar */
               montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
               travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
-              escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 80 x 80 x 4,5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",
+              escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 130 x 130 x 5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",   /* REVISÃO 1.2.438: a TQ 80×4,5 só passava porque a travessa fora das faixas de borda não recebia o vento da parede (razão 1,93 e flecha 4,8× L/120 com o Ce da zona) — volta a TQ 130×5 */
               barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "L 63,5 x 4,76 (serie pol) ArcelorMittal", ligMaoFrancesa: "parafusada",   /* 21/11: L 63,5×4,5 reprovava a 1,009 nos oitões do PD 8 com solar com a alma de 1 painel por terça */
              
               vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },

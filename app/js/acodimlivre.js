@@ -188,9 +188,11 @@
     var origemZ = Lz < Ls - 1e-9 ? "entre as " + nAncL + " linha(s) de corrente ANCORADA(S) do modelo (" + arr(q.correntes).filter(function (c) { return c.ancorada; }).map(function (c) { return "s = " + br(c.s, 2) + " m, ancorada n" + (/^o /.test(String(c.onde)) ? "" : "o ") + String(c.onde || "ponto rígido"); }).join("; ") + ")"
               : (nSoltas ? "o vão inteiro — " + nSoltas + " corrente(s) SEM ancoragem (a linha só vai de terça a terça, sem diagonal na cumeeira nem pórtico/contraventamento): corrente sem ancoragem não trava" : "o vão inteiro — nenhuma linha de corrente ligada à terça");
     q.local.origemZ = origemZ;
-    var nome = "Vento local — cpe médio da faixa de borda (" + q.zona + ")";
+    /* REVISÃO 1.2.438: a travessa fora das faixas de borda entra com o Ce da zona (classe A) — sem cpe médio */
+    var soZ = arr(q.papeis).length > 0 && arr(q.papeis).every(function (z) { return z.soZona; });
+    var nome = (soZ ? "Vento local — travessa de fechamento, Ce da zona (" : "Vento local — cpe médio da faixa de borda (") + q.zona + ")";
     v.verificacoes = arr(v.verificacoes).concat([{ nome: nome, item: "NBR 6123:2023, 6.1.2/6.1.3 + " + (vl.norma || vl.edicao || "verificação da barra"),
-      passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
+      passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: (soZ ? "fora das faixas de borda: só o Ce da zona" : "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3)) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
                { rotulo: "Carga na peça (1,4·W, sucção)", formula: "1,4 × Σ |p|·faixa = 1,4 × (" + arr(q.papeis).map(function (z) { return br(Math.abs(z.pUso), 3) + " × " + br(z.s, 2) + " m (" + z.tipo + ")"; }).join(" + ") + ")", valor: br(w, 3) + " kN/m" },
                { rotulo: "Vão em cada eixo", formula: "forte: " + br(Ls, 2) + " m entre os apoios (viga/pilar); fraco: " + br(Lz, 2) + " m — " + origemZ, valor: br(Ls, 2) + " / " + br(Lz, 2) + " m" },
                { rotulo: "Momento (forte no trecho de " + br(Ls, 2) + " m; fraco no de " + br(Lz, 2) + " m)", formula: "w·L²/8 em cada eixo, com o vão dele (os dois sentidos)", valor: br(wy * Ls * Ls / 8, 3) + " kN·m (forte) / " + br(wz * Lz * Lz / 8, 3) + " kN·m (fraco)" },
@@ -200,13 +202,13 @@
       resistencia: 1, solicitante: rzL, unidade: "", razao: rzL }]);
     if (!(rzL <= num(v.razao, 0))) { v.razao = rzL; v.governante = nome + ": " + (vl.governante || ""); }
     var rv = num(v.razao, Infinity); v.ok = isFinite(rv) && rv <= 1 + 1e-9;
-    if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local da faixa de borda (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(rzL, 3) + " — " + (vl.governante || "")]);
+    if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(rzL, 3) + " — " + (vl.governante || "")]);
   }
   /* a FLECHA local entra no ELS (r.servico) com a referência — mesma tabela, mesma reprovação da barra */
   function servicoLocal(m, q) {
     var F = q.local && q.local.flecha; if (!F) return [];
     var soParede = arr(q.papeis).some(function (z) { return z.tipo === "parede"; }) && !arr(q.papeis).some(function (z) { return z.tipo === "cobertura"; });
-    var base = (soParede ? "travessa de fechamento: L/120 perpendicular ao fechamento" : "terça: L/120 (sucção — só a variável de sentido oposto ao permanente)") + " — cpe médio da faixa de borda (" + q.zona + "; NBR 6123:2023 6.1.2), valor característico, biapoiada";
+    var base = (soParede ? "travessa de fechamento: L/120 perpendicular ao fechamento" : "terça: L/120 (sucção — só a variável de sentido oposto ao permanente)") + (arr(q.papeis).every(function (z) { return z.soZona; }) ? " — Ce da zona, classe A (" + q.zona + "; NBR 6123:2023 6.1.1)" : " — cpe médio da faixa de borda (" + q.zona + "; NBR 6123:2023 6.1.2)") + ", valor característico, biapoiada";
     var o = [{ membro: m.id, tipo: "ventoLocal", eixo: "forte", valor: F.dy, limite: F.limite, razao: F.razaoY, comb: "W característico (cpe médio local)", vao: [0, q.local.Ls],
                texto: base + " — eixo FORTE no vão " + br(q.local.Ls, 2) + " m entre os apoios: δ = 5·wk·L⁴/(384·E·Ix) = " + br(F.dy * 1000, 1) + " mm; E = 200 000 MPa, seção bruta", ref: REF_C1 + "; NBR 6123:2023, 6.1.2/6.1.3" }];
     if (F.dz > 0 || Math.abs(num(F.wkz, 0)) > 1e-12) o.push({ membro: m.id, tipo: "ventoLocal", eixo: "fraco", valor: F.dz, limite: F.limiteZ, razao: F.razaoZ, comb: "W característico (cpe médio local)", vao: [0, q.local.Lz],
@@ -443,7 +445,7 @@
       CG.resumo.vento.cpeMedioNaoAplicado = bordaLista.filter(function (q) { return feitas.indexOf(q) < 0; });
       if (!CG.resumo.vento.cpeMedioNaoAplicado.length) avisos = avisos.filter(function (x) { return !/cpe MÉDIO.*NÃO foi aplicado/.test(x); });
       if (feitas.length) G.decisoes.push({ tema: "Vento — cpe médio nas terças/travessas de borda",
-        decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", cpe médio " + br(q.cpe, 2) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão forte " + br(L.Ls, 2) + " m, fraco " + br(L.Lz, 2) + " m [" + L.origemZ + "]; razão " + br(L.razao, 3) + ")"; }).join("; "),
+        decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", " + (q.cpe == null ? "Ce da zona" : "cpe médio " + br(q.cpe, 2)) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão forte " + br(L.Ls, 2) + " m, fraco " + br(L.Lz, 2) + " m [" + L.origemZ + "]; razão " + br(L.razao, 3) + ")"; }).join("; "),
         motivo: "NBR 6123:2023, 6.1.2 e 6.1.3 (q da classe A, cpi mais desfavorável; o pior entre o cpe médio e o da zona). Peça biapoiada em cada trecho entre apoios (M = w·L²/8 nos dois sentidos; cortante 0,625·w·L se contínua), combinação 1,4·W na sucção SEM o peso próprio e a telha (aliviam — a favor da segurança). A estrutura principal (vigas, pilares, contraventamento) continua com o cpe da zona." });
     }
     /* tirantes (barra redonda): a barra que nunca traciona fica frouxa — informação */
@@ -829,7 +831,7 @@
     var cmL = r.cargasResumo && r.cargasResumo.vento && arr(r.cargasResumo.vento.cpeMedioNaoAplicado);
     if (cmL && cmL.length && Env()) {
       var nvC = { tema: "Vento — cpe médio nas terças/travessas de borda (NBR 6123:2023 6.1.2/6.1.3)",
-                  motivo: cmL.length + " peça(s) nas faixas de borda/canto verificadas só com o cpe da zona, sem o cpe médio: " + cmL.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + String(q.cpe).replace(".", ",") + ")"; }).join("; ") };
+                  motivo: cmL.length + " peça(s) nas faixas de borda/canto verificadas só com o cpe da zona, sem o cpe médio: " + cmL.map(function (q) { return q.peca + " (" + q.zona + ", " + (q.cpe == null ? "Ce da zona" : "cpe médio " + String(q.cpe).replace(".", ",")) + ")"; }).join("; ") };
       r.naoVerificados = arr(r.naoVerificados).slice();
       if (!r.naoVerificados.some(function (q) { return q.tema === nvC.tema; })) r.naoVerificados.push(nvC);
       if (r.ok) { var tC = "NÃO VERIFICADO — " + nvC.tema + ": " + nvC.motivo; r.avisos = arr(r.avisos); if (r.avisos.indexOf(tC) < 0) r.avisos.unshift(tC); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(tC) < 0) r.naoAbrangidos.unshift(tC); }

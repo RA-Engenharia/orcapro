@@ -4,7 +4,7 @@
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=3444a4a513",
+  "js/pacotes/bim.js?v=ee44428d37",
   "js/bim-pacote.js?v=6ab9b10f2a",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
   "js/pacotes/hidro.js?v=3761a9af1d"
@@ -12,7 +12,7 @@
  "tamanhos": {
   "js/pacotes/nucleo-1.js": 5679588,
   "js/pacotes/nucleo-2.js": 5654266,
-  "js/pacotes/bim.js?v=3444a4a513": 24922956,
+  "js/pacotes/bim.js?v=ee44428d37": 24923817,
   "js/bim-pacote.js?v=6ab9b10f2a": 1083693,
   "js/metalcalcvista-pacote.js?v=122abc30d5": 174083,
   "js/pacotes/hidro.js?v=3761a9af1d": 8852616

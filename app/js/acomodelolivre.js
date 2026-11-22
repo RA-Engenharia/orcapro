@@ -330,7 +330,7 @@
   /* #49 c) chave do travamento por conectividade — false só no controle negativo dos testes */
   var OPC_TRAV = { pendular: true };
   /* #49 e) chave das linhas de corrente no eixo fraco da verificação local — false só no controle negativo dos testes */
-  var OPC_COR = { correntes: true, sentido: true, alturaTelhado: true };
+  var OPC_COR = { correntes: true, sentido: true, alturaTelhado: true, zonaParede: true };
   /* teste de mecanismo: tirante sem par fora e o fator do deslocamento (OPC_EST.semPar = false / fator = 100 só nos controles) */
   /* fator 100 × a diagonal (o de antes): 0,1 × (pedido do revisor) marcou como mecanismo estruturas que fecham (o pilar livre de
      8 m do test-metal-lig-auto [14], a mão-francesa do test-metal-mecanismo-resolver, as simulações do mezanino/pórtico); o
@@ -1295,6 +1295,15 @@
         var sa = sFace(face) === 2 ? za : xa, sb = sFace(face) === 2 ? zb : xb, pw = null;
         arr((lc.paredes || {})[face]).forEach(function (f) { if (isFinite(f.p) && sob(sa, sb, f.s0, f.s1) && (!pw || f.p < pw.p)) pw = { zona: "faixa de borda da parede " + face, cpe: f.cpe, p: f.p }; });
         if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p, dir: dirParede(face) });
+        /* REVISÃO 1.2.438 (22/11/2026, CRÍTICO): a travessa FORA das faixas de borda também segura a telha da parede. O vento
+           global das paredes vai direto aos PILARES da face (casos de carga abaixo) — a travessa não recebia vento nenhum: a
+           escora da coluna na linha da parede dos vãos internos do Pedido Gabriel (TQ 80×4,5, faixa de 4 m) saía aprovada pela
+           esbeltez, sem flexão nem a flecha L/120. NBR 6123:2023 6.1.1: "elementos de vedação e de suas fixações" com S2 da
+           classe A e o Ce da zona em que se situam. OPC_COR.zonaParede = false só no controle negativo dos testes. */
+        else if (OPC_COR.zonaParede !== false) {
+          var pzw = pZona(m, face);
+          if (pzw < -1e-9) papeis.push({ tipo: "parede", face: face, zona: "parede " + face + " fora das faixas de borda, Ce da zona", cpe: null, p: pzw, dir: dirParede(face), soZona: true });
+        }
       }
       if ((!face || noBeiral(m)) && !cobertoPorOutro(m) && (OPC_COR.alturaTelhado === false || naAlturaDoTelhado(m))) {
         var pr = null, xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
@@ -1306,7 +1315,7 @@
       }
       if (!papeis.length) return;
       var wL = 0;
-      papeis.forEach(function (q) { q.s = faixaInf(m, q.face); q.pZonaA = pZona(m, q.face); q.pUso = Math.min(q.p, q.pZonaA); q.governa = q.pUso < q.p - 1e-9 ? "zona (classe A)" : "cpe médio"; wL += Math.abs(q.pUso) * q.s; });
+      papeis.forEach(function (q) { q.s = faixaInf(m, q.face); q.pZonaA = pZona(m, q.face); q.pUso = Math.min(q.p, q.pZonaA); q.governa = q.soZona || q.pUso < q.p - 1e-9 ? "zona (classe A)" : "cpe médio"; wL += Math.abs(q.pUso) * q.s; });
       var pior = papeis.slice().sort(function (a, b) { return a.p - b.p; })[0];
       /* vão: entre os APOIOS (nós onde passa ou termina viga/pilar, mais as pontas) — nó de diagonal não apoia */
       var ipT = arr(G.pecas).map(function (pc) { return pc.id; }).indexOf(m.peca), nosM = arr(m.nos);
@@ -1585,10 +1594,11 @@
            secundária. Na estrutura desenhada o vento entra como caso GLOBAL (telha → terça → viga → pilar) e o cpe médio
            não pode entrar ali (ele não vale para a estrutura principal); a verificação local das terças/travessas com o
            médio ainda NÃO está no motor desenhado. Nada calado: as peças que caem nas faixas saem listadas, com o cpe. */
-        var bordaLivre = tercasNaBorda(G, VL);
-        if (bordaLivre.length) {
-          var txB = "Vento: " + bordaLivre.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.1; Tabela 6 nota 4, Tabelas 7/8 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
-                    bordaLivre.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + fcp(q.cpe) + ", p = " + fcp(q.p, 3) + " kN/m²)"; }).join("; ") + ". Verifique estas peças à parte com essa pressão.";
+        var bordaLivre = tercasNaBorda(G, VL), bordaMed = bordaLivre.filter(function (q) { return arr(q.papeis).some(function (z) { return !z.soZona; }); });
+        if (bordaLivre.length) resumo.vento.cpeMedioNaoAplicado = bordaLivre;
+        if (bordaMed.length) {
+          var txB = "Vento: " + bordaMed.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.1; Tabela 6 nota 4, Tabelas 7/8 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
+                    bordaMed.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + fcp(q.cpe) + ", p = " + fcp(q.p, 3) + " kN/m²)"; }).join("; ") + ". Verifique estas peças à parte com essa pressão.";
           if (avisos.indexOf(txB) < 0) avisos.push(txB);
           resumo.vento.cpeMedioNaoAplicado = bordaLivre;
         }
