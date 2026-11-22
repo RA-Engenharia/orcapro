@@ -114,8 +114,8 @@
     var nPil = nm("P") + nm("PO"), pb = LB.placaBase || { dimensoes_mm: [0, 0], chumbadores: { total: 0 } }, lp = (pb.dimensoes_mm || [0, 0])[0] / 1000, tpb = (pb.espessura_mm || 25) / 1000, base = LB.base || { n: 0, comprimento: 0, chapa: { largura_mm: 0 } };
     var kgBase = nPil * (lp * lp * tpb * 7850 + 2 * ((base.chapa && base.chapa.largura_mm) || 0) / 1000 * ((base.comprimento || 0) + 0.10) * 0.016 * 7850), nChumb = nPil * ((pb.chumbadores && pb.chumbadores.total) || 0);
     var mCM = 0, mE = 0, mRC = 0; M3.forEach(function (m) { if (m.g === "CM") mCM += norm(m.p0, m.p1); if (m.g === "E") mE += norm(m.eixo0 || m.p0, m.eixo1 || m.p1); if (m.g === "RC") mRC += norm(m.eixo0 || m.p0, m.eixo1 || m.p1); });
-    var aInc = I.areaTotal || 0, perB = per + 8 * be;      /* perímetro do beiral de um polígono ortogonal: perímetro + 8·beiral (convexos − côncavos = 4) */
-    var prazo = (X.prazoSemanas != null ? Number(X.prazoSemanas) : 6), hEnc = X.horasEncarregado != null ? Number(X.horasEncarregado) : prazo * 44, hEng = X.horasEngenheiro != null ? Number(X.horasEngenheiro) : Math.round(0.2 * prazo * 44), areaAnd = X.areaAndaime != null ? Number(X.areaAndaime) : r(per * (X.alturaAndaime || 4.5), 0), mesesAnd = X.mesesAndaime != null ? Number(X.mesesAndaime) : 2;
+    var aInc = I.areaTotal || 0, perB = per + 8 * be, perFuro = e.perimetroFuro || 0, perP = Math.max(0, perFuro - 8 * be);      /* perímetro do beiral de um polígono ortogonal: perímetro + 8·beiral (convexos − côncavos = 4); o pátio: perímetro do furo − 8·beiral (o beiral encolhe o furo) = a calha interna do pátio */
+    var prazo = (X.prazoSemanas != null ? Number(X.prazoSemanas) : 6), hEnc = X.horasEncarregado != null ? Number(X.horasEncarregado) : prazo * 44, hEng = X.horasEngenheiro != null ? Number(X.horasEngenheiro) : Math.round(0.2 * prazo * 44), areaAnd = X.areaAndaime != null ? Number(X.areaAndaime) : r((per + (e.perimetroFuro || 0)) * (X.alturaAndaime || 4.5), 0), mesesAnd = X.mesesAndaime != null ? Number(X.mesesAndaime) : 2;
     var itens = [], etapa;
     function L(cod, desc, q, chave, obs) { var pr = preco(chave, sub), qq = r(q, 3); itens.push({ etapa: etapa, codigo: cod, descricao: desc, un: pr.un, qtd: qq, pu: pr.pu, total: r(qq * pr.pu, 2), fonte: pr.fonte, chave: chave, adotado: pr.adotado, editado: pr.editado, obs: obs || "" }); }
     etapa = "01 ESTRUTURA DE MADEIRA (MLC)";
@@ -133,7 +133,8 @@
     etapa = "03 COBERTURA";
     L("03.01", "Telha cerâmica sobre ripas, fornecida e instalada (área inclinada das águas)", aInc, "telha_cer");
     L("03.02", "Rufos das cumeeiras e dos espigões (cumeeiras " + br(mCM) + " m + " + nm("E") + " espigões " + br(mE) + " m)", mCM + mE, "rufo");
-    L("03.03", "Calhas dos beirais", perB, "calha"); L("03.04", "Condutores pluviais", X.condutoresM != null ? Number(X.condutoresM) : 18, "condutor", "adoção: 18 m (planta em T/U: vários pontos de descida); ajustar à obra");
+    L("03.03", "Calhas dos beirais" + (perFuro ? " (externo)" : ""), perB, "calha");
+    if (perFuro) L("03.06", "Calha interna do PÁTIO (perímetro do beiral voltado ao pátio, " + br(perP) + " m; recebe as águas internas do anel e os 4 rincões)", perP, "calha", "drenagem da calha do pátio (vazão, declividade, condutores, extravasor) A DIMENSIONAR pelo RT"); L("03.04", "Condutores pluviais", X.condutoresM != null ? Number(X.condutoresM) : 18, "condutor", "adoção: 18 m (planta em T/U: vários pontos de descida); ajustar à obra");
     if (mRC > 0) L("03.05", "Calha metálica dos RINCÕES (chapa galvanizada pré-pintada, 2 abas sobre as telhas; " + nm("RC") + " rincões, " + br(mRC) + " m de eixo)", mRC, "calha", "preço da calha dos beirais (adoção: sem preço próprio da calha de rincão no banco); lança na calha do perímetro no beiral");
     etapa = "04 SERVIÇOS GERAIS E ADMINISTRAÇÃO LOCAL";
     L("04.01", "Andaime (" + mesesAnd + " meses)", areaAnd * mesesAnd, "andaime_m2mes"); L("04.02", "Montagem e desmontagem do andaime", areaAnd, "andaime_mont");
@@ -171,13 +172,14 @@
     avisa("auditoria");
     var rr = d.resultado, q = proj._pad3, G = rr.modelo.G, I = G.info, P = G.p, membros = G.membros;
     var rp = reacoesParedes(rr), perim = 0;
-    var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), cnt = TM.contornoDe(P); cnt.forEach(function (p, i) { var p2 = cnt[(i + 1) % cnt.length]; perim += Math.sqrt(Math.pow(p2[0] - p[0], 2) + Math.pow(p2[1] - p[1], 2)); });
+    var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), cnt = TM.contornoDe(P), perimFuro = 0; cnt.forEach(function (p, i) { var p2 = cnt[(i + 1) % cnt.length]; perim += Math.sqrt(Math.pow(p2[0] - p[0], 2) + Math.pow(p2[1] - p[1], 2)); });
+    var fu0 = TM.furoDe(P); if (fu0) fu0.forEach(function (p, i) { var p2 = fu0[(i + 1) % fu0.length]; perimFuro += Math.sqrt(Math.pow(p2[0] - p[0], 2) + Math.pow(p2[1] - p[1], 2)); });
     var pecas = pecasDe(membros, d.secoes, q.classe);
     avisa("orcamento");
     var TLg = dep("MadT3TULig", "./madt3tulig.js"), det = null, erroDet = null;
     try { det = TLg ? TLg.detalhar(q, d.secoes, rr, G) : null; } catch (eD) { erroDet = String(eD && eD.message || eD); }
     var ligNos = det ? { ligacoes: det.ligacoes.ligacoes, ok: det.ligacoes.ok !== false, falhas: det.ligacoes.verificacoes.filter(function (v) { return !v.ok; }).map(function (v) { return v.nome; }), avisos: [] } : { ligacoes: {}, ok: false, falhas: [], avisos: ["ligações dos nós não calculadas: " + (erroDet || "módulo madt3tulig ausente")] },
-      orc = orcarT3TU({ opcao: sol.opcao, nome: sol.nomeOpcao, pecas: pecas, params: P, secoes: d.secoes, ligacoes: b.LG, ligacoesNos: ligNos, membros: membros, info: I, perimetro: perim, extras: sol.extras, precos: sol.precos, bdi: sol.bdi });
+      orc = orcarT3TU({ opcao: sol.opcao, nome: sol.nomeOpcao, pecas: pecas, params: P, secoes: d.secoes, ligacoes: b.LG, ligacoesNos: ligNos, membros: membros, info: I, perimetro: perim, perimetroFuro: perimFuro, extras: sol.extras, precos: sol.precos, bdi: sol.bdi });
     var vento = q._vento || proj._vento || {}, avisos = (rr.avisos || []).slice();
     var ligs = copia(b.LG || { ok: true, verificacoes: [] }); ligs.verificacoes = ligs.verificacoes || [];
     if (ligNos.ok === false) ligs.ok = false;
@@ -228,7 +230,7 @@
     if (!res || res.tipologia !== "T3TU" || !res.t3) return { ok: false, motivo: "Resultado sem a T3TU (res.t3).", html: "" };
     var tu = res.preliminarTU || { preliminar: false, motivos: [] }, motivos = arr(pre.motivos).concat(arr(tu.motivos)).filter(function (t, i, v) { return v.indexOf(t) === i; }), prelim = !!pre.preliminar || !!tu.preliminar;
     function H2(t) { secoes.push(t); h.push("<h2>" + esc(t) + "</h2>"); }
-    var legs = arr(P.legs), nome = res.planta === "U" ? "U" : (res.planta === "L" ? "L" : "T");
+    var legs = arr(P.legs), nome = res.planta === "U" ? "U" : (res.planta === "L" ? "L" : (res.planta === "P" ? "ANEL (pátio)" : "T"));
     h.push("<!doctype html><html><head><meta charset='utf-8'><title>Memorial de cálculo — telhado de 4 águas em " + nome + "</title><style>" + CSS + "</style></head><body>");
     if (prelim) h.push("<div class='faixa'>PRELIMINAR — NÃO ATENDE em todos os itens; nada deste documento vale para execução.<br>" + motivos.map(esc).join("<br>") + "</div>");
     h.push("<h1>Memorial de cálculo — telhado de 4 águas em " + nome + " com rincão em cada canto côncavo, em MLC (T3TU)</h1><p>" + esc(o.nome || P.nome || "") + (o.cidade ? " — " + esc(o.cidade) : "") + " · " + esc(d.numero || "EST-MAD-T3TU-MEM") + " · rev. " + esc(d.revisao || "R00") + " · " + esc(d.data || "") + (res.nomeOpcao ? " · opção " + esc(res.opcao) + ": " + esc(res.nomeOpcao) : "") + "</p><div class='faixa'>" + esc(FAIXA) + "</div>");
@@ -270,7 +272,7 @@
   /** MANUAL DE MONTAGEM do T/U: 6 etapas (as do L), com N asas e um rincão por canto côncavo; uma página por etapa com as marcas da fonte */
   function manual(res, op) {
     op = op || {}; if (!res || res.tipologia !== "T3TU" || !res.t3) return { ok: false, html: "", avisos: ["Resultado sem a T3TU."], paginas: 0 };
-    var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA ? SA.preliminar(res) : { preliminar: false, rotulo: "PRELIMINAR — NÃO ATENDE" }, I = res.t3.info, mem = res.t3.membros, f = arr(res.fonte && res.fonte.pecas), h = [], n = 0, legs = arr(I.pernas), nome = res.planta === "U" ? "U" : (res.planta === "L" ? "L" : "T");
+    var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA ? SA.preliminar(res) : { preliminar: false, rotulo: "PRELIMINAR — NÃO ATENDE" }, I = res.t3.info, mem = res.t3.membros, f = arr(res.fonte && res.fonte.pecas), h = [], n = 0, legs = arr(I.pernas), nome = res.planta === "U" ? "U" : (res.planta === "L" ? "L" : (res.planta === "P" ? "ANEL (pátio)" : "T"));
     function cont(g) { return mem.filter(function (m) { return m.g === g; }).length; }
     var nInt = mem.filter(function (m) { return m.g === "E" && m.interior; }).length, nRC = cont("RC"), nCB = cont("CB");
     var EXIG = "Exigência de projeto: terça BIAPOIADA entre as tesouras/meias-tesouras; a emenda passante em cada tesoura transmite só a força AXIAL (tirante do arco do espigão); não é emenda rígida (não transmite momento).";

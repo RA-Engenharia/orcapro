@@ -220,6 +220,7 @@
     var pr = { nome: est.obra.nome || "Telhado de 4 águas", planta: planta.planta, c: planta.c, bb: planta.bb, a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
       telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: t.tesoura === "howe" ? "howe" : "pratt" } };
     if (tu) pr.legs = legs;
+    if (tu && t.anel) { pr.anel = true; pr.c = num(t.compC, 0); pr.wV = num(t.wV, 0); if (t.avisoFaixas) pr.avisoFaixas = String(t.avisoFaixas); }      /* pátio (anel): barra N/S b × a, faixas L/O wV, profundidade externa c */
     return pr;
   }
   function secoesPartidaT3(o, emL) {

@@ -1051,6 +1051,7 @@
     f.elevNivel = r6(elev); f.deslocBaseEf = r6(desl); f.cotaApoio = r6(elev + desl);
     f.modo = f.modo === "extrusao" ? "extrusao" : "perimetro";
     var g = f.modo === "extrusao" ? calcularExtrusao(f, f.cotaApoio, avisos) : calcularPerimetro(f, f.cotaApoio, avisos, extra);
+    if (f.modo !== "extrusao" && furosDe(f).length) avisos.push("Telhado com pátio (furo): a madeira calcula o anel; o desenho das águas do BIM ainda não recorta o furo.");
     zerar(f);
     if (!g) { f.ok = false; f.avisos = avisos; return f; }
     f.ok = true;
@@ -1117,6 +1118,25 @@
     f.area = 0; f.areaProjecao = 0; f.volume = 0; f.cumeeira = 0; f.espigao = 0; f.rincao = 0; f.comprimentoBeiral = 0; f.comprimentoEmpena = 0;
     f.nAguas = 0; f.cotaCumeeira = null; f.aguasCalc = []; f.arestasCalc = []; f.linhas = [];
   }
+  /* PÁTIO (furos): as águas do BIM cobrem o contorno externo inteiro; o telhado de verdade só cobre o anel. Desconta da ÁREA (projetada e inclinada) e do VOLUME a parte que fica sobre o pátio LIVRE
+     (o furo encolhido pelo beiral efetivo, nos furos retangulares de lados paralelos aos eixos) e soma a CALHA DO PÁTIO (perímetro do furo encolhido) ao comprimento de beiral. O que NÃO dá para descontar fica
+     declarado em f.medidasParciais (PARCIAL, com o motivo): cumeeira, espigão e rincão das águas não são recalculados; furo que não é retângulo paralelo aos eixos entra pela área cheia, sem o beiral. */
+  function descontarFuros(f) {
+    delete f.medidasParciais; delete f.furosDescontados; delete f.calhaPatio; var FU = furosDe(f); if (!FU.length) return;
+    var be = num(f.beiralEf, num(f.beiral, 0)), fatores = f.aguasCalc && f.aguasCalc.length ? f.aguasCalc : [], AP0 = 0, A0 = 0, parc = [];
+    fatores.forEach(function (a) { AP0 += a.areaProjecao; A0 += a.area; });
+    var fat = AP0 > 0 ? A0 / AP0 : 1, dAP = 0, dPer = 0;
+    FU.forEach(function (P) {
+      var xs = P.map(function (q) { return q[0]; }), zs = P.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+      var ret = P.length === 4 && P.every(function (q) { return (Math.abs(q[0] - x0) < 1e-4 || Math.abs(q[0] - x1) < 1e-4) && (Math.abs(q[1] - z0) < 1e-4 || Math.abs(q[1] - z1) < 1e-4); });
+      if (ret) { var w = x1 - x0 - 2 * be, h = z1 - z0 - 2 * be; if (w > 0 && h > 0) { dAP += w * h; dPer += 2 * (w + h); } else parc.push("o beiral fecha o pátio (largura < 2 x beiral): nada descontado"); }
+      else { dAP += Math.abs(areaSinal(P)); parc.push("furo não retangular/paralelo aos eixos: descontada a área cheia, sem o beiral do pátio e sem a calha do pátio"); }
+    });
+    parc.push("cumeeira, espigão e rincão das águas do BIM NÃO são recalculados para o anel (o desenho das águas ainda não recorta o furo)");
+    if (dAP > AP0) { parc.push("a área do furo passa da área do telhado: nada descontado"); f.medidasParciais = parc; return; }
+    f.areaProjecao = AP0 - dAP; f.area = A0 - dAP * fat; f.volume = f.area * num(f.espessura, 0);
+    f.furosDescontados = { areaProjecao: r6(dAP), area: r6(dAP * fat), calhaPatioM: r6(dPer) }; f.calhaPatio = r6(dPer); f.medidasParciais = parc;
+  }
   /* as medidas a partir das águas (de novo depois do unir) */
   function medir(f, Pb) {
     var ag = f.aguasCalc, t = num(f.espessura, 0), A = 0, AP = 0, ymax = -Infinity, xs = [], zs = [];
@@ -1128,11 +1148,13 @@
     f.area = A; f.areaProjecao = AP; f.volume = A * t;
     f.cumeeira = LN.cumeeira; f.espigao = LN.espigao; f.rincao = LN.rincao + num(f.rincaoUniao, 0); f.linhas = LN.itens;
     f.nAguas = ag.length; f.cotaCumeeira = isFinite(ymax) ? r6(ymax) : null;
+    descontarFuros(f);      /* depois das medidas das águas: o comprimento do beiral abaixo soma a calha do pátio */
     if (Pb) {
       var CA = contornoPorAresta(ag, Pb);
       f.arestasCalc.forEach(function (e) { var c = CA[e.k]; e.contorno = c.segs; e.comprimento = r6(c.comprimento); e.comprimentoPlanta = r6(c.comprimentoPlanta); });
       f.comprimentoBeiral = f.arestasCalc.filter(function (e) { return e.define; }).reduce(function (s, e) { return s + e.comprimento; }, 0);
       f.comprimentoEmpena = f.arestasCalc.filter(function (e) { return !e.define; }).reduce(function (s, e) { return s + e.comprimento; }, 0);
+      if (f.calhaPatio) f.comprimentoBeiral += f.calhaPatio;      /* o beiral do pátio (calha interna) entra no comprimento de beiral */
     }
     if (xs.length) {
       var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
@@ -1292,6 +1314,17 @@
       }
       algum = true;
     }
+    /* FUROS (pátio, 22/11/2026): lista de OBJETOS { pontos:[{x,z}...] } — a nuvem recusa lista dentro de lista; a API de leitura (furosDe) devolve [[[x, z]...]]. Telhado antigo não tem o campo (default []). */
+    if (o.furos !== undefined) {
+      if (o.furos !== null) {
+        if (!Array.isArray(o.furos) || o.furos.length > 8) return false;
+        for (var fi = 0; fi < o.furos.length; fi++) {
+          var fu = o.furos[fi]; if (!obj(fu) || !Array.isArray(fu.pontos) || fu.pontos.length < 3 || fu.pontos.length > LIM.vertices) return false;
+          for (var fj = 0; fj < fu.pontos.length; fj++) { var fq = fu.pontos[fj]; if (!obj(fq) || !fin(fq.x) || !fin(fq.z)) return false; }
+        }
+      }
+      algum = true;
+    }
     if (!faixa("inclinacao", LIM.inclinacao[0], LIM.inclinacao[1]) || !faixa("beiral", LIM.beiral[0], LIM.beiral[1]) || !faixa("deslocBase", LIM.desloc[0], LIM.desloc[1]) ||
         !faixa("base", -10000, 10000) || !faixa("ang", -3600, 3600) || !faixa("inicio", -10000, 10000) || !faixa("fim", -10000, 10000)) return false;
     if (o.nivelId !== undefined) { if (o.nivelId !== null && !idOk(o.nivelId)) return false; algum = true; }
@@ -1407,8 +1440,12 @@
     return algum;
   }
 
-  var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "distMeio", "conjunto", "calcMadeira", "calcMadeiraV1"];
+  var CAMPOS = ["modo", "contorno", "furos", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes", "distMeio", "conjunto", "calcMadeira", "calcMadeiraV1"];
   var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct", "saidas", "semDescida", "alturaAuto", "recuo"];
+  /* furos do telhado: sempre [{ pontos:[{x,z}] }] no disco; furosDe devolve [[[x, z]...]] (default []) */
+  function furosDe(t) { return arr(t && t.furos).map(function (f) { return arr(f && f.pontos).map(function (q) { return [Number(q.x), Number(q.z)]; }); }).filter(function (P) { return P.length >= 3 && P.every(function (q) { return fin(q[0]) && fin(q[1]); }); }); }
+  function furosParaOp(lista) { return arr(lista).map(function (F) { var P = Array.isArray(F) ? F : arr(F && F.pontos); return { pontos: P.map(function (q) { var p = pt(q); return { x: r6(p[0]), z: r6(p[1]) }; }) }; }).filter(function (F) { return F.pontos.length >= 3; }); }
+  function moverFuros(l, dx, dz) { return arr(l).map(function (f) { return { pontos: moverPts(arr(f && f.pontos), dx, dz) }; }); }
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 
   /* T1: as medidas do pacote no orçamento do modelo — acrescentadas ao BimEdit.MEDIDAS_ORC (só chaves novas, nunca troca uma que existe) */
@@ -1547,6 +1584,7 @@
     inclinacoesTexto: inclinacoesTexto,
     areaSinal: areaSinal,
     yPlano: yPlano,
+    furosDe: furosDe,
     opTelhadoValida: opTelhadoValida,
     opBordaValida: opBordaValida,
     opValida: function (o) { return o && o.op === "borda" ? opBordaValida(o) : opTelhadoValida(o); },
@@ -1575,6 +1613,7 @@
           });
         }
         o.contorno = C;
+        if (d.furos != null) { var FU = furosParaOp(d.furos); if (FU.length) o.furos = FU; }
       }
       if (fin(Number(d.inclinacao)) && d.inclinacao !== null) o.inclinacao = r6(Number(d.inclinacao));
       else if (d.tipoId != null && fin(inclinacaoPadrao(d.tipoId))) o.inclinacao = r6(inclinacaoPadrao(d.tipoId));   /* T1: sem inclinação = a MÍNIMA do fabricante */
@@ -1620,7 +1659,7 @@
           if (o[k] === null) delete t[k]; else t[k] = clone(o[k]);
         });
         if (temChave(o, "tipoId") && o.tipoId != null && !temChave(o, "tipoTelhado")) delete t.tipoTelhado;
-        if (temChave(o, "contorno") && o.contorno) delete t.inclinacoes;
+        if (temChave(o, "contorno") && o.contorno) { delete t.inclinacoes; if (!temChave(o, "furos")) delete t.furos; }      /* contorno novo sem furos na op: o furo antigo não vale mais (ficaria fora/errado do contorno) */
         /* T5: o remendo das edições de peça MESCLA no que já está guardado (cada edição é uma op: um Ctrl+Z desfaz só ela) */
         if (temChave(o, "sobrepor")) {
           var ESm = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"), novoS = ESm && ESm.mesclarSobrepor ? ESm.mesclarSobrepor(t.sobrepor, o.sobrepor) : null;
@@ -1665,6 +1704,7 @@
         }
         dx = fin(dx) ? dx : 0; dz = fin(dz) ? dz : 0;
         if (alvo.contorno) alvo.contorno = moverPts(alvo.contorno, dx, dz);
+        if (arr(alvo.furos).length) alvo.furos = moverFuros(alvo.furos, dx, dz);
         /* TELHADO SEGUE AS PAREDES (29/10/2026): mover o telhado = o usuário escolheu o lugar dele; com o vínculo ele voltaria para
            as paredes no fim(). Mover solta as arestas (se as paredes andaram junto, o lugar é o mesmo). */
         if (dx || dz) arr(alvo.contorno).forEach(function (q) { if (q) { delete q.pr; delete q.pf; delete q.po; } });

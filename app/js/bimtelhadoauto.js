@@ -98,9 +98,15 @@
     var ext = an.externos[0], P0 = ext.pts, i;   /* os pontos do motor de contorno são [x, z] */
     for (i = 1; i < an.externos.length; i++) {
       var Q = an.externos[i].pts, cx = 0, cz = 0; Q.forEach(function (q) { cx += q[0]; cz += q[1]; }); cx /= Q.length; cz /= Q.length;
-      if (dentro([cx, cz], P0)) return { area: r4(Math.abs(areaSinal(Q))) };
+      if (dentro([cx, cz], P0)) return { area: r4(Math.abs(areaSinal(Q))), pts: Q.map(function (q) { return { x: r4(q[0]), z: r4(q[1]) }; }) };
     }
     return null;
+  }
+  /* o furo é um retângulo de lados ortogonais (4 pontos, ângulos de 90°)? — o único furo que a madeira calcula */
+  function furoRetangular(pts) {
+    var P = arr(pts); if (P.length !== 4) return false;
+    for (var i = 0; i < 4; i++) { var a = P[i], b = P[(i + 1) % 4], c = P[(i + 2) % 4], u = [b.x - a.x, b.z - a.z], v = [c.x - b.x, c.z - b.z], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]); if (!(lu > 0.2 && lv > 0.2) || Math.abs(u[0] * v[0] + u[1] * v[1]) / (lu * lv) > 0.02) return false; }
+    return true;
   }
   var MSG_PATIO = function (a) { return { ok: false, patio: true, motivo: "A edificação tem pátio interno (furo de " + virg(a) + " m²): o telhado automático faz um contorno só e cobriria o pátio.", corrigir: "Use \"Telhado nos ambientes\" nos ambientes que formam o anel, ou desenhe o contorno do telhado clicando os cantos." }; };
   /* "Telhado automático": o contorno externo de TODAS as paredes que delimitam a edificação no nível (sem mureta/divisa) */
@@ -115,6 +121,7 @@
       return true;
     });
     var pat = M._analisar ? achaPatio(M, wd) : null;
+    if (pat && o.aceitarPatio === true && furoRetangular(pat.pts)) return dadosContorno(r, { origem: "edificacao", ambientes: r.ambientes || 0, furos: [pat.pts], forma: "em anel (pátio retangular)", avisoPatio: "Pátio interno de " + virg(pat.area) + " m²: o telhado leva o furo (a madeira calcula o anel; o desenho das águas do BIM ainda não recorta o furo)." });
     if (pat) return MSG_PATIO(pat.area);
     return dadosContorno(r, { origem: "edificacao", ambientes: r.ambientes || 0 });
   }
@@ -247,8 +254,8 @@
     if (!c.ok) return c;
     var ag = aguas(c.contorno, o.aguas == null ? 4 : o.aguas, { caixas: estado && estado.caixas, paredeId: o.paredeId, nivelId: o.nivelId });
     if (!ag.ok) return ag;
-    return { ok: true, modo: modo, contorno: ag.contorno, contornoBase: c.contorno, lados: c.lados, area: c.area, perimetro: c.perimetro, forma: c.forma, aguas: ag.aguas, arestaSobe: ag.arestaSobe, caimento: ag.caimento || null,
-             cumeeira: ag.cumeeira || null, oitao: ag.oitao != null ? ag.oitao : null, beiral: fin(o.beiral) ? o.beiral : BEIRAL_PADRAO, aviso: ag.aviso || null, interna: !!ag.interna, paredes: c.paredes, ambientes: c.ambientes,
+    return { ok: true, modo: modo, furos: c.furos || [], contorno: ag.contorno, contornoBase: c.contorno, lados: c.lados, area: c.area, perimetro: c.perimetro, forma: c.forma, aguas: ag.aguas, arestaSobe: ag.arestaSobe, caimento: ag.caimento || null,
+             cumeeira: ag.cumeeira || null, oitao: ag.oitao != null ? ag.oitao : null, beiral: fin(o.beiral) ? o.beiral : BEIRAL_PADRAO, aviso: ag.aviso || c.avisoPatio || null, interna: !!ag.interna, paredes: c.paredes, ambientes: c.ambientes,
              resumo: "Contorno " + c.forma + " pela face externa das paredes (" + virg(c.area) + " m², perímetro " + virg(c.perimetro) + " m) + beiral de " + virg(fin(o.beiral) ? o.beiral : BEIRAL_PADRAO) + " m. " + ag.resumo };
   }
 

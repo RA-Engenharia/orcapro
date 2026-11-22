@@ -40,7 +40,7 @@
     var Dm = D(), p = G.p, I = G.info, th = Math.atan(p.incl) * 180 / Math.PI, h0 = I.Hp - p.baseZ, cmax = I.cmax, rot = p.a < cmax - 1e-9;
     /* retângulo circunscrito (a × c máx.): SÓ paredes e q. Com a < c a Tabela 5 (a ≥ b) não aceita o retângulo a × c: calcula-se o transposto e os casos voltam ao quadro global */
     var der = rot ? { a: cmax, b: p.a, h: h0, hCumeeira: I.hA - p.baseZ, inclinacaoGraus: th, cobertura: "duas-aguas" } : { a: p.a, b: cmax, h: h0, hCumeeira: I.hA - p.baseZ, inclinacaoGraus: th, cobertura: "duas-aguas" };
-    var geo = ext({ nervuras: "retangulares" }, (q.vento && q.vento.geometria) || {}, der), ent = ext({}, q.vento, { geometria: geo }), key = JSON.stringify(ent) + "|" + p.a + "|" + p.b + "|" + JSON.stringify(p.legs.map(function (L) { return [L.x0, L.w, L.c]; }));
+    var geo = ext({ nervuras: "retangulares" }, (q.vento && q.vento.geometria) || {}, der), ent = ext({}, q.vento, { geometria: geo }), key = JSON.stringify(ent) + "|" + p.a + "|" + p.b + "|" + JSON.stringify(p.legs.map(function (L) { return [L.x0, L.w, L.c]; })) + "|" + (p.anel ? "anel" : "-");
     if (q._vento && q._ventoKey === key) return q._vento;
     if (!ent.faces) { ent.faces = {}; ["frente", "fundo", "esquerda", "direita"].forEach(function (k) { ent.faces[k] = { fechada: true, vedacao: "misto" }; }); avisos.push("T3L: faces do vento não informadas — adotadas as 4 fechadas (vedação mista, permeável)."); }
     var facesGlobais = ent.faces;
@@ -62,9 +62,12 @@
     }
     var fB = {}; Object.keys(FACES_B).forEach(function (k) { fB[k] = facesGlobais[FACES_B[k]]; });
     r.alas = { A: asa(p.a, p.b, I.hA, facesGlobais) }; p.legs.forEach(function (L, j) { r.alas[L.asa] = asa(L.c, L.w, I.pernas[j].hB, fB); });
-    var txtAsas = "asa A " + br(p.a) + " × " + br(p.b) + " m" + p.legs.map(function (L) { return "; asa " + L.asa + " " + br(L.c) + " × " + br(L.w) + " m"; }).join(""), pend = I.reflexos.map(function (rf) { return "canto côncavo (" + br(rf[0]) + "; " + br(rf[1]) + ")"; }).join(", ");
+    /* PÁTIO: a barra SUL (asa D) é a barra N girada 180° em planta (X' = a − X, Z' = c − Z): vento e faces giram junto (frente ↔ fundo, esquerda ↔ direita) */
+    if (p.anel) r.alas.D = asa(p.a, p.b, I.hA, { frente: facesGlobais.fundo, fundo: facesGlobais.frente, esquerda: facesGlobais.direita, direita: facesGlobais.esquerda });
+    var txtAsas = "asa A " + br(p.a) + " × " + br(p.b) + " m" + p.legs.map(function (L) { return "; asa " + L.asa + " " + br(L.c) + " × " + br(L.w) + " m"; }).join("") + (p.anel ? "; asa D (barra sul) " + br(p.a) + " × " + br(p.b) + " m, a barra norte girada 180°" : ""), pend = I.reflexos.map(function (rf) { return "canto côncavo (" + br(rf[0]) + "; " + br(rf[1]) + ")"; }).join(", ");
     avisos.push("T3L: PREMISSA DE VENTO — a NBR 6123:2023 NÃO traz coeficientes para telhado de 4 águas nem em " + p.planta + " (só uma e duas águas, Tabelas 5 e 6). Adotado o campo de pressões da Tabela 5 (duas águas) POR ASA, com a cumeeira e o h/b de cada uma (" + txtAsas + "), aplicado normal a cada água; na água comum a duas asas vale a envoltória (maior |p|); os beirais internos são beirais reais, com +0,8·q por baixo a barlavento. " + r.casos.length + " casos (4 direções × cpi); vento OBLÍQUO não montado; sombreamento entre as asas e a reentrância do rincão não considerados — PENDÊNCIA AO RT em cada " + pend + ": sobrepressão local na reentrância (acúmulo) fora da Tabela 5. A confirmar pelo RT (ou por ensaio em túnel de vento) antes de emitir para execução.");
-    r.pendenciasRT = I.reflexos.map(function (rf) { return { canto: rf.slice(), texto: "Canto côncavo (" + br(rf[0]) + "; " + br(rf[1]) + "): sobrepressão local na reentrância do rincão e sombreamento entre as asas não cobertos pela Tabela 5 — confirmar pelo RT (ou túnel de vento)." }; });
+    r.pendenciasRT = I.reflexos.map(function (rf) { return { canto: rf.slice(), texto: (p.anel ? "Canto do pátio (" : "Canto côncavo (") + br(rf[0]) + "; " + br(rf[1]) + "): sobrepressão local na reentrância do rincão e sombreamento entre as asas não cobertos pela Tabela 5 — confirmar pelo RT (ou túnel de vento)." }; });
+    if (p.anel) { r.pendenciasRT.push({ canto: null, texto: "Pátio: anel/pátio NÃO verificado pelo RT — vento no pátio (as paredes voltadas ao pátio recebem a pressão das faces externas de mesma orientação; recirculação e sucção do pátio fora da Tabela 5) a confirmar pelo RT ou túnel de vento." }); r.pendenciasRT.push({ canto: null, texto: "Pátio: drenagem da calha do pátio a dimensionar (vazão, declividade, condutores e extravasor) — a calha do pátio recebe a água das águas internas do anel e dos 4 rincões." }); }
     q._vento = r; q._ventoKey = key; return r;
   }
   /** água (registro de G.info.aguas) de uma face de membro: terças/frechais levam o aguaId; as faces da cumeeira também (aguaId da face) */
@@ -75,6 +78,7 @@
     function achar(R, dir) { var best = null; R.casos.forEach(function (k) { if (k.obliquo || k.direcao !== dir) return; if ((cv.cpi == null) !== (k.cpi == null)) return; var dd = cv.cpi == null ? 0 : Math.abs(k.cpi - cv.cpi); if (!best || dd < best.dd) best = { dd: dd, c: k }; }); return best && best.c; }
     var asas = agua ? agua.asas : ["A"].concat(p.legs.map(function (L) { return L.asa; })), compart = !agua || agua.compartilhada, vals = [];
     asas.forEach(function (as) {
+      if (as === "D") { if (compart && Z < p.c - p.b - 1e-9) return; var cD = achar(alas.D, (cv.direcao + 180) % 360); if (cD) vals.push(D2._pressaoTeto({ x0: 0, x1: p.a, y0: 0, y1: p.b }, cD, p.a - X, p.c - Z)); return; }
       if (as === "A") { if (compart && Z > p.b + 1e-9) return; var cA = achar(alas.A, cv.direcao); if (cA) vals.push(D2._pressaoTeto({ x0: 0, x1: p.a, y0: 0, y1: p.b }, cA, X, Z)); }
       else { var L = pernaDe(p, as); /* perna SOLTA (T): fora da projeção dela (L.xl <= X <= L.xr) o ponto só recebe o vento da barra; perna encostada (L/U) segue a envoltória do L */ if (asas.indexOf("A") >= 0 && !L.flushL && !L.flushR && (X < L.xl - 1e-9 || X > L.xr + 1e-9)) return; var cB = achar(alas[as], MAPA_B[cv.direcao]); if (cB) vals.push(D2._pressaoTeto({ x0: 0, x1: L.c, y0: 0, y1: L.w }, cB, Z, X - L.xl)); }
     });
@@ -231,7 +235,7 @@
           var vF = vetorExtremo(b, w[1], rc), Nt = Math.max(0, w[1].N), cf = res.cinta.fim; if (I.reflexos.some(function (rf) { return Math.abs(nn.x + p.origem.x - rf[0]) < 1e-3 && Math.abs(nn.z + p.origem.y - rf[1]) < 1e-3; })) { var cC = res.rincao.cintaC, Nc2 = Math.max(0, -w[1].N); cC.N = Math.max(cC.N, Nc2); cC.NEq = Math.max(cC.NEq, Nc2 * FK); cC.S = Math.max(cC.S, vF.S); cC.SEq = Math.max(cC.SEq, vF.S * FK); return; }      /* canto CÔNCAVO: a compressão do anel passa pela sela do rincão; não entra na cinta dos cantos convexos */
           cf.N = Math.max(cf.N, Nt); cf.NEq = Math.max(cf.NEq, Nt * FK); cf.S = Math.max(cf.S, vF.S); cf.SEq = Math.max(cf.SEq, vF.S * FK); });
         if (g === "MI") { var nMI = nd0[b.j]; if (nMI && b.mem.p1 && Math.abs(nMI.x + p.origem.x - b.mem.p1[0]) < 1e-3 && Math.abs(nMI.z + p.origem.y - b.mem.p1[1]) < 1e-3 && Math.abs(nMI.y - b.mem.p1[2]) < 1e-3) { var eMI = es[es.length - 1], vMI = vetorExtremo(b, eMI, rc); cmb.mi = Math.max(cmb.mi, Math.abs(eMI.N)); cmb.miS = Math.max(cmb.miS, vMI.S); } }
-        if (g === "PD" && b.mem.tes != null && ((b.mem.asa === "A" && (b.mem.tes === 0 || b.mem.tes === I.xs.length - 1) && Math.abs(b.mem.p0[1] - p.b / 2) < 1e-3) || (b.mem.asa !== "A" && (function (lg) { return b.mem.tes === lg.zs.length - 1 && Math.abs(b.mem.p0[0] - lg.xc) < 1e-3; })(pernaDe(p, b.mem.asa))))) cmb.pd = Math.max(cmb.pd, Math.abs(es[0].N));      /* montante central da tesoura de extremidade (mesmo nó do BI) */
+        if (g === "PD" && b.mem.tes != null && ((b.mem.asa === "A" && (b.mem.tes === 0 || b.mem.tes === I.xs.length - 1) && (Math.abs(b.mem.p0[1] - p.b / 2) < 1e-3 || (p.anel && Math.abs(b.mem.p0[1] - (p.c - p.b / 2)) < 1e-3))) || (b.mem.asa !== "A" && (function (lg) { return b.mem.tes === lg.zs.length - 1 && Math.abs(b.mem.p0[0] - lg.xc) < 1e-3; })(pernaDe(p, b.mem.asa))))) cmb.pd = Math.max(cmb.pd, Math.abs(es[0].N));      /* montante central da tesoura de extremidade (mesmo nó do BI) */
         if (g === "LB") { es.forEach(function (e) { var sL = sec.LB, vL = MD.barra2022(MD.deAnalise(e, { b: sL.b, h: sL.h, L0y: b.L, L0z: b.L, L1: 0.01, classe: CL, perfil: pf })); regG("LB", vL.eta, b.id + "@" + e.x.toFixed(2), cb.id + " " + car, vL.governa); regEsb("LB", vL); }); return; }
         if (g === "DV") return;
         es.forEach(function (e) {
@@ -272,7 +276,7 @@
     })();
     /* F1d = Nd/150 (6.6.4, Figura 6): caso próprio em todos os nós homólogos do banzo comprimido */
     (function () {
-      var pfF = perfil("curta"), F1 = { BS: (res.esf.BS ? res.esf.BS.Nc : 0) / 150, BI: (res.esf.BI ? res.esf.BI.Nc : 0) / 150 }, cgF = [], nT = I.xs.length + I.zsTotal;
+      var pfF = perfil("curta"), F1 = { BS: (res.esf.BS ? res.esf.BS.Nc : 0) / 150, BI: (res.esf.BI ? res.esf.BI.Nc : 0) / 150 }, cgF = [], nT = I.xs.length * (p.anel ? 2 : 1) + I.zsTotal;
       var FVd = function (n, f) { return fam.asaDe[n] !== "A" ? [0, 0, f, 0, 0, 0] : [f, 0, 0, 0, 0, 0]; }; fam.BS.forEach(function (n) { cgF.push({ tipo: "no", no: n, F: FVd(n, F1.BS) }); }); fam.BI.forEach(function (n) { cgF.push({ tipo: "no", no: n, F: FVd(n, F1.BI) }); });
       var rF = AN.analisar({ nos: Mf.nos, barras: Mf.barras, apoios: Mf.apoios, casos: [{ id: "F1D", cargas: cgF }] }, { combinacoes: [{ id: "F1D", fatores: { F1D: 1 } }], estacoes: 3, comPCG: false });
       if (!rF.ok) throw new Error("análise (F1d do contraventamento): " + (rF.motivo || JSON.stringify(rF.avisos))); modeloSemFalha(rF.avisos);
@@ -347,6 +351,7 @@
     function linha(asa, k, fn) { var L1 = { g: "BS", asa: asa, k: k, nos: [] }, L2 = { g: "BI", asa: asa, k: k, nos: [] }; fn(function (a1, b1) { if (a1) { out.BS.push(a1); L1.nos.push(a1); out.asaDe[a1] = asa; } if (b1) { out.BI.push(b1); L2.nos.push(b1); out.asaDe[b1] = asa; } }); out.linhas.push(L1, L2); }
     var k;
     for (k = 1; k < 2 * I.nH; k++) (function (z) { linha("A", k, function (put) { I.xs.forEach(function (x) { put(id(x, z, I.yT(z)), id(x, z, I.Hp)); }); }); })(k * I.dz);
+    if (p.anel) for (k = 1; k < 2 * I.nH; k++) (function (z) { linha("A", 100 + k, function (put) { I.xs.forEach(function (x) { put(id(x, p.c - z, I.yT(z)), id(x, p.c - z, I.Hp)); }); }); })(k * I.dz);
     I.pernas.forEach(function (L) { var nHB = L.nHB; for (k = 1; k < 2 * nHB; k++) (function (s) { linha(L.asa, k, function (put) { L.zs.forEach(function (z) { put(id(L.xl + s, z, I.yTs(s, L.w)), id(L.xl + s, z, I.Hp)); }); }); })(k <= nHB ? L.dl[k] : L.w - L.dl[2 * nHB - k]); });
     return out;
   }

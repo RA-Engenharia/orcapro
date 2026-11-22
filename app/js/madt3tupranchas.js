@@ -31,9 +31,9 @@
     return v;
   }
   function eixosXY(res) {
-    var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), p = res.t3.params, inf = res.t3.info, cnt = TM.contornoDe(p), xs = [], ys = [];
+    var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), p = res.t3.params, inf = res.t3.info, cnt = TM.contornoDe(p).concat(TM.furoDe(p) || []), xs = [], ys = [];
     cnt.forEach(function (q) { xs.push(q[0]); ys.push(q[1]); });
-    var vx = eixosDe(xs, arr(inf.xs).concat(arr(inf.pernas).map(function (L) { return L.xc; })), 0.5), vy = eixosDe(ys, arr(inf.pernas).reduce(function (o, L) { return o.concat(arr(L.zs)); }, []).concat([inf.b / 2]), 0.5);
+    var vx = eixosDe(xs, arr(inf.xs).concat(arr(inf.pernas).map(function (L) { return L.xc; })), 0.5), vy = eixosDe(ys, arr(inf.pernas).reduce(function (o, L) { return o.concat(arr(L.zs)); }, []).concat([inf.b / 2]).concat(inf.anel ? [inf.anel.c - inf.b / 2] : []), 0.5);
     return { X: vx.map(function (v, i) { return { v: v, nome: String(i + 1) }; }), Y: vy.map(function (v, i) { return { v: v, nome: String.fromCharCode(65 + i) }; }) };
   }
   function nomeAsa(res, asa) { return asa === "A" ? "BARRA (asa A)" : "PERNA " + (asa === "B" ? "1 (asa B)" : "2 (asa C)"); }

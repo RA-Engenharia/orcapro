@@ -425,6 +425,7 @@
       if (fin(dados.cotaApoio)) d.deslocBase = Math.round((dados.cotaApoio - d.base) * 1e6) / 1e6;
       if (dados.contorno) {
         d.contorno = dados.contorno;
+        if (arr(dados.furos).length) d.furos = dados.furos;      /* PÁTIO (22/11/2026): o furo vai na op (BimTelhado.op guarda como [{pontos}]) */
         /* CONTORNO LIVRE: o atalho "uma água / duas águas / várias águas" vale também para o contorno qualquer
            (uma água: só a aresta do beiral define a inclinação; as outras viram oitão). O telhado de retângulo e
            as outras vias seguem como antes. */

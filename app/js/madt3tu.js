@@ -79,7 +79,17 @@
     var P = (contorno || []).map(function (q) { return [Number(q[0]), Number(q[1])]; }), n = P.length, k, avisos = [];
     if (n < 4 || n % 2) throw new Error("madt3tu: contorno ortogonal precisa de número par de vértices (>= 4)");
     if (areaAssin(P) < 0) P.reverse();
+    /* PÁTIO (furo retangular ortogonal, 22/11/2026): p.furo = [[x, z]...] — contorno INTERNO, percorrido no sentido horário (o telhado fica à direita); os cantos do furo são CÔNCAVOS da região do telhado (rincões),
+       a água do anel cai para fora e para dentro (calha do pátio). Sem p.furo tudo segue como antes. */
+    var F = p.furo ? p.furo.map(function (q) { return [Number(q[0]), Number(q[1])]; }) : null, nF = F ? F.length : 0;
+    if (F) { if (nF < 4 || nF % 2) throw new Error("madt3tu: furo ortogonal precisa de número par de vértices (>= 4)"); if (areaAssin(F) > 0) F.reverse(); }
     var nConv = 0, nConc = 0;
+    for (k = 0; k < nF; k++) {
+      var f0 = F[(k + nF - 1) % nF], f1 = F[k], f2 = F[(k + 1) % nF], fu = [f1[0] - f0[0], f1[1] - f0[1]], fv = [f2[0] - f1[0], f2[1] - f1[1]], flu = Math.sqrt(fu[0] * fu[0] + fu[1] * fu[1]), flv = Math.sqrt(fv[0] * fv[0] + fv[1] * fv[1]);
+      if (!(flu > 0.2 && flv > 0.2)) throw new Error("madt3tu: lado do furo menor que 0,20 m");
+      if (Math.abs(fu[0] * fv[0] + fu[1] * fv[1]) / (flu * flv) > 0.02) throw new Error("madt3tu: o furo não é ortogonal (ângulo diferente de 90°)");
+      nConc++;
+    }
     for (k = 0; k < n; k++) {
       var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], u = [p1[0] - p0[0], p1[1] - p0[1]], v = [p2[0] - p1[0], p2[1] - p1[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lv = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
       if (!(lu > 0.2 && lv > 0.2)) throw new Error("madt3tu: lado menor que 0,20 m");
@@ -87,10 +97,11 @@
       if (u[0] * v[1] - u[1] * v[0] > 0) nConv++; else nConc++;
     }
     var perim = 0; for (k = 0; k < n; k++) perim += Math.sqrt(Math.pow(P[(k + 1) % n][0] - P[k][0], 2) + Math.pow(P[(k + 1) % n][1] - P[k][1], 2));
-    var A0 = areaAssin(P);
+    for (k = 0; k < nF; k++) perim += Math.sqrt(Math.pow(F[(k + 1) % nF][0] - F[k][0], 2) + Math.pow(F[(k + 1) % nF][1] - F[k][1], 2));
+    var A0 = areaAssin(P) - (F ? Math.abs(areaAssin(F)) : 0);
     /* 1) retângulos maximais da planta de paredes, 2) com o beiral, 3) maximais da união com o beiral */
-    var gx = unicos(P.map(function (q) { return q[0]; })), gz = unicos(P.map(function (q) { return q[1]; }));
-    var RP = maximais(gx, gz, function (x, z) { return pip(P, x, z); });
+    var PF = F ? P.concat(F) : P, gx = unicos(PF.map(function (q) { return q[0]; })), gz = unicos(PF.map(function (q) { return q[1]; }));
+    var RP = maximais(gx, gz, function (x, z) { return pip(P, x, z) && !(F && pip(F, x, z)); });
     if (!RP.length) throw new Error("madt3tu: não achei retângulos na planta");
     var RE0 = RP.map(function (R) { return { x0: R.x0 - e, x1: R.x1 + e, z0: R.z0 - e, z1: R.z1 + e }; });
     function emAlgum(x, z) { var q; for (q = 0; q < RE0.length; q++) if (x >= RE0[q].x0 - 1e-12 && x <= RE0[q].x1 + 1e-12 && z >= RE0[q].z0 - 1e-12 && z <= RE0[q].z1 + 1e-12) return true; return false; }
@@ -205,12 +216,12 @@
     linhas.sort(function (a, b) { return ordem[a.tipo] - ordem[b.tipo] || a.p0[0] - b.p0[0] || a.p0[1] - b.p0[1] || a.p1[0] - b.p1[0] || a.p1[1] - b.p1[1]; });
     linhas.forEach(function (l) { l.id = pre[l.tipo] + (++cont[l.tipo]); });
 
-    var esperada = A0 + perim * e + 4 * e * e;
+    var esperada = A0 + perim * e + (nConv - nConc) * e * e;       /* convexos − côncavos = 4 num polígono simples; com furo, os cantos do furo contam como côncavos */
     var ncExp = nConc; if (e > 0) { /* uma fenda mais estreita que 2·beiral fecha com o beiral */
       var nOff = 0; linhas.forEach(function (l) { if (l.tipo === "rincao") nOff++; }); if (nOff !== nConc) avisos.push("O beiral fecha uma fenda da planta (largura < 2 × beiral) ou funde águas: o número de rincões (" + nOff + ") difere dos cantos côncavos (" + nConc + ").");
     }
     return {
-      ok: true, tipologia: "T3TU", contorno: P, nLados: n, nConvexos: nConv, nConcavos: ncExp, incl: i, beiral: e, Hp: Hp, cotaBeiral: Hb, sc: sc,
+      ok: true, tipologia: "T3TU", contorno: P, furo: F, nLados: n + nF, nConvexos: nConv, nConcavos: ncExp, incl: i, beiral: e, Hp: Hp, cotaBeiral: Hb, sc: sc,
       retangulos: RP, retangulosBeiral: R, planos: planos, aguas: aguas, linhas: linhas,
       cumeeiras: linhas.filter(function (l) { return l.tipo === "cumeeira"; }), espigoes: linhas.filter(function (l) { return l.tipo === "espigao"; }), rincoes: linhas.filter(function (l) { return l.tipo === "rincao"; }),
       areaPlanta: Math.abs(A0), perimetro: perim, areaProj: areaProj, areaInc: areaProj * sc, areaProjEsperada: esperada, areaIncEsperada: esperada * sc,

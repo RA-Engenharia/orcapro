@@ -212,6 +212,7 @@
   function naoVerificado(G) {
     var nv = [], legs = arr(G.p.legs);
     nv.push("Chapa do canto côncavo (sela do rincão + cinta do anel, " + G.membros.filter(function (m) { return m.g === "RC"; }).length + " canto(s)): o L verifica a chapa única (momento H·e_v, seção bruta/líquida e cortante) só no canto CONVEXO; no côncavo a compressão do anel passa pela sela do rincão e a chapa não foi verificada à instabilidade — confirmar pelo RT.");
+    if (G.p.anel) nv.push("Anel/pátio NÃO verificado pelo RT: vento no pátio (paredes voltadas ao pátio, recirculação), drenagem da calha do pátio a dimensionar e rincões dos 4 cantos do pátio — confirmar pelo RT.");
     if (legs.some(function (L) { return !L.flushL && !L.flushR; })) nv.push("Perna solta (T): travamento da boca — diagonais de tração no plano do banzo inferior (DX \"boca\"): dimensionadas pelo laço de cálculo, mas as ligações dessas diagonais não foram detalhadas — confirmar pelo RT.");
     var baixos = G.membros.filter(function (m) { if (m.g !== "DX" || !m.p0 || !m.p1) return false; var dx = Math.abs(m.p1[0] - m.p0[0]), dz = Math.abs(m.p1[1] - m.p0[1]), dy = Math.abs(m.p1[2] - m.p0[2]), c = Math.sqrt(dx * dx + dy * dy), t = Math.sqrt(dz * dz + dy * dy); return Math.min(Math.atan2(c, dz), Math.atan2(t, dx)) * 180 / Math.PI < 25; }).length;
     if (baixos) nv.push("Contraventamento: " + baixos + " diagonal(is) em X com ângulo < 25° com a terça/linha do banzo têm eficiência reduzida (a componente que trava a barra cai com o seno do ângulo); o cálculo não aplica essa redução — confirmar pelo RT.");
