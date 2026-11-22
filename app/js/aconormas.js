@@ -22,6 +22,8 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  /* edição da NBR 8800 usada no cálculo: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) */
+  function _ed8800() { var N = global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.ed8800 ? N.ed8800() : "2008"; }
 
   var SITUACOES = {
     ok:        { rotulo: "Em vigor — texto oficial conferido", curto: "Conferida", tom: "ok" },
@@ -43,7 +45,7 @@
       vigente: "2025", usada: "2003, pelos coeficientes da NBR 8800:2008 (Tabelas 1 e 2)", texto: "só a de 2003", situacao: "conferir", motor: ["js/acocargas.js"] },
     { id: "nbr8800", norma: "ABNT NBR 8800", titulo: "Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edificações",
       tema: "Análise de 2ª ordem e deslocabilidade, dimensionamento das barras (tração, compressão, flexão, cortante, interação), deslocamentos-limite, ligações",
-      vigente: "2024 (errata 02/2025)", usada: "2008 em tabela de parâmetros; da 2024, os itens com mudança confirmada em fonte secundária (compressão por área efetiva, Cb sem teto, deslocabilidade 1,13/1,55, parafusos 0,45/0,56)",
+      vigente: "2024 (errata 02/2025)", usada: "2008 em todo o dimensionamento das barras, na deslocabilidade e nas ligações (decisão de 21/11/2026, opção central EDICAO_8800 em js/metalnorma.js; js/acoligcalc.js: parafusos 0,40/0,50 e concreto 6.6.1 da 2008)",
       texto: "não", situacao: "conferir", motor: ["js/acodim8800.js", "js/acodimensionar.js", "js/acoanalise.js", "js/acoligcalc.js"] },
     { id: "nbr14762", norma: "ABNT NBR 14762", titulo: "Dimensionamento de estruturas de aço constituídas por perfis formados a frio",
       tema: "Terças e travessas de chapa dobrada: faixas finitas (flambagem local, distorcional e global) e método da resistência direta",
@@ -71,7 +73,7 @@
   function doMotor() {
     var g = global, o = [];
     function add(nome, arq, txt) { if (txt) o.push({ motor: nome, arquivo: arq, texto: String(txt) }); }
-    try { if (g.AcoDim8800 && g.AcoDim8800.ED) add("Dimensionamento das barras", "js/acodim8800.js", g.AcoDim8800.ED + " — itens sem mudança confirmada na 2024; os que mudaram citam a 2024"); } catch (e) {}
+    try { if (g.AcoDim8800 && g.AcoDim8800.ED) add("Dimensionamento das barras", "js/acodim8800.js", g.AcoDim8800.ED + " em todas as verificações das barras (opção central EDICAO_8800)"); } catch (e) {}
     try { if (g.AcoCargas && g.AcoCargas.EDICAO) add("Ações e combinações", "js/acocargas.js", g.AcoCargas.EDICAO); } catch (e) {}
     try { if (g.AcoVento && g.AcoVento.NORMA) add("Vento", "js/acovento.js", g.AcoVento.NORMA + (g.AcoVento.EDICAO ? " — " + g.AcoVento.EDICAO : "")); } catch (e) {}
     try { if (g.AcoIsopletas && g.AcoIsopletas.FONTE) { var F = g.AcoIsopletas.FONTE; add("Mapa de isopletas (V0)", "js/acoisopletas.js", typeof F === "string" ? F : (F.citacao || F.norma || F.titulo || "NBR 6123, Figura 1")); } } catch (e) {}

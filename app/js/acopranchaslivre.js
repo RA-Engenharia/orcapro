@@ -46,6 +46,8 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  /* edição da NBR 8800 usada no cálculo: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) */
+  function _ed8800() { var N = global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.ed8800 ? N.ed8800() : "2008"; }
 
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
   function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
@@ -525,48 +527,58 @@
    * 20/11/2026 (pranchas v2): notas gerais completas (aços por uso, parafusos, solda/eletrodo, pintura, tolerâncias, graute,
    * montagem), normas com a edição, legenda das marcas e, na folha 01, o ÍNDICE DAS FOLHAS. O que o cálculo não decidiu sai
    * "A DIMENSIONAR"/"[a preencher]" — nada inventado (docs/PADRAO-PRANCHA-METALICA.md). */
-  function familia(perfil) { var q = /^([A-Za-z]+)/.exec(txt(perfil)); return q ? q[1].toUpperCase() : "?"; }
+  /* a família é o prefixo do nome do catálogo (js/perfisaco.js): "2L ..." começa com dígito — o regex antigo não casava e a nota saía "(?)" */
+  function familia(perfil) { var q = /^(\d*[A-Za-z]+)/.exec(txt(perfil)); return q ? q[1].toUpperCase() : "PERFIL"; }
   function notas(c) {
     var r = c.r, d = c.d, porAco = {};
     d.membros.forEach(function (m) { var k = txt(m.aco) || "[a preencher]"; (porAco[k] = porAco[k] || {})[familia(m.perfil)] = 1; });
-    var nomeFam = { TR: "TUBO RETANGULAR", TQ: "TUBO QUADRADO", U: "PERFIL U", UE: "PERFIL Ue", BR: "BARRA REDONDA", W: "PERFIL W", L: "CANTONEIRA", HP: "PERFIL HP" };
+    var nomeFam = { TR: "TUBO RETANGULAR", TQ: "TUBO QUADRADO", U: "PERFIL U", UE: "PERFIL Ue", BR: "BARRA REDONDA", W: "PERFIL W", L: "CANTONEIRA", "2L": "DUPLA CANTONEIRA", HP: "PERFIL HP", C: "PERFIL U", TC: "TUBO CIRCULAR", HSSR: "TUBO RETANGULAR", HSSC: "TUBO CIRCULAR", Z: "PERFIL Z", ZE: "PERFIL Ze", CARTOLA: "PERFIL CARTOLA", I: "PERFIL I" };
     var acos = Object.keys(porAco).map(function (k) { return k + " (" + Object.keys(porAco[k]).map(function (f) { return nomeFam[f] || f; }).join(", ") + ")"; }).join("; ");
     var temTubo = d.membros.some(function (m) { return /^T[RQ]\b/.test(txt(m.perfil)); });
     var L = [
       "COTAS EM MILÍMETROS E NÍVEIS EM METROS, SALVO INDICAÇÃO. NÃO MEDIR NO DESENHO.",
       "AÇOS: " + acos + ". CHAPAS DE LIGAÇÃO E PLACAS DE BASE: ASTM A36.",
-      { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: A DIMENSIONAR (O CÁLCULO DAS BARRAS NÃO OS DIMENSIONA). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", cor: d.ligs.length ? null : VERMELHO },
+      d.ligDim && !d.ligs.length ? { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: DIMENSIONADOS PELO CÁLCULO (NBR 8800:2008 - QUADRO DAS LIGAÇÕES E MEMORIAL). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", attr: ' data-dimensionada="notas"' }
+        : { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: A DIMENSIONAR (O CÁLCULO DAS BARRAS NÃO OS DIMENSIONA). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", cor: d.ligs.length ? null : VERMELHO },
       "SOLDA: ELETRODO E70XX (AWS A5.1); FILETE CONTÍNUO COM A PERNA DO DETALHE, NUNCA MENOR QUE A MÍNIMA DA NBR 8800; SIMBOLOGIA AWS A2.4; SOLDADORES E PROCEDIMENTOS QUALIFICADOS (AWS D1.1)." + (temTubo ? " NÓS DE TUBO SOLDADOS EM TODO O CONTORNO, PONTAS RECORTADAS NO ENCONTRO (NBR 16239)." : ""),
-      { t: "PINTURA: PREPARO DE SUPERFÍCIE E SISTEMA CONFORME A AGRESSIVIDADE DO AMBIENTE DA OBRA - [a preencher]." + (temTubo ? " TUBOS COM AS PONTAS VEDADAS." : ""), cor: VERMELHO },
-      { t: "TOLERÂNCIAS DE FABRICAÇÃO E DE MONTAGEM: ABNT NBR 8800 (FABRICAÇÃO, MONTAGEM E CONTROLE DE QUALIDADE) - VALORES [a preencher pelo RT].", cor: VERMELHO },
+      "PINTURA: ACABAMENTO AZUL-AÇO ACETINADO (COR PADRÃO DO MÓDULO METÁLICO)." + (temTubo ? " TUBOS COM AS PONTAS VEDADAS." : ""), { t: "PREPARO DE SUPERFÍCIE E SISTEMA DE PINTURA CONFORME A AGRESSIVIDADE DO AMBIENTE DA OBRA - [a preencher].", cor: VERMELHO },
+      "TOLERÂNCIAS DE FABRICAÇÃO E DE MONTAGEM: AS DA ABNT NBR 8800:2008, SEÇÃO DE FABRICAÇÃO, MONTAGEM E CONTROLE DE QUALIDADE (CONFERIR O ITEM NO TEXTO DA NORMA).",
       "MARCA = PEÇA IGUAL (MESMO PAPEL, PERFIL E COMPRIMENTO). CONJUNTOS: CL = COLUNA TRELIÇADA, TS = TESOURA. COMPRIMENTO PELO EIXO (NÓ A NÓ); O DE CORTE SAI DO DESENHO DE FABRICAÇÃO.",
       "GRAUTE NÃO RETRÁTIL SOB AS PLACAS DE BASE (25 mm), DEPOIS DO NIVELAMENTO E DO PRUMO.",
       "CONTRAVENTOS MONTADOS JUNTO COM OS PÓRTICOS E TENSIONADOS (PORCA E CONTRAPORCA) DEPOIS DO PRUMO, DO NÍVEL E DO ALINHAMENTO.",
       "CONFERIR A LOCAÇÃO E AS COTAS NA OBRA ANTES DA FABRICAÇÃO."
     ];
     if (r.envoltorio && r.envoltorio.situacao === "interna") L.push("ESTRUTURA DENTRO DE OUTRA EDIFICAÇÃO: SEM VENTO (DECLARADO).");
-    if (arr(d.bloq).length) L.push({ t: "NÃO EMITIR PARA FABRICAÇÃO: " + d.bloq.join("; ") + " (VER O MEMORIAL).", cor: VERMELHO });
+    if (arr(d.bloq).length) L.push({ t: "NÃO LIBERADO PARA FABRICAÇÃO: " + d.bloq.join("; ") + " (VER O MEMORIAL).", cor: VERMELHO });
     return L;
   }
-  var NORMAS = ["ABNT NBR 8800:2024 - ESTRUTURAS DE AÇO", "ABNT NBR 14762:2010 - PERFIS FORMADOS A FRIO", "ABNT NBR 16239:2013 - ESTRUTURAS DE AÇO COM PERFIS TUBULARES", "ABNT NBR 6120:2019 - AÇÕES", "ABNT NBR 6123:2023 - VENTO", "ABNT NBR 8681:2003 - AÇÕES E SEGURANÇA", "AWS A2.4 (SÍMBOLOS DE SOLDA) E AWS D1.1 (SOLDAGEM)"];
-  /* a coluna da direita: [ÍNDICE (folha 01)] + NOTAS GERAIS + NORMAS UTILIZADAS — a letra desce até 70 % para caber acima do carimbo */
-  function colunaNotas(F, geo, linhas, E, indice) {
-    var col = geo.coluna, car = geo.carimbo; if (!col || geo.semColuna) return;
-    var x = col.x + 3, wmax = col.w - 6;
-    function montar(Fx, f) {
-      var h = E.T.nota * f, yy = col.y + 3;
-      function tit(s) { Fx.texto(x, yy + E.T.titulo * f * 0.76, s, E.T.titulo * Math.max(0.8, f), {}); yy += E.T.titulo * f + 2.4; }
-      if (indice && indice.length) { tit("ÍNDICE DAS FOLHAS"); indice.forEach(function (q) { yy += Fx.textos(x, yy, [q], h, { wmax: wmax, recuo: 3 }); }); yy += 2.5; }
-      tit("NOTAS GERAIS");
-      linhas.forEach(function (l, i) { var it = typeof l === "object" ? l : { t: l }; yy += Fx.textos(x, yy, [{ t: (i + 1) + ". " + it.t, cor: it.cor }], h, { wmax: wmax, recuo: 3 }) + 0.8; });
-      yy += 2.5; tit("NORMAS UTILIZADAS");
-      NORMAS.forEach(function (l, i) { yy += Fx.textos(x, yy, [(i + 1) + ". " + l], h, { wmax: wmax, recuo: 3 }); });
-      return yy;
+  var NORMAS = ["ABNT NBR 8800:2008 - ESTRUTURAS DE AÇO", "ABNT NBR 14762:2010 - PERFIS FORMADOS A FRIO", "ABNT NBR 16239:2013 - ESTRUTURAS DE AÇO COM PERFIS TUBULARES", "ABNT NBR 6120:2019 - AÇÕES", "ABNT NBR 6123:2023 - VENTO", "ABNT NBR 8681:2003 - AÇÕES E SEGURANÇA", "AWS A2.4 (SÍMBOLOS DE SOLDA) E AWS D1.1 (SOLDAGEM)"];
+  /* DADOS DO PROJETO (o bloco do galpão, js/acopranchas.js blocosNotas): só o que o resultado do cálculo traz — nada inventado */
+  function dadosProjeto(c) {
+    var d = c.d, r = c.r, o = [], cx = d.caixa;
+    /* PLANTA = medida ENTRE EIXOS extremos (a mesma das cotas da locação). A caixa das barras não serve: as correntes do
+       tapamento ficam no plano das terças de fechamento, ~15 mm por fora do eixo de cada lado — dava 20,03 m num vão de 20.000 */
+    var ex = { x: [], z: [] }; arr(d.eixos).forEach(function (e) { if (e && isFinite(+e.c) && ex[e.dir]) ex[e.dir].push(+e.c); });
+    if (ex.x.length > 1 && ex.z.length > 1) cx = { x0: Math.min.apply(null, ex.x), x1: Math.max.apply(null, ex.x), z0: Math.min.apply(null, ex.z), z1: Math.max.apply(null, ex.z) };
+    if (cx && isFinite(cx.x1 - cx.x0) && isFinite(cx.z1 - cx.z0)) o.push("PLANTA " + br(Math.max(cx.x1 - cx.x0, cx.z1 - cx.z0), 2) + " x " + br(Math.min(cx.x1 - cx.x0, cx.z1 - cx.z0), 2) + " m (ENTRE EIXOS)" + (d.tr && d.tr.porticos ? "; " + d.tr.porticos.length + " PÓRTICOS" : "") + ".");
+    if (r.vento && typeof r.vento === "object") {
+      var v = r.vento, partes = [];
+      [["V0", v.V0 != null ? v.V0 : v.v0, " m/s"], ["Vk", v.vk, " m/s"], ["q", v.q, " kN/m²"]].forEach(function (p) { var x = typeof p[1] === "object" && p[1] ? (p[1].valor != null ? p[1].valor : p[1].v) : p[1]; if (isFinite(+x) && p[1] != null) partes.push(p[0] + " = " + br(+x, 2) + p[2]); });
+      if (partes.length) o.push("VENTO (NBR 6123): " + partes.join("; ") + ".");
     }
-    var fs = [0.9, 0.82, 0.76, 0.7], f = fs[fs.length - 1];
-    for (var i = 0; i < fs.length; i++) { var Dm = new (AP().Desenho)(E, null); if (montar(Dm, fs[i]) <= car.y - 3) { f = fs[i]; break; } }
-    var yFim = montar(F, f);
-    if (yFim > car.y - 2) F.texto(x, car.y - 3, "(notas além do espaço: ver o memorial)", E.T.nota * 0.8, { cor: VERMELHO });
+    o.push("VERIFICAÇÃO DAS BARRAS: " + (r.aprovado ? "TODAS APROVADAS" : num(r.falhas, 0) + " FALHA(S)") + ".");
+    if (isFinite(+r.peso)) o.push("PESO DOS PERFIS: " + br(+r.peso, 0) + " kg.");
+    return o;
+  }
+  /* a coluna da direita é a do galpão (AcoPranchas.colunaNotas, js/acopranchas.js): ÍNDICE DAS FOLHAS (folha 01) + NOTAS GERAIS + NORMAS UTILIZADAS + DADOS DO PROJETO, a letra
+     desce até o mínimo do padrão para caber acima do carimbo; antes esta família tinha uma coluna própria, de outra numeração e sem os dados do projeto */
+  function colunaNotas(F, geo, linhas, E, indice, dados) {
+    var col = geo.coluna; if (!col || geo.semColuna) return;
+    var blocos = [];
+    if (indice && indice.length) blocos.push({ titulo: "ÍNDICE DAS FOLHAS", itens: indice, numerar: false });
+    blocos.push({ titulo: "NOTAS GERAIS", itens: linhas, numerar: true }, { titulo: "NORMAS UTILIZADAS", itens: NORMAS, numerar: true });
+    if (dados && dados.length) blocos.push({ titulo: "DADOS DO PROJETO", itens: dados, numerar: false });
+    if (!AP().colunaNotas(F, geo, blocos)) F.texto(col.x + 3, geo.carimbo.y - 3, "(notas além do espaço: ver o memorial)", E.T.nota * 0.8, { cor: AP().VERMELHO });
   }
 
   /* ================================================================ GERAR */
@@ -593,7 +605,17 @@
     /* os encontros do modelo (nós e bases) que pedem ligação — a mesma conta do memorial */
     var MLv = dep("AcoMemorialLivre", "./acomemoriallivre.js"), encs = MLv && MLv._int && MLv._int.encontros ? MLv._int.encontros(r, d.ligs) : [];
     var encSem = encs.filter(function (e) { return !e.lig; }), encInc = encs.filter(function (e) { return e.lig && e.incoerente; });
-    if (!d.ligs.length) bloq.push("LIGAÇÕES SEM DIMENSIONAMENTO");
+    /* 21/11/2026 (js/metalligdim.js, 1.2.429): o cálculo dos "Pórticos industriais" DIMENSIONA as ligações (r.ligDim) e os nós de
+       chapa (r.nosChapa). Sem ligação da biblioteca no modelo, vale esse dimensionamento — e só libera com TUDO coberto: nenhuma
+       reprovada, nenhum grupo de barras sem ligação, as bases dimensionadas e nenhum nó de chapa reprovado. */
+    var LDm = r.ligDim && arr(r.ligDim.ligacoes).length ? r.ligDim : null, NCh = r.nosChapa || null;
+    d.ligDim = LDm;
+    if (!d.ligs.length && LDm) {
+      if (LDm.reprovados) bloq.push(LDm.reprovados + " LIGAÇÃO(ÕES) QUE NÃO ATENDE(M)");
+      if (arr(LDm.naoDim).length) bloq.push("ENCONTROS SEM LIGAÇÃO DIMENSIONADA (" + arr(LDm.naoDim).join("; ").toUpperCase() + ")");
+      if (!(LDm.cobertos && LDm.cobertos.base)) bloq.push("PLACA DE BASE SEM DIMENSIONAMENTO");
+      if (NCh && NCh.reprovados) bloq.push(NCh.reprovados + " NÓ(S) DE CHAPA QUE NÃO ATENDE(M)");
+    } else if (!d.ligs.length) bloq.push("LIGAÇÕES SEM DIMENSIONAMENTO");
     else {
       if (encSem.length) bloq.push(encSem.length + " ENCONTRO(S) SEM LIGAÇÃO DIMENSIONADA");
       if (d.ligs.some(function (l) { return !(l.resultado && l.resultado.ok); })) bloq.push("LIGAÇÃO QUE NÃO ATENDE");
@@ -609,13 +631,18 @@
       if (d.ligs.some(function (l) { return !l.comCalculo; })) bloq.push("LIGAÇÃO NÃO REFEITA COM ESTE CÁLCULO");
       else if (d.ligs.some(function (l) { return l.confere === false; })) bloq.push("LIGAÇÃO DESENHADA DIFERENTE DO DIMENSIONADO");
     }
-    if (d.bases.some(function (b) { return !b.dim; })) bloq.push("PLACA DE BASE SEM DIMENSIONAMENTO");
+    if (d.ligs.length || !LDm) { if (d.bases.some(function (b) { return !b.dim; })) bloq.push("PLACA DE BASE SEM DIMENSIONAMENTO"); }
     else if (d.bases.some(function (b) { return b.lig && !(b.lig.resultado && b.lig.resultado.ok); })) { if (bloq.indexOf("LIGAÇÃO QUE NÃO ATENDE") < 0) bloq.push("PLACA DE BASE QUE NÃO ATENDE"); }
     if (d.ligs.some(function (l) { return l.resultado && l.resultado.ajusteCota; })) bloq.push("AJUSTE DE COTA DA FUNDAÇÃO PENDENTE");
     d.bloq = bloq;
-    if (bloq.length && sit === "aprovado") avisos.push("As pranchas saem com 'NÃO EMITIR': " + bloq.join("; ") + ".");
-    if (sit !== "aprovado") avisos.push("O cálculo não está aprovado (" + (sit === "incompleto" ? "incompleto: " + arr(r.naoVerificados).map(function (x) { return x.tema + " — " + x.motivo; }).join("; ") : r.falhas + " falha(s)") + "): as pranchas saem com a nota 'NÃO EMITIR'.");
-    if (!d.ligs.length) avisos.push("Nenhuma ligação dimensionada no modelo: as folhas de locação e detalhes saem com a pendência em vermelho (use Ligação inteligente / Ligar todos os nós).");
+    /* 21/11/2026 (régua do concreto, js/concmemorial.js): a faixa diz "NÃO LIBERADO — N peça(s)" e, bloqueada, o carimbo sai SEM o
+       responsável técnico e o registro (ninguém assina prancha não liberada) */
+    var nPec = (sit !== "aprovado" ? num(r.falhas, 0) : 0) + (LDm && !d.ligs.length ? num(LDm.reprovados, 0) : 0) + (NCh && !d.ligs.length ? num(NCh.reprovados, 0) : 0) + encSem.length;
+    var faixaTxt = bloq.length ? "NÃO LIBERADO" + (nPec ? " — " + nPec + " PEÇA(S)" : "") + " - " + bloq.join(" · ") : "";
+    if (bloq.length && sit === "aprovado") avisos.push("As pranchas saem com 'NÃO LIBERADO' (sem o RT no carimbo): " + bloq.join("; ") + ".");
+    if (sit !== "aprovado") avisos.push("O cálculo não está aprovado (" + (sit === "incompleto" ? "incompleto: " + arr(r.naoVerificados).map(function (x) { return x.tema + " — " + x.motivo; }).join("; ") : r.falhas + " falha(s)") + "): as pranchas saem com a faixa 'NÃO LIBERADO' (sem o RT no carimbo).");
+    if (!d.ligs.length && LDm) avisos.push("Ligações dimensionadas pelo cálculo (js/metalligdim.js): " + LDm.resumo + ".");
+    else if (!d.ligs.length) avisos.push("Nenhuma ligação dimensionada no modelo: as folhas de locação e detalhes saem com a pendência em vermelho (use Ligação inteligente / Ligar todos os nós).");
     else if (d.ligs.some(function (l) { return !(l.resultado && l.resultado.ok); })) avisos.push(d.ligs.filter(function (l) { return !(l.resultado && l.resultado.ok); }).length + " ligação(ões) que NÃO atende(m) com os esforços deste cálculo: em vermelho no quadro das ligações.");
     var formato = P.FORMATOS[opcoes.formato] ? opcoes.formato : "A1", geo = P.geometria(formato, "paisagem", "RA");
     var codigo = txt(opcoes.codigo).trim() || "EST-MET", rev = (txt(opcoes.revisao).trim() || "R00").toUpperCase(), data = txt(opcoes.data).trim() || hoje();
@@ -634,9 +661,9 @@
       for (var q = 0; q < lm.length; q += porPag) (function (ls, pg, ult) { defs.push({ id: "materiais" + (pg ? "-" + (pg + 1) : ""), titulo: "LISTA DE MATERIAIS" + (pg ? " (CONTINUAÇÃO)" : ""), fn: function (c) { return folhaMateriais(c, pg, ls, ult); } }); })(lm.slice(q, q + porPag), q / porPag, q + porPag >= lm.length);
     }
     /* a faixa do "NÃO EMITIR" (embaixo da área, quebrada em linhas) é RESERVADA: nenhum desenho nem tabela entra nela */
-    var hB = E.T.nota * 1.2, txB = bloq.length ? A.quebrar("NÃO EMITIR - " + bloq.join(" · "), hB, geo.area.w - 8) : [], resB = txB.length ? txB.length * hB * 1.45 + 4 : 0;
+    var hB = E.T.nota * 1.2, txB = bloq.length ? A.quebrar(faixaTxt, hB, geo.area.w - 8) : [], resB = txB.length ? txB.length * hB * 1.45 + 4 : 0;
     function geoDe(fmt) {
-      var g = P.geometria(P.FORMATOS[fmt] ? fmt : formato, "paisagem", "RA"), lb = bloq.length ? A.quebrar("NÃO EMITIR - " + bloq.join(" · "), hB, g.area.w - 8) : [];
+      var g = P.geometria(P.FORMATOS[fmt] ? fmt : formato, "paisagem", "RA"), lb = bloq.length ? A.quebrar(faixaTxt, hB, g.area.w - 8) : [];
       var res = lb.length ? lb.length * hB * 1.45 + 4 : 0, g2 = {}; Object.keys(g).forEach(function (k2) { g2[k2] = g[k2]; });
       g2.area = { x: g.area.x, y: g.area.y, w: g.area.w, h: g.area.h - res }; g2.areaTotal = g.area; g2.faixaB = lb; return g2;
     }
@@ -655,21 +682,20 @@
     /* carimbo: dado da OBRA que falta sai "[a preencher]" (visível) — nunca o endereço do escritório no lugar do da obra */
     function oObra(v) { return txt(v).trim() || "[a preencher]"; }
     var pr = P.normalizar({ id: "acopranchaslivre", nome: "Estrutura metálica - projeto executivo", formato: formato, orientacao: "paisagem", origem: "metalica",
-      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: oObra(opcoes.obra), proprietario: oObra(opcoes.proprietario),
+      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: bloq.length ? "" : txt(opcoes.responsavel), registro: bloq.length ? "" : txt(opcoes.registro), titulo: bloq.length ? "" : txt(opcoes.tituloProfissional), obra: oObra(opcoes.obra), proprietario: oObra(opcoes.proprietario),
                  contratante: oObra(opcoes.contratante || opcoes.proprietario), local: oObra(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
     /* o carimbo RA sem a empresa, o RT ou o logo sai com o bloco do escritório em branco: avisa (a tela passa Empresa.dados()) */
     if (!empObj || !txt(empObj.nome).trim()) avisos.push("Carimbo sem a razão social da empresa (cadastro da conta): o bloco do escritório sai em branco.");
     if (!txt(opcoes.responsavel).trim() && !(empObj && txt(empObj.responsavel).trim())) avisos.push("Carimbo sem o responsável técnico.");
     if (!opcoes.logo) avisos.push("Carimbo sem o logo da empresa.");
-    var nt = notas(ctx0);
+    var nt = notas(ctx0), dd = dadosProjeto(ctx0);
     var indice = feitas.map(function (f) { return codigo + "-" + f.rotulo + "  " + f.def.titulo + " (" + f.formato + ", " + f.escala + ")"; });
     var folhas = feitas.map(function (f, i) {
       var g = f.geo, W = g.papel.w, H = g.papel.h, M = g.moldura;
       var F = novoDesenho(E), fl = pr.folhas[i];
       F.ret(M.x, M.y, M.w, M.h, "MET-MOLDURA");
-      if (!g.semColuna && g.coluna) F.linha(g.coluna.x, g.coluna.y, g.coluna.x, g.coluna.y + g.coluna.h, "MET-MOLDURA");
-      colunaNotas(F, g, nt, E, i === 0 ? indice : null);
+      colunaNotas(F, g, nt, E, i === 0 ? indice : null, dd);
       A.carimbo(F, pr, fl, g, empObj, opcoes.logo || null, f.rotulo + "/" + dois(feitas.length));
       var numero = codigo + "-" + f.rotulo;
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + 'mm" height="' + H + 'mm" viewBox="0 0 ' + W + " " + H + '" font-family="' + A.FONTE + '" data-folha="' + f.def.id + '" data-numero="' + numero + '">' +

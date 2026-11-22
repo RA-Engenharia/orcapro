@@ -27,13 +27,13 @@
  *
  * FÓRMULAS (a edição está em cada passo; γ do js/acomateriais.js):
  *   parafuso à tração Ft,Rd = 0,75·Ab·fub/γa2 (6.3.3.1); ao cisalhamento
- *   Fv,Rd = 0,45·Ab·fub/γa2 com a rosca no plano, 0,56 fora (NBR 8800:2024 —
- *   eram 0,40 e 0,50; Gerdau 10/10/2024 e UFU, ver docs/metalica/gabarito-
+ *   Fv,Rd = 0,40·Ab·fub/γa2 com a rosca no plano, 0,50 fora (NBR 8800:2008,
+ *   edição da opção central EDICAO_8800; na 2024 são 0,45 e 0,56; Gerdau 10/10/2024 e UFU, ver docs/metalica/gabarito-
  *   normas.md); interação (Ft/FtRd)² + (Fv/FvRd)² ≤ 1 (6.3.3.4); pressão de
  *   contato Fc,Rd = 1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2 (6.3.3.3); solda de
  *   filete 0,60·Aw·fw/γw2 e metal-base 0,60·AMB·fy/γa1 (6.2.5, Tabela 8);
- *   perna mínima (Tabela 10); concreto σc,Rd = 0,85·fck/γc·√(A2/A1) ≤
- *   1,7·fck/γc (2024); forças localizadas na mesa e na alma do pilar (5.7:
+ *   perna mínima (Tabela 10); concreto σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck
+ *   (2008; na 2024 0,85·fck/γc·√(A2/A1) ≤ 1,7·fck/γc); forças localizadas na mesa e na alma do pilar (5.7:
  *   6,25·tf²·fy/γa1, metade a menos de 10·tf do topo; 1,10·(2,5k + ln)·fy·tw
  *   /γa1 e 0,33·tw²·[1 + 3(ln/d)(tw/tf)^1,5]·√(E·fy·tf/tw)/γa1 no topo);
  *   placa de base pelo AISC Design Guide 1 (bloco retangular de compressão;
@@ -83,9 +83,16 @@
 
   /* ------------------------------------------------ resistências básicas (kN) */
   function parafusoTracao(d, fub) { return 0.75 * Ab(d) * fub / gamas().a2 / 1000; }
-  /* opcoes.edicao = "2008": cisalhamento do parafuso 0,40/0,50 e σc,Rd da 2008 — só para conferir exemplos publicados */
-  var OPC = { edicao: "2024" };
-  function parafusoCisal(d, fub, roscaNoPlano) { var e08 = OPC.edicao === "2008"; return (roscaNoPlano === false ? (e08 ? 0.50 : 0.56) : (e08 ? 0.40 : 0.45)) * Ab(d) * fub / gamas().a2 / 1000; }
+  /* EDIÇÃO DA NBR 8800 NAS LIGAÇÕES — a opção central BimMetalNorma.EDICAO_8800 (js/metalnorma.js; padrão 2008, decisão de
+     21/11/2026). opcoes.edicao = "2008"/"2024" força uma edição (exemplos publicados, rollback); null = segue a opção central.
+     2008, 6.3.3.2: Fv,Rd = 0,40·Ab·fub/γa2 (rosca no plano), 0,50 (fora); 6.6.1: σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck.
+     2024: 0,45/0,56 e 0,85·fck/γc·√(A2/A1) ≤ 1,7·fck/γc. */
+  var OPC = { edicao: null };
+  function ed() { if (OPC.edicao === "2008" || OPC.edicao === "2024") return OPC.edicao; var N = Nor(); try { return N && N.ed8800 ? N.ed8800() : "2008"; } catch (e) { return "2008"; } }
+  function EDN() { return "NBR 8800:" + ed(); }
+  function kv(fora) { return ed() === "2008" ? (fora ? "0,50" : "0,40") : (fora ? "0,56" : "0,45"); }   /* coeficiente do cisalhamento, para o texto */
+  function txtConcreto() { return ed() === "2008" ? "σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck" : "σc,Rd = 0,85·fck/γc·√(A2/A1) ≤ 1,7·fck/γc"; }
+  function parafusoCisal(d, fub, roscaNoPlano) { var e08 = ed() === "2008"; return (roscaNoPlano === false ? (e08 ? 0.50 : 0.56) : (e08 ? 0.40 : 0.45)) * Ab(d) * fub / gamas().a2 / 1000; }
   /* lf = distância livre (borda do furo à borda da chapa ou ao furo vizinho); furo padrão = db + 1,5 mm */
   function pressaoContato(d, t, fu, lf) { var g = gamas(); return Math.min(1.2 * lf * t * fu, 2.4 * d * t * fu) / g.a2 / 1000; }
   /* chapa fina (t < 4,75 mm — perfil formado a frio): NBR 14762:2010, esmagamento Fc,Rd = αe·d·t·fu/γ, αe = 0,183·t + 1,53 (t em mm), γ = 1,55 */
@@ -99,7 +106,7 @@
   function pernaMinima(t) { return t <= 6.35 ? 3 : t <= 12.5 ? 5 : t <= 19 ? 6 : 8; }   /* NBR 8800, Tabela 10 — pela chapa mais grossa (a favor) */
   function concreto(fck, A2_A1) {
     var g = gamas(), r = Math.min(2, Math.sqrt(Math.max(1, num(A2_A1, 1))));
-    if (OPC.edicao === "2008") return Math.min(fck * r / (g.c * num(g.n, 1.4)), fck);   /* NBR 8800:2008, 6.6.1: fck·√(A2/A1)/(γc·γn) ≤ fck */
+    if (ed() === "2008") return Math.min(fck * r / (g.c * num(g.n, 1.4)), fck);   /* NBR 8800:2008, 6.6.1: fck·√(A2/A1)/(γc·γn) ≤ fck */
     return Math.min(0.85 * fck / g.c * r, 1.7 * fck / g.c);
   }
   /* furo-padrão (NBR 8800, 6.3.6 / Tabela 12: db + 1,5 mm); nas áreas líquidas soma-se mais 2 mm (5.2.4.1) */
@@ -220,9 +227,9 @@
       });
       var MRd = tp * tp * fyP / 4 / g.a1;                                                    /* N·mm por mm */
       var vs = [];
-      vs.push(verif("Pressão no concreto sob a placa", ED24 + ", 6.6 (σc,Rd = 0,85·fck/γc·√(A2/A1) ≤ 1,7·fck/γc); " + DG1,
+      vs.push(verif("Pressão no concreto sob a placa", EDN() + ", 6.6 (" + txtConcreto() + "); " + DG1,
         [passo("Placa B × L", "B = bf + 2·" + balB + "; L = d + 2·" + balN + " (arredondadas a 10 mm)", br(B, 0) + " × " + br(L, 0) + " mm"),
-         passo("σc,Rd", "0,85·" + br(fck, 0) + "/" + br(g.c, 1) + "·√(" + br(A2A1x, 2) + ")", br(sigRd, 2) + " MPa", suporte ? "A2/A1 do topo da fundação do modelo (limitado a 4)" : (A2A1x > 1 ? "" : "A2/A1 = 1: um bloco de fundação maior que a placa aumenta a resistência")),
+         passo("σc,Rd", ed() === "2008" ? br(fck, 0) + "·√(" + br(A2A1x, 2) + ")/(" + br(g.c, 1) + "·" + br(num(g.n, 1.4), 1) + ")" : "0,85·" + br(fck, 0) + "/" + br(g.c, 1) + "·√(" + br(A2A1x, 2) + ")", br(sigRd, 2) + " MPa", suporte ? "A2/A1 do topo da fundação do modelo (limitado a 4)" : (A2A1x > 1 ? "" : "A2/A1 = 1: um bloco de fundação maior que a placa aumenta a resistência")),
          passo("Situação governante", piorSigTxt || "—", br(piorSig, 2) + " MPa", cg.sig ? "combinação " + cg.sig : "")],
         sigRd, excede ? sigRd * Math.max(1.0001, piorDem) : piorSig, "MPa"));
       vs.push(verif("Placa à flexão (t = " + br(tp, 1) + " mm)", DG1 + " — momento plástico t²·fy/4 por unidade de largura, γa1",
@@ -231,8 +238,8 @@
          passo("Momento resistente por mm", "t²·fy/(4·γa1)", br(MRd / 1000, 2) + " kN·m/m")], MRd / 1000, Math.max(piorMc, piorMt) / 1000, "kN·m/m"));
       vs.push(verif("Chumbadores à tração (" + nCh + " × " + ch.id + ", " + ((p.chumbador && p.chumbador.id) || "ASTM F1554 Gr.36") + ")", ED08 + ", 6.3.3.1 (Ft,Rd = 0,75·Ab·fub/γa2)",
         [passo("Ft,Rd por chumbador", "0,75·" + br(Ab(d), 0) + " mm²·" + br(fuC, 0) + " MPa/" + br(g.a2, 2), br(FtRd, 1) + " kN"), passo("Ft,Sd por chumbador", "", br(piorT / 1000, 1) + " kN", cg.T ? "combinação " + cg.T : "")], FtRd, piorT / 1000));
-      vs.push(verif("Chumbadores ao cisalhamento", ED24 + ", 6.3.3.2 (Fv,Rd = 0,45·Ab·fub/γa2, rosca no plano)",
-        [passo("Fv,Rd por chumbador", "0,45·Ab·fub/γa2", br(FvRd, 1) + " kN"), passo("Fv,Sd por chumbador", "furo alargado: a força horizontal em 2 dos 4 chumbadores", br(piorV / 1000, 1) + " kN", cg.V ? "combinação " + cg.V : "")], FvRd, piorV / 1000));
+      vs.push(verif("Chumbadores ao cisalhamento", EDN() + ", 6.3.3.2 (Fv,Rd = " + kv() + "·Ab·fub/γa2, rosca no plano)",
+        [passo("Fv,Rd por chumbador", kv() + "·Ab·fub/γa2", br(FvRd, 1) + " kN"), passo("Fv,Sd por chumbador", "furo alargado: a força horizontal em 2 dos 4 chumbadores", br(piorV / 1000, 1) + " kN", cg.V ? "combinação " + cg.V : "")], FvRd, piorV / 1000));
       vs.push(verif("Tração + cisalhamento nos chumbadores", ED08 + ", 6.3.3.4", [passo("(Ft,Sd/Ft,Rd)² + (Fv,Sd/Fv,Rd)²", "", br(piorInt, 3), cg.int ? "combinação " + cg.int : "")], 1, piorInt, ""));
       /* solda do pilar: tração no contorno todo, cortante nas almas, momento nas mesas (por mm de cordão); compressão por
          contato. A perna sobe até a máxima (t − 1,5 mm da peça mais fina); se o filete não der, MESAS EM PENETRAÇÃO TOTAL
@@ -357,7 +364,7 @@
       var vs = [];
       vs.push(verif("Parafusos à tração (" + nT + " junto da mesa tracionada, " + pf.id + " " + nomeClasse + ")", ED08 + ", 6.3.3.1",
         [passo("Força na mesa tracionada", "Ff = M/(d − tf) + N/2", br(Ff, 1) + " kN", "d − tf = " + br(h, 0) + " mm"), passo("Ft,Rd", "0,75·Ab·fub/γa2", br(FtRd, 1) + " kN"), passo("Ft,Sd por parafuso", "Ff/4", br(Tb, 1) + " kN", cg.T ? "combinação " + cg.T : "")], FtRd, Tb));
-      vs.push(verif("Parafusos ao cisalhamento (" + nTot + ")", ED24 + ", 6.3.3.2 (Fv,Rd = 0,45·Ab·fub/γa2)", [passo("Fv,Rd", "", br(FvRd, 1) + " kN"), passo("Fv,Sd", "V/" + nTot, br(Vb, 1) + " kN")], FvRd, Vb));
+      vs.push(verif("Parafusos ao cisalhamento (" + nTot + ")", EDN() + ", 6.3.3.2 (Fv,Rd = " + kv() + "·Ab·fub/γa2)", [passo("Fv,Rd", "", br(FvRd, 1) + " kN"), passo("Fv,Sd", "V/" + nTot, br(Vb, 1) + " kN")], FvRd, Vb));
       /* a cortante passa da chapa para os parafusos: a linha da ponta (chapa estendida) é empurrada para a borda —
          lf = eP − furo/2 na chapa; na mesa do pilar (contínua) vale o limite 2,4·db·t·fu; na cumeeira as duas chapas são iguais */
       var dhP = furoPadrao(d), lfP = eP - dhP / 2, fuC = num(p.acoPilar && p.acoPilar.fu, 450);
@@ -375,7 +382,7 @@
       vs.push(verif("Tração + cisalhamento nos parafusos", ED08 + ", 6.3.3.4", [passo("(Ft/FtRd)² + (Fv/FvRd)²", "", br(it, 3), cg.i ? "combinação " + cg.i : "")], 1, it, ""));
       /* chapa: cada parafuso é um T-stub de largura bp/2 e braço b' = pf − db/2 (sem alavanca) */
       var bl = Math.max(pfo, pfi) - d / 2, MsdB = Tb * 1000 * bl / (bp / 2), MRd = tp * tp * fy / 4 / g.a1;
-      vs.push(verif("Chapa de extremidade à flexão (t = " + br(tp, 1) + " mm)", "T-stub sem efeito alavanca (chapa espessa — a favor do parafuso); a " + ED24 + " mudou o método da chapa (conferir)",
+      vs.push(verif("Chapa de extremidade à flexão (t = " + br(tp, 1) + " mm)", "T-stub sem efeito alavanca (chapa espessa — a favor do parafuso); a NBR 8800:2024 mudou o método da chapa (conferir)",
         [passo("Braço do parafuso", "b' = pf − db/2", br(bl, 0) + " mm"), passo("Momento por mm", "Ft,Sd·b'/(bp/2)", br(MsdB / 1000, 2) + " kN·m/m"), passo("Resistente por mm", "t²·fy/(4·γa1)", br(MRd / 1000, 2) + " kN·m/m")], MRd / 1000, MsdB / 1000, "kN·m/m"));
       /* solda das mesas da viga: filete dos dois lados; se não passar, penetração total (resistência da mesa) */
       var aF = Math.max(pernaMinima(Math.max(tp, v.tf)), 6), FwF = soldaFilete(aF, 2 * v.bf - v.tw, fw, Math.min(fy, fyV)), penTotal = Ff > FwF;
@@ -463,8 +470,8 @@
           var dhC = furoPadrao(d), etC = ct.a - h, FcAba = pressaoContato(d, ct.t, fuC, etC - dhC / 2), FbC = Rc / n;
           var rsgC = n > 1 ? rasgamento({ t: ct.t, fy: fy, fu: fuC, lv: 2 * etC, furosV: 1, lt: (n - 1) * passoB, furosT: n - 1, dh: dhC + 2, Cts: 1 }) : null;
           var vs = [
-            verif("Parafusos do clip ao cisalhamento (" + n + " × " + pf.id + ")", ED24 + ", 6.3.3.2",
-              [passo("Fv,Rd", "0,45·Ab·fub/γa2", br(FvRd, 1) + " kN"), passo("Fv,Sd por parafuso", "√(R⊥² + R∥²)/" + n, br(Fb, 2) + " kN", "R⊥ = " + br(Rn, 2) + " kN; R∥ = " + br(Rp, 2) + " kN")], FvRd, Fb),
+            verif("Parafusos do clip ao cisalhamento (" + n + " × " + pf.id + ")", EDN() + ", 6.3.3.2",
+              [passo("Fv,Rd", kv() + "·Ab·fub/γa2", br(FvRd, 1) + " kN"), passo("Fv,Sd por parafuso", "√(R⊥² + R∥²)/" + n, br(Fb, 2) + " kN", "R⊥ = " + br(Rn, 2) + " kN; R∥ = " + br(Rp, 2) + " kN")], FvRd, Fb),
             verif("Pressão de contato na alma da terça (t = " + br(tT, 2) + " mm)", fino ? ED14762 + ", ligações parafusadas — esmagamento Fc,Rd = αe·d·t·fu/γ (αe = 0,183t + 1,53; γ = 1,55; conferir o item)" : ED08 + ", 6.3.3.3",
               [passo("Fc,Rd por parafuso", fino ? "(0,183·" + br(tT, 2) + " + 1,53)·" + d + "·" + br(tT, 2) + "·" + fuT + "/1,55" : "1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(FcRd, 2) + " kN")], FcRd, Fb),
             verif("Aba vertical do clip à flexão (" + ct.cat + " × " + La + " mm)", "balanço no pé, braço h = " + h + " mm; t²·fy/4/γa1 na largura La",
@@ -552,8 +559,15 @@
       var c = C && C.obter ? C.obter(nomes[ip]) : null; if (!c || !(c.A > 0)) continue;
       var a = Math.max(num(c.a, 0), num(c.b, 0)), t = num(c.t, 0), A = c.A, rx = Math.sqrt(Math.min(num(c.Ix, 0), num(c.Iy, c.Ix)) / A);
       var lr = Lm / rx, lef = Math.min(200, lr <= 80 ? 72 + 0.75 * lr : 32 + 1.25 * lr), Fe = Math.PI * Math.PI * E / (lef * lef), l0 = Math.sqrt(fy / Fe);
-      var chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0), lim = 0.45 * Math.sqrt(E / fy), bt = a / t, Aef = A;
-      if (bt > lim / Math.sqrt(chi)) { var sel = Math.pow(1.49 * lim / bt, 2) * fy, rq = Math.sqrt(sel / (chi * fy)), be = Math.max(0, Math.min(a, a * (1 - 0.22 * rq) * rq)); Aef = A - 2 * (a - be) * t; }
+      var chi, lim = 0.45 * Math.sqrt(E / fy), bt = a / t, Aef = A, Q = 1;
+      if (ed() === "2008") {
+        /* NBR 8800:2008, 5.3.2 e Anexo F (F.2, grupo 3 — abas de cantoneira): Qs; λ0 = √(Q·fy/Fe); Nc,Rd = χ·Q·Ag·fy/γa1 */
+        var r08 = Math.sqrt(E / fy); Q = bt <= 0.45 * r08 ? 1 : bt <= 0.91 * r08 ? 1.340 - 0.76 * bt * Math.sqrt(fy / E) : 0.53 * E / (fy * bt * bt);
+        Q = Math.min(1, Q); l0 = Math.sqrt(Q * fy / Fe); chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0); Aef = Q * A;
+      } else {
+        chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0);
+        if (bt > lim / Math.sqrt(chi)) { var sel = Math.pow(1.49 * lim / bt, 2) * fy, rq = Math.sqrt(sel / (chi * fy)), be = Math.max(0, Math.min(a, a * (1 - 0.22 * rq) * rq)); Aef = A - 2 * (a - be) * t; }
+      }
       var NcRd = chi * Aef * fy / g.a1 / 1000, beta = E * A * cs * cs / Lm;
       [[1, 12], [1, 16], [2, 12], [2, 16]].forEach(function (q) {
         if (melhor) return;
@@ -569,11 +583,11 @@
             [passo("Prb", "0,02·Mr·Cd/ho", br(Fbr, 2) + " kN", "Mr = " + br(Mr, 1) + " kN·m; ho = " + br(ho, 0) + " mm"), passo("Na mão-francesa", "Prb/cos θ", br(N, 2) + " kN", "θ = " + br(Math.acos(cs) * 180 / Math.PI, 0) + "°")], NcRd, N),
           verif("Rigidez da contenção", "AISC 360-16, Apêndice 6.3.2b (φ = 0,75)",
             [passo("βbr exigida", "10·Mr·Cd/(φ·Lbr·ho)", br(betaReq, 0) + " N/mm", "Lbr = " + br(Lbr / 1000, 2) + " m"), passo("Dada pela mão-francesa", "E·A·cos²θ/L", br(beta, 0) + " N/mm", "L = " + br(Lm, 0) + " mm")], beta, betaReq, "N/mm"),
-          verif("Cantoneira " + nomes[ip] + " à compressão (ligada por uma aba)", "AISC 360-16, E5 (esbeltez efetiva) e " + ED24 + ", 5.3 (χ, Aef)",
-            [passo("Esbeltez", "L/rx = " + br(lr, 1) + " → KL/r = " + (lr <= 80 ? "72 + 0,75·L/rx" : "32 + 1,25·L/rx"), br(lef, 1)), passo("χ", "λ0 = " + br(l0, 3), br(chi, 3)), passo("Nc,Rd", "χ·Aef·fy/γa1", br(NcRd, 1) + " kN", "Aef = " + br(Aef, 0) + " mm²")], NcRd, N),
+          verif("Cantoneira " + nomes[ip] + " à compressão (ligada por uma aba)", "AISC 360-16, E5 (esbeltez efetiva) e " + EDN() + (ed() === "2008" ? ", 5.3 e Anexo F (χ, Q)" : ", 5.3 (χ, Aef)"),
+            [passo("Esbeltez", "L/rx = " + br(lr, 1) + " → KL/r = " + (lr <= 80 ? "72 + 0,75·L/rx" : "32 + 1,25·L/rx"), br(lef, 1)), passo("χ", "λ0 = " + br(l0, 3), br(chi, 3)), passo("Nc,Rd", ed() === "2008" ? "χ·Q·Ag·fy/γa1" : "χ·Aef·fy/γa1", br(NcRd, 1) + " kN", ed() === "2008" ? "Q = " + br(Q, 3) : "Aef = " + br(Aef, 0) + " mm²")], NcRd, N),
           verif("Cantoneira à tração (só a aba ligada na seção do furo)", ED08 + ", 5.2", [passo("Nt,Rd", "mín(Ag·fy/γa1; (b − dh)·t·fu/γa2)", br(NtRd, 1) + " kN")], NtRd, N),
           verif("Esbeltez da cantoneira comprimida", "KL/r ≤ 200", [passo("KL/r", "", br(lef, 0))], 200, lef, ""),
-          verif("Parafusos ao cisalhamento (" + n + " × M" + d + " em cada ponta)", ED24 + ", 6.3.3.2", [passo("Fv,Rd", n + "·0,45·Ab·fub/γa2", br(FvRd, 1) + " kN")], FvRd, N),
+          verif("Parafusos ao cisalhamento (" + n + " × M" + d + " em cada ponta)", EDN() + ", 6.3.3.2", [passo("Fv,Rd", n + "·" + kv() + "·Ab·fub/γa2", br(FvRd, 1) + " kN")], FvRd, N),
           verif("Pressão de contato na cantoneira (t = " + br(t, 2) + " mm)", ED08 + ", 6.3.3.3", [passo("Fc,Rd", n + "·1,2·lf·t·fu/γa2 (borda " + eB + " mm)", br(FcL, 1) + " kN")], FcL, N),
           verif("Pressão de contato na alma da terça/travessa (t = " + br(tA, 2) + " mm)", tA < 4.75 ? ED14762 + " — esmagamento αe·d·t·fu/1,55" : ED08 + ", 6.3.3.3", [passo("Fc,Rd", "", br(FcA, 2) + " kN")], FcA, N),
           verif("Chapa de ligação na mesa (" + bg + " × " + br(tg, 1) + " mm): pressão de contato", ED08 + ", 6.3.3.3", [passo("Fc,Rd", "", br(FcG, 1) + " kN")], FcG, N),
@@ -593,7 +607,7 @@
     return melhor;
   }
 
-  var AcoLigCalc = { opcoes: OPC, placaBase: placaBase, chapaExtremidade: chapaExtremidade, clipTerca: clipTerca, contravento: contravento, maoFrancesa: maoFrancesa,
+  var AcoLigCalc = { opcoes: OPC, edicao: ed, placaBase: placaBase, chapaExtremidade: chapaExtremidade, clipTerca: clipTerca, contravento: contravento, maoFrancesa: maoFrancesa,
                      parafusoTracao: parafusoTracao, parafusoCisal: parafusoCisal, pressaoContato: pressaoContato, esmagamento14762: esmagamento14762,
                      soldaFilete: soldaFilete, concreto: concreto, rasgamento: rasgamento, furoPadrao: furoPadrao, _config: _config, pernaMinima: pernaMinima, CHAPAS: CHAPAS, PARAF: PARAF, CHUMB: CHUMB };
   global.AcoLigCalc = AcoLigCalc;

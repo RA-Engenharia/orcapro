@@ -600,10 +600,31 @@
     "penas por layer conforme este padrão (CTB RA_Estrutural, com a cor 30)",
     "notas gerais preenchidas (fck, CAA, cobrimentos) e normas com edição vigente",
     "carimbo RA IDÊNTICO ao da última emissão (RA Engenharia, RT, ART, revisão)"
-   ]
+   ],
+   "estrutura_metalica": {
+    "versao": "1.0",
+    "descricao": "Estrutura metálica (galpão, pórticos, treliças): as camadas MET-* das pranchas do módulo Metálica caem nos layers EST-* deste padrão (PADRAO_ACO.camadas, js/acopranchas.js). Os valores abaixo valem só para o layer que o padrão da empresa não definir; o padrão da empresa (layers, penas e alturas de texto) manda.",
+    "penas_por_layer": {
+     "EST-FORMA-CORTE": { "mm": 0.5 },
+     "EST-ARM-ESTRIBO": { "mm": 0.35 },
+     "EST-FORMA-VISTA": { "mm": 0.25 },
+     "EST-OCULTA": { "mm": 0.18, "tracejado": "3 1.5" },
+     "EST-LINHA-FINA": { "mm": 0.18 },
+     "EST-COTA": { "mm": 0.13 },
+     "EST-EIXO": { "mm": 0.13, "tracejado": "9.6 1.6 0.4 1.6" },
+     "EST-HACHURA": { "mm": 0.09 },
+     "EST-CONTEXTO": { "mm": 0.13 },
+     "EST-TABELA": { "mm": 0.25 },
+     "EST-TITULO": { "mm": 0.35 }
+    },
+    "alturas_texto_mm": {
+     "titulo_desenho": 4.2, "escala_sob_titulo": 3, "cota": 2.5, "nota": 2.5, "tabela": 2.5, "tabela_cabecalho": 3.1, "balao_eixo": 3,
+     "notacao_estribo_trecho": 2.1, "nome_apoio": 3.2, "notacao_barra": 2.5, "nivel": 3.8, "titulo_quadro": 7.5, "letra_corte": 3.4
+    }
+   }
   };
 
-  var CAMPOS = ["versao", "principios", "penas_mm", "cor_pena_ctb", "layers", "tipos_de_linha", "textos", "cotas", "notacao", "escalas", "hachuras", "tabelas", "prancha", "conteudo_minimo", "notas_gerais_padrao", "checklist_conferencia"];
+  var CAMPOS = ["versao", "principios", "penas_mm", "cor_pena_ctb", "layers", "tipos_de_linha", "textos", "cotas", "notacao", "escalas", "hachuras", "tabelas", "prancha", "conteudo_minimo", "notas_gerais_padrao", "checklist_conferencia", "estrutura_metalica"];
   var UNIDADES = { cm: 1, m: 1, mm: 1 };
   var CHAVE = "padraoDetalhamento";
 

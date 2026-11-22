@@ -32,8 +32,8 @@
  *                (VALORES DE PARTIDA, editáveis — conferir)
  *     · Tabela 10 — tamanho mínimo da perna da solda de filete pela parte
  *                mais fina (VALORES DE PARTIDA, editáveis — conferir)
- *   ⚠ Existe a ABNT NBR 8800:2024 (edição nova). As regras daqui são as da
- *     2008; conferir se a obra adota a 2024 antes de emitir para a fábrica.
+ *   NBR 8800: o OrçaPRO calcula pela edição 2008 em tudo (decisão de
+ *     21/11/2026) — opção central EDICAO_8800, lida por todos os motores.
  *
  *   PARAFUSOS — dimensões de catálogo (conferir no fornecedor; editáveis):
  *     métrico: ISO 4014 (cabeça sextavada), ISO 4032 (porca), ISO 7089
@@ -269,10 +269,37 @@
     concreto: { item: "6.6.1", texto: "σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck/γc (pressão de contato na área carregada), γc = γn = 1,4" },
     gamas: { item: "Tabela 3 e 6.2.5", texto: "γa1 = 1,10; γa2 = 1,35; γw2 = 1,35" }
   };
+  /* EDIÇÃO DA NBR 8800 NO CÁLCULO DAS BARRAS — OPÇÃO CENTRAL (decisão do Rogério, 21/11/2026: tudo pela 2008).
+     Todos os motores (js/acodim8800.js, js/acodimensionar.js, js/acodimlivre.js) e os textos de memorial/prancha leem daqui.
+     "2024" religa o caminho antigo (compressão por área efetiva sem Q, FLT com Cb só na faixa elástica, deslocabilidade
+     1,13/1,55) — mantido só para rollback; não apagar. */
+  var EDICOES_8800 = {
+    "2008": { ano: "2008", deslocPequena: 1.10, deslocMedia: 1.40, itemDesloc: "4.9.4 (pequena ≤ 1,1; média ≤ 1,4)", itemComp: "5.3 e Anexo F (fator Q)", itemEsb: "5.3.4.1 (≤ 200)" },
+    "2024": { ano: "2024", deslocPequena: 1.13, deslocMedia: 1.55, itemDesloc: "4.10 (limites 1,13 e 1,55)", itemComp: "5.3 e Anexo E (área efetiva)", itemEsb: "5.3.7.1 (recomendado ≤ 200)" }
+  };
+  function ed8800() { var e = String(BimMetalNorma.EDICAO_8800 || "2008"); return EDICOES_8800[e] ? e : "2008"; }
+  function dados8800() { return EDICOES_8800[ed8800()]; }
+  function norma8800() { return "NBR 8800:" + ed8800(); }
+  /* deslocabilidade pela razão Δ2/Δ1 */
+  function deslocabilidade(razao) { var d = dados8800(); return razao <= d.deslocPequena ? "pequena" : razao <= d.deslocMedia ? "média" : "grande"; }
+  /* PONTOS A CONFERIR NO TEXTO DA NBR 8800:2008 (a biblioteca não tem o texto; fórmulas tiradas da formulação conhecida e
+     de exemplos resolvidos publicados — tools/test-aco-exemplos.js). LUGAR ÚNICO desta lista. */
+  var CONFERIR_8800 = [
+    { tema: "Compressão", item: "5.3.2 e Anexo F.3.2", texto: "tensão σ para a largura efetiva de elementos AA: usada σ = χ·fy com o χ de Q = 1,0 (a opção σ = fy, conservadora, fica em AcoDim8800.opcoes.sigmaQa2008)" },
+    { tema: "Compressão", item: "Anexo F, Tabela F.1", texto: "kc = 4/√(h/tw) com 0,35 ≤ kc ≤ 0,76 nas mesas de perfis soldados (grupo 5)" },
+    { tema: "Compressão", item: "5.3.4.4", texto: "esbeltez equivalente da cantoneira simples ligada por uma aba (72 + 0,75·L/rx1; 32 + 1,25·L/rx1)" },
+    { tema: "FLT", item: "Anexo G, Tabela G.1", texto: "λr e Mcr de perfil I/U (β1 = (fy − σr)·W/(E·J); σr = 0,30·fy) e Cb multiplicando a reta inelástica, limitado a Mpl" },
+    { tema: "FLT", item: "5.4.2.3", texto: "Cb = 12,5·Mmáx/(2,5·Mmáx + 3·MA + 4·MB + 3·MC) ≤ 3,0 (sem o fator Rm de seção monossimétrica)" },
+    { tema: "Ligações", item: "6.3.3.2", texto: "parafuso ao cisalhamento Fv,Rd = 0,40·Ab·fub/γa2 com a rosca no plano de corte e 0,50 fora (js/acoligcalc.js)" },
+    { tema: "Ligações", item: "6.6.1", texto: "pressão no concreto σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck, com γn = 1,4 e √(A2/A1) ≤ 2 (js/acoligcalc.js)" },
+    { tema: "Ligações", item: "5.3.4.4 e Anexo F", texto: "mão-francesa de cantoneira simples: esbeltez efetiva do AISC 360-16 E5 (a 2008 tem expressão própria em 5.3.4.4) e Q do grupo 3 (abas de cantoneira)" },
+    { tema: "Análise", item: "4.9.4 e 4.9.7", texto: "deslocabilidade pequena ≤ 1,1 e média ≤ 1,4; média → rigidez reduzida a 80 %; forças nocionais 0,3 %" }
+  ];
   function itemLig(k) { var x = LIGDIM[k]; return x ? FONTE_8800 + ", " + x.item + " (conferir no texto)" : FONTE_8800; }
 
   var BimMetalNorma = {
     LIGDIM: LIGDIM, itemLig: itemLig,
+    EDICAO_8800: "2008", EDICOES_8800: EDICOES_8800, ed8800: ed8800, dados8800: dados8800, norma8800: norma8800, deslocabilidade: deslocabilidade, CONFERIR_8800: CONFERIR_8800,
     FONTE_8800: FONTE_8800, PARTIDA: PARTIDA, PARAFUSOS: PARAFUSOS, CLASSES: CLASSES, TAB14: TAB14, TAB10: TAB10, RHO_ACO: 7850,
     AJUSTES: AJUSTES,
     parafuso: parafuso, furo: furo, bordaMin: bordaMin, bordaMax: bordaMax, espMin: espMin, espMax: espMax,

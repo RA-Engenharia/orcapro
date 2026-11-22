@@ -64,6 +64,9 @@
   function AC() { return dep("AcoAcessos", "./acoacessos.js"); }
   function LC() { return dep("AcoLigCalc", "./acoligcalc.js"); }
   function LF() { return dep("AcoLigFundacao", "./acoligfundacao.js"); }
+  /* edição da NBR 8800 nos textos: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) — os valores vêm do js/acodim8800.js e do js/acoligcalc.js, que leem a mesma opção */
+  function N88() { var N = dep("BimMetalNorma", "./metalnorma.js"); try { return N && N.norma8800 ? N.norma8800() : "NBR 8800:2008"; } catch (e) { return "NBR 8800:2008"; } }
+  function kvE() { return /2024/.test(N88()) ? "0,45" : "0,40"; }
   function D88() { return dep("AcoDim8800", "./acodim8800.js"); }
   function Mat() { return dep("AcoMateriais", "./acomateriais.js"); }
   function Cat() { return dep("PerfisAco", "./perfisaco.js"); }
@@ -514,7 +517,7 @@
     if (!bs.some(function (x) { b = x; t = t0; return passa(x, t0); })) { b = b0; [12.5, 16, 19, 22.4, 25, 31.5].some(function (tt) { if (tt < t0 - 1e-9) return false; t = tt; return passa(b0, tt); }); }
     MRd = b * t * t / 4 * aco.fy / ga1 / 1e6;
     ex.t = t; ex.b = b;
-    return verif(nome + " — chapa de extensão à flexão (" + br(b, 0) + " × " + br(t, 1) + " mm, balanço " + cm(br0) + ")", "NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular cheia: Z = b·t²/4)", [passo("Momento", "M = V·braço", br(Md, 3) + " kN·m"), passo("Resistência", "Z·fy/γa1", br(MRd, 3) + " kN·m")], MRd, Md, "kN·m");
+    return verif(nome + " — chapa de extensão à flexão (" + br(b, 0) + " × " + br(t, 1) + " mm, balanço " + cm(br0) + ")", N88() + ", 5.4 (seção retangular cheia: Z = b·t²/4)", [passo("Momento", "M = V·braço", br(Md, 3) + " kN·m"), passo("Resistência", "Z·fy/γa1", br(MRd, 3) + " kN·m")], MRd, Md, "kN·m");
   }
   /* REVISÃO S6 rodada 3 (A1): a LIGAÇÃO REAL do topo — a longarina inclinada só encosta no canto da chapa horizontal (folga
      de até ~0,15·tg α): uma CHAPA VERTICAL de ligação (150 × 150 × 9,5 mm, no plano da alma) soldada na alma da longarina
@@ -542,17 +545,17 @@
     g = grupoSolda(linhas, Hl, V, M);
     for (a = a0; a < aMax; a++) { if (capDe(a) >= g.f) break; }
     cap = capDe(a);
-    vs.push(verif(nome + " — solda da chapa de ligação na alma da longarina (filete " + a + " mm, " + br(g.Lt, 0) + " mm de cordão)", "NBR 8800:2024 (expressão da 2008), 6.2.5 e Tabela 10 — grupo de solda pelo método da linha (cisalhamento direto + momento)", [passo("Cordões", "na linha do topo da longarina (" + br(Lm / Math.cos(al), 0) + " mm) + na borda de baixo da chapa, sobre a alma (" + br(Lm, 0) + " mm)", br(g.Lt, 0) + " mm"), passo("Força no ponto mais solicitado", "√((H/L − M·y/J)² + (V/L + M·x/J)²), M = V·" + br(GUS.L / 2, 0) + " mm", br(g.f * 1000, 0) + " N/mm"), passo("Resistência por mm", "mín(0,60·0,707·a·fw/γw2; 0,60·a·fy/γa1; alma 0,60·fy·tw/γa1), a ≤ " + aMax + " mm na borda da chapa", br(cap * 1000, 0) + " N/mm")], cap * 1000, g.f * 1000, "N/mm"));
+    vs.push(verif(nome + " — solda da chapa de ligação na alma da longarina (filete " + a + " mm, " + br(g.Lt, 0) + " mm de cordão)", N88() + ", 6.2.5 e Tabela 10 — grupo de solda pelo método da linha (cisalhamento direto + momento)", [passo("Cordões", "na linha do topo da longarina (" + br(Lm / Math.cos(al), 0) + " mm) + na borda de baixo da chapa, sobre a alma (" + br(Lm, 0) + " mm)", br(g.Lt, 0) + " mm"), passo("Força no ponto mais solicitado", "√((H/L − M·y/J)² + (V/L + M·x/J)²), M = V·" + br(GUS.L / 2, 0) + " mm", br(g.f * 1000, 0) + " N/mm"), passo("Resistência por mm", "mín(0,60·0,707·a·fw/γw2; 0,60·a·fy/γa1; alma 0,60·fy·tw/γa1), a ≤ " + aMax + " mm na borda da chapa", br(cap * 1000, 0) + " N/mm")], cap * 1000, g.f * 1000, "N/mm"));
     var Lb = Math.max(20, Math.min(GUS.L, num(Lsob, GUS.L))), Lc = 2 * Lb, a2 = a0, cap2 = C.soldaFilete(a2, Lc, fw, aco.fy), R = Math.sqrt(V * V + Hl * Hl);
     while (cap2 < R && a2 < aMax) { a2++; cap2 = C.soldaFilete(a2, Lc, fw, aco.fy); }
-    vs.push(verif(nome + " — solda da chapa de ligação embaixo da chapa horizontal (filete " + a2 + " mm dos dois lados)", "NBR 8800:2024 (expressão da 2008), 6.2.5", [passo("Cordão", "2 × " + br(Lb, 0) + " mm (o trecho da chapa de ligação embaixo da chapa horizontal)", br(Lc, 0) + " mm"), passo("Resultante", "√(V² + H²)", br(R, 2) + " kN")], cap2, R));
+    vs.push(verif(nome + " — solda da chapa de ligação embaixo da chapa horizontal (filete " + a2 + " mm dos dois lados)", N88() + ", 6.2.5", [passo("Cordão", "2 × " + br(Lb, 0) + " mm (o trecho da chapa de ligação embaixo da chapa horizontal)", br(Lc, 0) + " mm"), passo("Resultante", "√(V² + H²)", br(R, 2) + " kN")], cap2, R));
     return { verificacoes: vs, gusset: { L: GUS.L, h: GUS.h, t: GUS.t, a: a, a2: a2, Lsob: Lb } };
   }
   /* a junta de TOPO extensão × placa (mesmo plano, penetração total: resistência do metal-base — NBR 8800, Tabela 8) */
   function juntaTopo(nome, b, t, V, M, aco) {
     var MM = Mat(), ga1 = MM && MM.GAMA ? MM.GAMA.a1 : 1.10, fy = aco.fy, MRd = b * t * t / 4 * fy / ga1 / 1e6, VRd = 0.6 * fy * b * t / ga1 / 1000;
     var r = Math.sqrt(Math.pow(M / MRd, 2) + Math.pow(V / VRd, 2));
-    return verif(nome + " — junta de topo chapa de extensão × placa (penetração total, " + br(b, 0) + " × " + br(t, 1) + " mm)", "NBR 8800:2024 (expressão da 2008), 6.2.5 e Tabela 8 (penetração total: a resistência do metal-base — seção retangular cheia)", [passo("Momento e cortante na junta", "M = V·braço", "M = " + br(M, 3) + " kN·m; V = " + br(V, 2) + " kN"), passo("Resistências", "MRd = b·t²·fy/(4·γa1); VRd = 0,6·fy·b·t/γa1", br(MRd, 3) + " kN·m; " + br(VRd, 1) + " kN"), passo("Interação", "√((M/MRd)² + (V/VRd)²)", br(r, 3))], 1, r, "");
+    return verif(nome + " — junta de topo chapa de extensão × placa (penetração total, " + br(b, 0) + " × " + br(t, 1) + " mm)", N88() + ", 6.2.5 e Tabela 8 (penetração total: a resistência do metal-base — seção retangular cheia)", [passo("Momento e cortante na junta", "M = V·braço", "M = " + br(M, 3) + " kN·m; V = " + br(V, 2) + " kN"), passo("Resistências", "MRd = b·t²·fy/(4·γa1); VRd = 0,6·fy·b·t/γa1", br(MRd, 3) + " kN·m; " + br(VRd, 1) + " kN"), passo("Interação", "√((M/MRd)² + (V/VRd)²)", br(r, 3))], 1, r, "");
   }
   function suporteConcreto(cc, P, eixo, dim) {
     cc = cc || {}; var Lfd = LF(); if (!Lfd || !P) return {};
@@ -593,7 +596,7 @@
     var C = LC(), M = Mat(), lg = it.longarina || { d: 203, bf: 57, tw: 5.6, tf: 9.9 }, al = num(it.alfa, 40) * GRAU, V = num(R.V, 0), H = num(R.H, 0);
     var aco = M ? M.aco("ASTM A36") : null; aco = aco || { fy: 250, fu: 400 };
     var el = M && M.ELETRODOS ? M.ELETRODOS.filter(function (x) { return x.id === "E70XX"; })[0] : null, fw = el ? el.fw : 485;
-    out.verificacoes.push({ nome: nome + " — esforços por longarina (ELU)", item: "NBR 6120:2019, Tabela 10 (escadas) e Tabela 12 (guarda-corpo); NBR 8800:2024, Tabela 1 (γ — expressão da 2008)", passos: [passo("Hipótese", "", R.hip || "—"), passo("Esforços", "V (vertical, compressão no apoio); H (horizontal: longitudinal + guarda-corpo)", "V = " + br(V, 2) + " kN; H = " + br(H, 2) + " kN")], razao: 0, ok: true, info: true });
+    out.verificacoes.push({ nome: nome + " — esforços por longarina (ELU)", item: "NBR 6120:2019, Tabela 10 (escadas) e Tabela 12 (guarda-corpo); " + N88() + ", Tabela 1 (γ — expressão da 2008)", passos: [passo("Hipótese", "", R.hip || "—"), passo("Esforços", "V (vertical, compressão no apoio); H (horizontal: longitudinal + guarda-corpo)", "V = " + br(V, 2) + " kN; H = " + br(H, 2) + " kN")], razao: 0, ok: true, info: true });
     if (!C) { out.naoVerificados.push("não verificado: " + nome + " — js/acoligcalc.js não carregou (CRÍTICO)"); return out; }
     /* a pegada do pé (corte horizontal da longarina inclinada): d/sen α × bf; no topo (corte de prumo): d × bf */
     var dPeg = it.ponta === "topo" ? lg.d : lg.d / Math.max(0.2, Math.sin(al)), bPeg = lg.bf;
@@ -601,7 +604,7 @@
       var Lw = 2 * dPeg + 2 * bPeg, tMin = Math.min(num(lg.tw, 5), 12.5), a = Math.max(C.pernaMinima(Math.max(tMin, 9.5)), 4), cap = 0;
       for (; a <= 8; a++) { cap = C.soldaFilete(a, Lw, fw, aco.fy); if (cap >= Rr) break; }
       a = Math.min(a, 8); cap = C.soldaFilete(a, Lw, fw, aco.fy);
-      return { a: a, Lw: Lw, v: verif(nome + " — solda da longarina na chapa (filete " + a + " mm no contorno)", "NBR 8800:2024 (expressão da 2008), 6.2.5 e Tabela 10 (perna mínima)", [passo("Cordão", "contorno da pegada: 2·(d' + bf)", br(Lw, 0) + " mm (d' = " + br(dPeg, 0) + " mm)"), passo("Resistência", "mín(0,60·0,707·a·L·fw/γw2; 0,60·a·L·fy/γa1)", br(cap, 1) + " kN"), passo("Solicitação", "√(V² + H²)", br(Rr, 2) + " kN")], cap, Rr) };
+      return { a: a, Lw: Lw, v: verif(nome + " — solda da longarina na chapa (filete " + a + " mm no contorno)", N88() + ", 6.2.5 e Tabela 10 (perna mínima)", [passo("Cordão", "contorno da pegada: 2·(d' + bf)", br(Lw, 0) + " mm (d' = " + br(dPeg, 0) + " mm)"), passo("Resistência", "mín(0,60·0,707·a·L·fw/γw2; 0,60·a·L·fy/γa1)", br(cap, 1) + " kN"), passo("Solicitação", "√(V² + H²)", br(Rr, 2) + " kN")], cap, Rr) };
     }
     var Rres = Math.sqrt(V * V + H * H);
     if (modo === "soldada") {
@@ -621,9 +624,9 @@
             var Fc = C.pressaoContato(d, t, aco.fu, lf), Fc2 = tSup ? C.pressaoContato(d, tSup, aco.fu, lf) : Infinity, FvSd = H / nb, braco = num(it.braco, 0), alav = (dPeg + 2 * e1) / 1000;
             /* topo: a reação chega pela chapa de extensão, fora do centro da chapa — o momento V·braço traciona a fileira de longe */
             var Nt0 = num(R.Nt, 0) + (it.ponta !== "topo" && braco > 0 && alav > 0 ? 2 * V * braco / alav : 0), FtSd = Nt0 / nb, FtRd = C.parafusoTracao(d, 825);
-            var vs = [verif(nome + " — parafusos ao cisalhamento (" + nb + " × " + pf[0] + " 8.8)", "NBR 8800:2024, 6.3.3.2 (Fv,Rd = 0,45·Ab·fub/γa2, rosca no plano)", [passo("Fv,Rd", "0,45·Ab·825/" + br(ga2, 2), br(Fv, 1) + " kN"), passo("Fv,Sd por parafuso", "H/n", br(FvSd, 2) + " kN")], Fv, FvSd),
-              verif(nome + " — pressão de contato na chapa (t = " + br(t, 1) + " mm)", "NBR 8800:2024, 6.3.3.3 (1,2·lf·t·fu ≤ 2,4·d·t·fu)/γa2", [passo("lf", "e1 − furo/2", br(lf, 1) + " mm"), passo("Fc,Rd", "", br(Fc, 1) + " kN")], Fc, FvSd)];
-            if (tSup) vs.push(verif(nome + " — pressão de contato no apoio de aço (t = " + br(tSup, 1) + " mm)", "NBR 8800:2024, 6.3.3.3", [passo("Fc,Rd", "", br(Fc2, 1) + " kN")], Fc2, FvSd));
+            var vs = [verif(nome + " — parafusos ao cisalhamento (" + nb + " × " + pf[0] + " 8.8)", N88() + ", 6.3.3.2 (Fv,Rd = " + kvE() + "·Ab·fub/γa2, rosca no plano)", [passo("Fv,Rd", kvE() + "·Ab·825/" + br(ga2, 2), br(Fv, 1) + " kN"), passo("Fv,Sd por parafuso", "H/n", br(FvSd, 2) + " kN")], Fv, FvSd),
+              verif(nome + " — pressão de contato na chapa (t = " + br(t, 1) + " mm)", N88() + ", 6.3.3.3 (1,2·lf·t·fu ≤ 2,4·d·t·fu)/γa2", [passo("lf", "e1 − furo/2", br(lf, 1) + " mm"), passo("Fc,Rd", "", br(Fc, 1) + " kN")], Fc, FvSd)];
+            if (tSup) vs.push(verif(nome + " — pressão de contato no apoio de aço (t = " + br(tSup, 1) + " mm)", N88() + ", 6.3.3.3", [passo("Fc,Rd", "", br(Fc2, 1) + " kN")], Fc2, FvSd));
             /* REVISÃO S6 (M1): a tração do binário do guarda-corpo nos parafusos (interação 6.3.3.4) */
             if (Nt0 > 0) vs.push(verif(nome + " — parafusos: tração do binário + cisalhamento", "NBR 8800:2008, 6.3.3.1 e 6.3.3.4", [passo("Ft,Sd por parafuso", "Nt/n", br(FtSd, 2) + " kN (Ft,Rd = " + br(FtRd, 1) + " kN)"), passo("(Ft,Sd/Ft,Rd)² + (Fv,Sd/Fv,Rd)²", "", br(Math.pow(FtSd / FtRd, 2) + Math.pow(FvSd / Fv, 2), 3))], 1, Math.pow(FtSd / FtRd, 2) + Math.pow(FvSd / Fv, 2), ""));
             if (vs.every(function (v) { return v.ok; })) { melhor = { pf: pf, nb: nb, t: t, vs: vs, e1: e1 }; return true; }
@@ -631,7 +634,7 @@
           });
         });
       });
-      if (!melhor) { out.verificacoes.push(verif(nome + " — parafusos", "NBR 8800:2024, 6.3", [passo("Nenhum arranjo até 4 × M20 com chapa de 16 mm passa", "", "H = " + br(H, 2) + " kN")], 1, 2, "")); return out; }
+      if (!melhor) { out.verificacoes.push(verif(nome + " — parafusos", N88() + ", 6.3", [passo("Nenhum arranjo até 4 × M20 com chapa de 16 mm passa", "", "H = " + br(H, 2) + " kN")], 1, 2, "")); return out; }
       out.verificacoes = out.verificacoes.concat(melhor.vs);
       var sw2 = soldaLongarina(Rres), ltP = null;
       var B2 = Math.ceil((bPeg + 2 * Math.max(melhor.e1, 35) + (melhor.nb > 2 ? 0 : 0)) / 10) * 10, L2 = Math.ceil((dPeg + 2 * 2 * melhor.e1) / 10) * 10;
@@ -696,7 +699,7 @@
         /* PÉS DE APOIO no topo: um pilarete por longarina, do piso até a ponta da longarina, X entre eles acima de 1 m */
         var hP = Math.max(0.3, num(it.hPe, 1)), Np = V * 1.0 + 0.3, pr = pilarete(Np, hP, "ASTM A36");
         out.verificacoes.push({ nome: nome + " — pés de apoio", item: "", passos: [passo("Esforço no pé de apoio", "N = V da ponta + peso do pé (0,3 kN, a favor)", br(Np, 2) + " kN"), passo("Altura", "do piso à ponta da longarina; Kx = Ky = 1 (topo travado pela escada fixa no pé e pelo X entre os pés)", m2(hP))], razao: 0, ok: true, info: true });
-        if (!pr.ok) { out.verificacoes.push(verif(nome + " — pé de apoio à compressão", "NBR 8800:2024 (expressão da 2008), 5.3", [passo("Sem pilarete que passe", "", pr.motivo)], 1, 2, "")); return out; }
+        if (!pr.ok) { out.verificacoes.push(verif(nome + " — pé de apoio à compressão", N88() + ", 5.3", [passo("Sem pilarete que passe", "", pr.motivo)], 1, 2, "")); return out; }
         out.verificacoes = out.verificacoes.concat(pr.verificacoes.map(function (v) { return marcar(v, nome + " — pé de apoio " + pr.perfil + " — " + v.nome); }));
         var base = fixacao({ ponta: "topo", modo: "pes", pes: pr, R: { V: Np, H: 0, Nt: num(R.Nt, 0), hip: "base do pé de apoio: compressão e o levantamento do binário do guarda-corpo" }, concreto: it.concreto, P: it.Pbase, eixo: it.eixo, longarina: lg, alfa: it.alfa });
         out.verificacoes = out.verificacoes.concat(base.verificacoes.filter(function (v) { return !v.info; }));
@@ -712,10 +715,10 @@
       var cc2 = it.concreto || {}, fcA = fckBase(cc2), fck2 = fcA.fck, sig = C.concreto(fck2, 1), Bc = Math.ceil((bPeg + 100) / 10) * 10, Lc = Math.ceil((dPeg + 100) / 10) * 10, tc = null, ga1 = M && M.GAMA ? M.GAMA.a1 : 1.10;
       var sigSd = V * 1000 / (Bc * Lc), l = Math.max((Lc - 0.95 * dPeg) / 2, (Bc - 0.8 * bPeg) / 2), mSd = sigSd * l * l / 2;
       [9.5, 12.5, 16, 19].some(function (t) { if (t * t * aco.fy / 4 / ga1 >= mSd) { tc = t; return true; } return false; }); tc = tc || 19;
-      out.verificacoes.push(verif(nome + " — pressão no piso sob a chapa de apoio", "NBR 8800:2024, 6.6 (σc,Rd = 0,85·fck/γc, A2/A1 = 1)", [passo("Chapa", "", br(Lc, 0) + " × " + br(Bc, 0) + " mm"), passo("σ", "V/(B·L)", br(sigSd, 2) + " MPa ≤ " + br(sig, 2) + " MPa")], sig, sigSd, "MPa"));
+      out.verificacoes.push(verif(nome + " — pressão no piso sob a chapa de apoio", N88() + ", 6.6 (" + (/2024/.test(N88()) ? "σc,Rd = 0,85·fck/γc" : "σc,Rd = fck/(γc·γn)") + ", A2/A1 = 1)", [passo("Chapa", "", br(Lc, 0) + " × " + br(Bc, 0) + " mm"), passo("σ", "V/(B·L)", br(sigSd, 2) + " MPa ≤ " + br(sig, 2) + " MPa")], sig, sigSd, "MPa"));
       out.verificacoes.push(verif(nome + " — chapa de apoio à flexão (t = " + br(tc, 1) + " mm)", "AISC Design Guide 1 (2ª ed.) — t²·fy/4 por mm, γa1", [passo("Balanço", "l", br(l, 0) + " mm"), passo("m", "σ·l²/2", br(mSd / 1000, 3) + " kN·m/m")], tc * tc * aco.fy / 4 / ga1 / 1000, mSd / 1000, "kN·m/m"));
       /* REVISÃO S6 (M1): a ponta APOIADA não pode levantar com o binário do guarda-corpo (só o permanente segura, γ = 1,0) */
-      out.verificacoes.push(verif(nome + " — levantamento (binário do guarda-corpo × permanente)", "NBR 6120:2019, Tabela 12; NBR 8800:2024, Tabela 1 (permanente favorável γ = 1,0)", [passo("Tração do binário", "ΔV = H·h/(W + bf)", br(num(R.dV, 0), 2) + " kN"), passo("Permanente que segura", "Vg = g·Lh/2", br(num(R.Vg, 0), 2) + " kN")], num(R.Vg, 0), num(R.dV, 0), "kN"));
+      out.verificacoes.push(verif(nome + " — levantamento (binário do guarda-corpo × permanente)", "NBR 6120:2019, Tabela 12; " + N88() + ", Tabela 1 (permanente favorável γ = 1,0)", [passo("Tração do binário", "ΔV = H·h/(W + bf)", br(num(R.dV, 0), 2) + " kN"), passo("Permanente que segura", "Vg = g·Lh/2", br(num(R.Vg, 0), 2) + " kN")], num(R.Vg, 0), num(R.dV, 0), "kN"));
       out.avisos.push(nome + ": apoiada sem chumbador — a escada tem de ser FIXA no topo (a força horizontal vai toda para lá); o piso embaixo precisa resistir à pressão de contato");
       out.desenho = { modo: modo, chapa: { B: Bc, L: Lc, t: tc } };
       out.resumo = "apoiada: chapa de apoio " + br(Lc, 0) + " × " + br(Bc, 0) + " × " + br(tc, 1) + " mm (sem chumbador)";

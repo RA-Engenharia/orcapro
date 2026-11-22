@@ -44,6 +44,8 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  /* edição da NBR 8800 usada no cálculo: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) */
+  function _ed8800() { var N = global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.ed8800 ? N.ed8800() : "2008"; }
 
   /* ------------------------------------------------------------ dependências */
   function dep(nome, arq) {
@@ -138,7 +140,13 @@
     },
     marcas: { pilar: "P", tapamento: "CT", viga: "V", base: "PB", terca: "TC", tercaBeiral: "TB", travessaLateral: "TL", travessaOitao: "TF",
               contraventoParede: "CV", contraventoCobertura: "CH", maoFrancesa: "MF", corrente: "CR" },
-    escalas: { planta: [50, 75, 100, 125, 150, 200, 250, 500, 1000], elevacao: [25, 50, 75, 100, 125, 150, 200, 250, 500], detalhe: [5, 10, 15, 20, 25] },
+    /* ESCALAS — lugar ÚNICO das listas (21/11/2026): cada desenho pega a MAIOR escala da sua lista que cabe. As do galpão
+       (planta/elevacao/detalhe) e as da treliça (js/acopranchastrelica.js) — antes cada folha da treliça tinha a sua lista solta */
+    escalas: { planta: [50, 75, 100, 125, 150, 200, 250, 500, 1000], elevacao: [25, 50, 75, 100, 125, 150, 200, 250, 500], detalhe: [5, 10, 15, 20, 25],
+               locacao: [50, 75, 100, 125, 150, 200], portico: [25, 50, 75, 100, 125], oitao: [50, 75, 100, 125, 150], corteColuna: [20, 25, 50],
+               conjunto: [10, 15, 20, 25, 50], placa: [5, 10], secoes: [5, 10], clip: [5],
+               /* elevação longitudinal: [colunas na folha, escala] na ordem de preferência */
+               elevacaoLong: [[1, 50], [1, 75], [1, 100], [2, 75], [2, 100], [1, 125], [2, 125], [1, 150], [2, 150], [1, 200], [2, 200]] },
     solda: "AWS A2.4 — símbolo na linha de referência: abaixo = lado da seta, acima = outro lado; círculo = em todo o contorno; bandeira = solda de campo",
     folhas: ["LOCAÇÃO DOS PILARES E DAS BASES", "PLANTA DE COBERTURA", "PÓRTICOS", "ELEVAÇÕES LATERAIS E FRONTAIS", "DETALHES TÍPICOS DE LIGAÇÃO", "LISTA DE MATERIAIS"],
     regras: [
@@ -149,28 +157,23 @@
       "Lista de materiais com o peso igual ao do cálculo (perfis pelo eixo, nó a nó)."
     ]
   };
-  /* pena (mm) e traço de reserva, se o js/padraodet.js não estiver carregado (os do Padrão RA v2.1) */
-  var PENAS_RESERVA = { "EST-FORMA-CORTE": [0.5], "EST-ARM-ESTRIBO": [0.35], "EST-FORMA-VISTA": [0.25], "EST-OCULTA": [0.18, "3 1.5"],
-    "EST-LINHA-FINA": [0.18], "EST-COTA": [0.13], "EST-EIXO": [0.13, "9.6 1.6 0.4 1.6"], "EST-HACHURA": [0.09], "EST-CONTEXTO": [0.13],
-    "EST-TABELA": [0.25], "EST-TITULO": [0.35] };
-  var ALTURAS_RESERVA = { titulo_desenho: 4.2, escala_sob_titulo: 3, cota: 2.5, nota: 2.5, tabela: 2.5, tabela_cabecalho: 3.1, balao_eixo: 3, notacao_estribo_trecho: 2.1,
-    nome_apoio: 3.2, notacao_barra: 2.5, nivel: 3.8, titulo_quadro: 7.5, letra_corte: 3.4 };
-
+  /* pena (mm) e traço de reserva de cada layer e as alturas de texto: da seção `estrutura_metalica` do Padrão RA (js/padraodet.js, padrao_detalhamento_ra.json) —
+     antes duplicados aqui (PENAS_RESERVA/ALTURAS_RESERVA). Sem o js/padraodet.js carregado: pena 0,25 e texto 2,5 mm. */
   function estilo(padrao) {
     var P = PD(), base = null;
     try { base = P ? P.normPadrao(padrao || P.padraoRA()) : null; } catch (e) { base = null; }
-    var cam = {};
+    var cam = {}, EM = (base && base.estrutura_metalica) || {};
     Object.keys(PADRAO_ACO.camadas).forEach(function (k) {
       var lay = PADRAO_ACO.camadas[k], l = null;
       if (P && base) { try { l = P.linhaDe(base, lay); } catch (e) { l = null; } }
-      var f = PENAS_RESERVA[lay] || [0.25];
-      cam[k] = { mm: l ? l.mm : f[0], dash: l ? l.dash : (f[1] || null) };
+      var f = (EM.penas_por_layer || {})[lay] || {};
+      cam[k] = { mm: l ? l.mm : num(f.mm, 0.25), dash: l ? l.dash : (f.tracejado || null) };
     });
     cam["MET-CONTEXTO"].cor = CINZA; cam["MET-HACHURA"].cor = CINZA_CLARO;
     cam["MET-MOLDURA"] = { mm: 0.5, dash: null };
     cam["MET-PEND"] = { mm: cam["MET-OCULTA"].mm, dash: cam["MET-OCULTA"].dash || "3 1.5", cor: VERMELHO };
-    var at = (base && base.textos && base.textos.alturas_plotadas_mm) || ALTURAS_RESERVA;
-    function h(k) { return num(at[k], ALTURAS_RESERVA[k]); }
+    var at = (base && base.textos && base.textos.alturas_plotadas_mm) || EM.alturas_texto_mm || {};
+    function h(k) { return num(at[k], num((EM.alturas_texto_mm || {})[k], 2.5)); }
     return {
       camadas: cam,
       T: { titulo: h("titulo_desenho"), escala: h("escala_sob_titulo"), cota: h("cota"), nota: h("nota"), tabela: h("tabela"),
@@ -1079,7 +1082,7 @@
     if (r.aprovado === false) notas.push({ t: "O cálculo tem " + num(r.falhas, 0) + " verificação(ões) que não passa(m): NÃO EMITIR para fabricação.", cor: VERMELHO });
     notas.push("Projeto executivo - revisão " + c.rev + ".");
     var normas = [
-      "ABNT NBR 8800:2024 - estruturas de aço (itens não conferidos na edição de 2024 seguem a de 2008 - ver memorial).",
+      "ABNT NBR 8800:" + _ed8800() + " - estruturas de aço (edição usada em todo o dimensionamento das barras - ver memorial).",
       "ABNT NBR 6120:2019 - ações para o cálculo de estruturas de edificações.",
       "ABNT NBR 6123:2023 - forças devidas ao vento (mapa de isopletas igual ao de 1988).",
       "ABNT NBR 8681 - ações e segurança nas estruturas (coeficientes conforme a NBR 8800).",

@@ -12,7 +12,7 @@
  *      6123 quando a estrutura é fechada/coberta) e combinações da NBR 8681
  *      (js/acocargas.js, as mesmas do galpão);
  *   3. análise de 1ª e 2ª ordem (js/acoanalise.js) → deslocabilidade
- *      (Δ2/Δ1, NBR 8800:2024 4.10: 1,13 / 1,55); média → rigidez a 80 %;
+ *      (Δ2/Δ1 pela edição central — 2008, 4.9.4: 1,1 / 1,4); média → rigidez a 80 %;
  *   4. verificação de TODAS as barras: laminadas/soldadas/tubos/barras pela
  *      NBR 8800 (js/acodim8800.js), formados a frio pela NBR 14762
  *      (js/acodim14762.js, método da resistência direta);
@@ -37,6 +37,7 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  function _norma8800() { var N = (typeof window !== "undefined" ? window : global).BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.dados8800 ? N : null; }
 
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
   function ML() { return dep("AcoModeloLivre", "./acomodelolivre.js"); }
@@ -346,10 +347,11 @@
       var d2 = res.combinacoes[c.id]; if (!d2 || !d2.ok || !d2.desloc1) return;
       [0, 2].forEach(function (dir) { var m1 = 0, m2 = 0; topos.forEach(function (n) { var a = d2.desloc1[n], b = d2.desloc[n]; if (!a || !b) return; m1 = Math.max(m1, Math.abs(a[dir])); m2 = Math.max(m2, Math.abs(b[dir])); }); if (m1 > minDesl) razaoDesl = Math.max(razaoDesl, m2 / m1); });
     });
-    var classe = razaoDesl <= 1.13 ? "pequena" : razaoDesl <= 1.55 ? "média" : "grande";
+    var N88 = _norma8800(), d88 = N88 ? N88.dados8800() : { ano: "2008", deslocPequena: 1.10, deslocMedia: 1.40, itemDesloc: "4.9.4 (pequena ≤ 1,1; média ≤ 1,4)" };
+    var classe = razaoDesl <= d88.deslocPequena ? "pequena" : razaoDesl <= d88.deslocMedia ? "média" : "grande";   /* edição pela opção central (js/metalnorma.js EDICAO_8800): 2008 = 4.9.4, 1,1 e 1,4; 2024 = 4.10, 1,13 e 1,55 */
     G.decisoes.push({ tema: "Esbeltez", decisao: "L/r ≤ 200 nas barras comprimidas e ≤ 300 nas tracionadas como EXIGÊNCIA (reprova a barra e limita o perfil mais leve); barra redonda e cabo isentos",
       motivo: "NBR 8800:2008, 5.3.4.1 (compressão; na 2024, 5.3.7, recomendação) e 5.2.8.1 (tração; recomendação, exceto barra redonda pré-tensionada) — o OrçaPRO adota os dois como exigência. Premissa: barras redondas e cabos montados com pré-tensão (esticador). Comprimida/tracionada: diagonais de perfil sempre; pilares com qualquer força axial; vigas e terças com força axial ≥ 5 % de Ag·fy/γa1" });
-    G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais em x e em z; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:2024, 4.10 (limites 1,13 e 1,55)" + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
+    G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais em x e em z; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:" + d88.ano + ", " + d88.itemDesloc + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
     if (classe !== "pequena") {
       avisar("analise80", 0, 0);
       var r80 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, segundaOrdem: true, nocional: c.nocional, reducaoRigidez: 0.8 }; }), estacoes: 7 });
@@ -549,7 +551,7 @@
     if (ligDesat.length) {
       avisos.push("LIGAÇÃO DESATUALIZADA — " + ligDesat.length + " ligação(ões) dimensionada(s) com esforço MENOR que o desta análise (redimensione com este cálculo): " + ligDesat.map(function (q) { return q.texto; }).join(" · "));
       G.decisoes.push({ tema: "Ligações × análise de agora", decisao: ligDesat.length + " ligação(ões) DESATUALIZADA(S) ou sem esforço gravado — A CONFIRMAR: " + ligDesat.map(function (q) { return q.texto; }).join("; "),
-        motivo: "os esforços gravados na ligação (com que ela foi dimensionada) são menores que os da análise de agora na mesma ponta (ELU, pior combinação; tolerância 2 % + 0,05 em cada grandeza; sem esforço gravado, redimensionar para conferir) — NBR 8800:2024 6.1 (as ligações resistem aos esforços de cálculo) e EN 1993-1-8:2005 5.1.2(4)/6.3.1 (a rigidez Sj só vale até Mj,Rd)" });
+        motivo: "os esforços gravados na ligação (com que ela foi dimensionada) são menores que os da análise de agora na mesma ponta (ELU, pior combinação; tolerância 2 % + 0,05 em cada grandeza; sem esforço gravado, redimensionar para conferir) — NBR 8800:2008, 6.1 (as ligações resistem aos esforços de cálculo) e EN 1993-1-8:2005 5.1.2(4)/6.3.1 (a rigidez Sj só vale até Mj,Rd)" });
     }
     /* sugestão para quem não passa: o próximo da família que deve passar */
     Object.keys(resultadosM).forEach(function (id) {

@@ -29,8 +29,9 @@
  * Qs, Qa), 5.4 e Anexo G (flexão: FLT, FLM, FLA; tubos), 5.4.3 (cortante),
  * 5.5.1.2 (força axial + momento), 5.2.8/5.3.4 (esbeltez). Conferidas
  * contra exemplos resolvidos publicados em tools/test-aco-8800.js.
- * ⚠ Edição vigente 2024 sem texto na biblioteca: o memorial mostra
- *   "NBR 8800:2008" em cada passo até a conferência.
+ * EDIÇÃO: a opção central BimMetalNorma.EDICAO_8800 (js/metalnorma.js),
+ *   padrão "2008" (decisão de 21/11/2026). "2024" religa a compressão por
+ *   área efetiva e a FLT com Cb só na faixa elástica (rollback).
  * Unidades internas: N, mm, MPa. Entrada/saída: kN, kN·m, m.
  * ===================================================================== */
 (function (global) {
@@ -38,8 +39,13 @@
 
   /* opcoes.edicaoFLT = "2008" refaz a FLT pela 2008; opcoes.sigmaQa2008 (só na compressão pela 2008): "chi" = σ = χ·fy com o χ de
      Q = 1,0 (F.3.2, regra principal) ou "fy" = σ = fy (opção conservadora, a dos exemplos publicados) — para conferir exemplos */
-  var OPC = { edicaoFLT: "2024-conservadora", sigmaQa2008: "chi" };
-  var ED = "NBR 8800:2008";   /* itens sem mudança confirmada na 2024; os que mudaram citam a 2024 */
+  /* edicaoFLT = null segue a opção central; "2008" ou "2024-conservadora" força só a FLT (testes) */
+  var OPC = { edicaoFLT: null, sigmaQa2008: "chi" };
+  function Norma() { return global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); }
+  function edicao() { var N = Norma(); return N && N.ed8800 ? N.ed8800() : "2008"; }
+  function edicao_() { return edicao(); }
+  function rotuloED() { return "NBR 8800:" + edicao(); }
+  function flt2008() { return (OPC.edicaoFLT || edicao()) === "2008"; }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function sq(v) { return v * v; }
@@ -120,6 +126,13 @@
       for (var i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (f(lo) * f(m) <= 0) hi = m; else lo = m; }
       N = (lo + hi) / 2; modo = "flexo-torção (assimétrica)";
     }
+    /* Revisão 22/11/2026: cantoneira SIMPLES — Ix/Iy do catálogo são dos eixos GEOMÉTRICOS (paralelos às abas), e o Anexo E pede os
+       eixos PRINCIPAIS. Sem isto a flexão no eixo de menor inércia (rz) some: L 63,5×4,5 com L = 1,5 m dava Ne = 128 kN contra
+       π²·E·A/(L/rz)² = 76 kN (Nc,Rd 39 % contra a segurança). Limite: Ne ≤ π²·E·A·rz²/L², L = o maior de Lx e Ly. */
+    if (s.forma === "L" && num(s.rz, 0) > 0) {
+      var Nzm = PI * PI * E * s.A * sq(s.rz) / sq(Math.max(Lx, Ly));
+      if (Nzm < N) { N = Nzm; modo = "flexão no eixo de menor inércia (rz)"; }
+    }
     return { Ne: N, Nex: Nex, Ney: Ney, Nez: Nez, modo: modo };
   }
 
@@ -184,7 +197,8 @@
     return { Aef: Aef, passos: passos };
   }
   function compressao(s, aco, E, G, fl, papel, edicao) {
-    if (edicao === "2008") return compressao2008(s, aco, E, G, fl);
+    if (edicao === "2008" && !fl.umaAba) return compressao2008(s, aco, E, G, fl);
+    var ed08 = (edicao || edicao_()) === "2008";
     var g = gamas(), fy = aco.fy, Lx = fl.Lx * 1000, Ly = fl.Ly * 1000, Lz = num(fl.Lz, fl.Ly) * 1000, passos = [], avisos = [];
     var e = Ne(s, E, G, Lx, Ly, Lz);
     /* 21/11/2026 — NBR 8800:2008, 5.3.4.4 (cantoneira SIMPLES ligada por UMA aba, barra de treliça plana com as barras da alma do
@@ -199,8 +213,16 @@
       passos.push({ rotulo: "Cantoneira simples ligada por uma aba (NBR 8800, 5.3.4.4)", formula: l1 <= 80 ? "K·L/r = 72 + 0,75·L/rx1" : "K·L/r = 32 + 1,25·L/rx1", valor: br(keq, 1), extra: "L/rx1 = " + br(Lmx, 0) + "/" + br(rx1, 2) + " = " + br(l1, 1) + (keq > 200 ? " — ⚠ acima de 200" : "") });
     }
     var l0 = Math.sqrt(s.A * fy / e.Ne), chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0);
-    var frio = conformadoFrio(s, aco) && s.forma === "tubo-ret", gC = frio ? 1.20 : g.a1;
-    var ae = frio ? areaEfetiva14762(s, chi * fy, E) : areaEfetiva(s, fy, E, chi);
+    var frio = conformadoFrio(s, aco) && s.forma === "tubo-ret", gC = frio ? 1.20 : g.a1, Qc = null;
+    var ae;
+    if (frio) ae = areaEfetiva14762(s, chi * fy, E);
+    else if (ed08) {
+      /* NBR 8800:2008, 5.3.2 e Anexo F: Nc,Rd = χ·Q·Ag·fy/γa1, λ0 = √(Q·Ag·fy/Ne); Qa com σ = χ·fy do χ de Q = 1,0 (F.3.2) */
+      Qc = fatorQ(s, fy, E, fy);
+      if (Qc.Qa < 1 && OPC.sigmaQa2008 !== "fy") Qc = fatorQ(s, fy, E, chi * fy);
+      l0 = Math.sqrt(Qc.Q * s.A * fy / e.Ne); chi = l0 <= 1.5 ? Math.pow(0.658, l0 * l0) : 0.877 / (l0 * l0);
+      ae = { Aef: Qc.Q * s.A, passos: Qc.passos.concat([{ rotulo: "Fator de redução total (Anexo F)", formula: "Q = Qs·Qa", valor: br(Qc.Q, 3), extra: "Qs = " + br(Qc.Qs, 3) + "; Qa = " + br(Qc.Qa, 3) }]) };
+    } else ae = areaEfetiva(s, fy, E, chi);
     var NRd = chi * ae.Aef * fy / gC;
     if (frio) avisos.push("Tubo com costura conformado a frio (" + (aco.id || "NBR 8261") + "): compressão pela NBR 14762:2010, 9.7.2 (largura efetiva 9.2.2, γ = 1,20).");
     var esb = Math.max(Lx / num(s.rx, Math.sqrt(s.Ix / s.A)), Ly / num(s.ry, Math.sqrt(s.Iy / s.A)));
@@ -216,14 +238,15 @@
     }
     passos.push({ rotulo: "Comprimentos de flambagem (K = 1: análise de 2ª ordem com imperfeições)", valor: "Lx = " + br(Lx / 1000, 2) + " m; Ly = " + br(Ly / 1000, 2) + " m; Lz = " + br(Lz / 1000, 2) + " m" });
     passos.push({ rotulo: "Força de flambagem elástica Ne (Anexo E) — modo " + e.modo, formula: "Nex = π²·E·Ix/Lx²; Ney = π²·E·Iy/Ly²" + (e.Nez != null ? "; Nez = [π²·E·Cw/Lz² + G·J]/r0²" : ""), valor: br(e.Ne / 1000, 1) + " kN", extra: "Nex = " + br(e.Nex / 1000, 1) + "; Ney = " + br(e.Ney / 1000, 1) + (e.Nez != null ? "; Nez = " + br(e.Nez / 1000, 1) : "") + " kN" });
-    passos.push({ rotulo: "Índice de esbeltez reduzido (NBR 8800:2024: sem o fator Q)", formula: "λ0 = √(Ag·fy/Ne)", valor: br(l0, 3) });
+    passos.push(ed08 && !frio ? { rotulo: "Índice de esbeltez reduzido (NBR 8800:2008, 5.3.3.2)", formula: "λ0 = √(Q·Ag·fy/Ne)", valor: br(l0, 3) }
+                              : { rotulo: "Índice de esbeltez reduzido (NBR 8800:2024: sem o fator Q)", formula: "λ0 = √(Ag·fy/Ne)", valor: br(l0, 3) });
     passos.push({ rotulo: "Fator de redução χ", formula: l0 <= 1.5 ? "χ = 0,658^(λ0²)" : "χ = 0,877/λ0²", valor: br(chi, 3) });
     ae.passos.forEach(function (q) { passos.push(q); });
-    passos.push({ rotulo: "Área efetiva", formula: "Aef = Ag − Σ(b − bef)·t", valor: br(ae.Aef, 0) + " mm²", extra: "Ag = " + br(s.A, 0) + " mm²" });
-    passos.push({ rotulo: "Força axial resistente de cálculo" + (frio ? " (NBR 14762:2010, 9.7.2)" : ""), formula: frio ? "Nc,Rd = χ·Aef·fy/γ, γ = 1,20" : "Nc,Rd = χ·Aef·fy/γa1", valor: br(NRd / 1000, 1) + " kN" });
-    passos.push({ rotulo: "Índice de esbeltez KL/r (recomendado ≤ 200 — 5.3.7.1 da 2024)", valor: br(esb, 0), extra: esb > 200 ? "⚠ acima de 200" : "ok" });
+    if (!(ed08 && !frio)) passos.push({ rotulo: "Área efetiva", formula: "Aef = Ag − Σ(b − bef)·t", valor: br(ae.Aef, 0) + " mm²", extra: "Ag = " + br(s.A, 0) + " mm²" });
+    passos.push({ rotulo: "Força axial resistente de cálculo" + (frio ? " (NBR 14762:2010, 9.7.2)" : ""), formula: frio ? "Nc,Rd = χ·Aef·fy/γ, γ = 1,20" : ed08 ? "Nc,Rd = χ·Q·Ag·fy/γa1" : "Nc,Rd = χ·Aef·fy/γa1", valor: br(NRd / 1000, 1) + " kN" });
+    passos.push({ rotulo: ed08 ? "Índice de esbeltez KL/r (NBR 8800:2008, 5.3.4.1: não superior a 200)" : "Índice de esbeltez KL/r (recomendado ≤ 200 — 5.3.7.1 da 2024)", valor: br(esb, 0), extra: esb > 200 ? "⚠ acima de 200" : "ok" });
     if (esb > 200) avisos.push("Esbeltez " + br(esb, 0) + " > 200 na compressão (NBR 8800).");
-    return { NRd: NRd / 1000, passos: passos, avisos: avisos, chi: chi, Q: ae.Aef / s.A, Aef: ae.Aef, esbeltez: esb, Ne: e.Ne / 1000, espacadores: esp, eqL: eqL };
+    return { NRd: NRd / 1000, passos: passos, avisos: avisos, chi: chi, Q: ae.Aef / s.A, Qs: Qc ? Qc.Qs : null, Qa: Qc ? Qc.Qa : null, l0: l0, Aef: ae.Aef, esbeltez: esb, Ne: e.Ne / 1000, modo: e.modo, espacadores: esp, eqL: eqL, edicao: frio ? "NBR 14762:2010" : (ed08 ? "NBR 8800:2008" : "NBR 8800:2024") };
   }
 
   /* compressão pela NBR 8800:2008 (fator Q do Anexo F) — mantida para conferir os exemplos publicados (quase todos de 2008) */
@@ -280,10 +303,10 @@
     /* NBR 8800:2024: o Cb deixou de multiplicar a faixa INELÁSTICA (vale só no Mcr) e perdeu o teto de 3,0 — as fórmulas novas
        de λr não foram publicadas fora do texto. Até a conferência: faixa inelástica SEM Cb (a favor da segurança nas duas edições),
        faixa elástica com Cb no Mcr limitado a 3,0 (2008). edicaoFLT = "2008" refaz pela 2008 (Cb multiplicando a reta). */
-    var cbInel = OPC.edicaoFLT === "2008" ? Cb : 1;
+    var f08 = flt2008(), cbInel = f08 ? Cb : 1;
     if (lam <= lp) Mflt = Mpl; else if (lam <= lr) Mflt = Math.min(Mpl, cbInel * (Mpl - (Mpl - Mr) * (lam - lp) / (lr - lp))); else Mflt = Math.min(Mpl, Mcr);
-    if (lam > lp && lam <= lr && OPC.edicaoFLT !== "2008") Mflt = Math.max(Mflt, Math.min(Mpl, Mcr, Mr));   /* sem degrau: nunca abaixo do elástico limitado a Mr */
-    passos.push({ rotulo: "FLT — flambagem lateral com torção (Anexo G; Cb só na faixa elástica, a favor da segurança — ver nota)", formula: "λ = Lb/ry = " + br(lam, 1) + "; λp = 1,76·√(E/fy) = " + br(lp, 1) + "; λr = " + br(lr, 1) + "; Cb = " + br(Cb, 2) + (lam > lr ? "; Mcr = " + br(Mcr / 1e6, 1) + " kN·m" : ""), valor: "MRk = " + br(Mflt / 1e6, 2) + " kN·m", extra: "Lb = " + br(Lb / 1000, 2) + " m" });
+    if (lam > lp && lam <= lr && !f08) Mflt = Math.max(Mflt, Math.min(Mpl, Mcr, Mr));   /* sem degrau: nunca abaixo do elástico limitado a Mr */
+    passos.push({ rotulo: f08 ? "FLT — flambagem lateral com torção (NBR 8800:2008, Anexo G: MRk = Cb·[Mpl − (Mpl − Mr)·(λ − λp)/(λr − λp)] ≤ Mpl; Mcr com Cb)" : "FLT — flambagem lateral com torção (Anexo G; Cb só na faixa elástica, a favor da segurança — ver nota)", formula: "λ = Lb/ry = " + br(lam, 1) + "; λp = 1,76·√(E/fy) = " + br(lp, 1) + "; λr = " + br(lr, 1) + "; Cb = " + br(Cb, 2) + (lam > lr ? "; Mcr = " + br(Mcr / 1e6, 1) + " kN·m" : ""), valor: "MRk = " + br(Mflt / 1e6, 2) + " kN·m", extra: "Lb = " + br(Lb / 1000, 2) + " m" });
     /* FLM */
     var lm = s.forma === "U" ? s.bf / s.tf : s.bf / (2 * s.tf), lpm = 0.38 * Math.sqrt(E / fy), hw = s.soldado ? s.d - 2 * s.tf : s.h;   /* U: bf/tf (FLX-04, FLX-07) */
     var kc2 = Math.min(0.76, Math.max(0.35, 4 / Math.sqrt(hw / s.tw)));
@@ -456,19 +479,20 @@
       });
     });
     /* monta as verificações para o memorial (as da situação que governa) */
-    if (comp) verifs.push({ nome: "Compressão", item: "NBR 8800:2024, 5.3 e Anexo E (área efetiva)", passos: comp.passos, resistencia: comp.NRd, unidade: "kN", solicitante: Math.abs(Ncmax), razao: Math.abs(Ncmax) / comp.NRd });
-    if (trac) verifs.push({ nome: "Tração", item: ED + ", 5.2", passos: trac.passos, resistencia: trac.NRd, unidade: "kN", solicitante: Ntmax, razao: Ntmax / trac.NRd });
-    if (pior.flt) verifs.push({ nome: "Flexão em torno do eixo de maior inércia (mesa " + pior.flt.mesa + " comprimida, trecho " + br(pior.flt.trecho[0], 2) + "–" + br(pior.flt.trecho[1], 2) + " m)", item: ED + ", 5.4 e Anexo G", passos: pior.flt.passos, resistencia: pior.flt.MRd, unidade: "kN·m", solicitante: Math.abs(pior.Mz), razao: Math.abs(pior.Mz) / pior.flt.MRd });
-    if (fy_ && Math.abs(num(pior.My, 0)) > 1e-6) verifs.push({ nome: "Flexão em torno do eixo de menor inércia", item: ED + ", Anexo G", passos: fy_.passos, resistencia: fy_.MRd, unidade: "kN·m", solicitante: Math.abs(pior.My), razao: Math.abs(pior.My) / fy_.MRd });
-    if (vz) verifs.push({ nome: "Cortante", item: ED + ", 5.4.3", passos: vz.passos, resistencia: vz.VRd, unidade: "kN", solicitante: Math.abs(num(pior.Vy, 0)), razao: Math.abs(num(pior.Vy, 0)) / vz.VRd });
-    if (flexivel && temN) verifs.push({ nome: "Força axial + momentos (interação)", item: ED + ", 5.5.1.2", passos: [{ rotulo: "Situação que governa: combinação " + pior.comb + ", x = " + br(pior.x, 2) + " m", formula: pior.formula, valor: br(pior.razao, 3), extra: "N = " + br(pior.N, 1) + " kN; Mx = " + br(pior.Mz, 2) + " kN·m; My = " + br(pior.My, 2) + " kN·m" }], resistencia: 1, unidade: "", solicitante: pior.razao, razao: pior.razao });
+    if (comp) verifs.push({ nome: "Compressão", item: comp.edicao === "NBR 8800:2008" ? "NBR 8800:2008, 5.3 e Anexos E e F (fator Q)" : comp.edicao === "NBR 14762:2010" ? "NBR 14762:2010, 9.7.2" : "NBR 8800:2024, 5.3 e Anexo E (área efetiva)", passos: comp.passos, resistencia: comp.NRd, unidade: "kN", solicitante: Math.abs(Ncmax), razao: Math.abs(Ncmax) / comp.NRd });
+    if (trac) verifs.push({ nome: "Tração", item: rotuloED() + ", 5.2", passos: trac.passos, resistencia: trac.NRd, unidade: "kN", solicitante: Ntmax, razao: Ntmax / trac.NRd });
+    if (pior.flt) verifs.push({ nome: "Flexão em torno do eixo de maior inércia (mesa " + pior.flt.mesa + " comprimida, trecho " + br(pior.flt.trecho[0], 2) + "–" + br(pior.flt.trecho[1], 2) + " m)", item: rotuloED() + ", 5.4 e Anexo G", passos: pior.flt.passos, resistencia: pior.flt.MRd, unidade: "kN·m", solicitante: Math.abs(pior.Mz), razao: Math.abs(pior.Mz) / pior.flt.MRd });
+    if (fy_ && Math.abs(num(pior.My, 0)) > 1e-6) verifs.push({ nome: "Flexão em torno do eixo de menor inércia", item: rotuloED() + ", Anexo G", passos: fy_.passos, resistencia: fy_.MRd, unidade: "kN·m", solicitante: Math.abs(pior.My), razao: Math.abs(pior.My) / fy_.MRd });
+    if (vz) verifs.push({ nome: "Cortante", item: rotuloED() + ", 5.4.3", passos: vz.passos, resistencia: vz.VRd, unidade: "kN", solicitante: Math.abs(num(pior.Vy, 0)), razao: Math.abs(num(pior.Vy, 0)) / vz.VRd });
+    if (flexivel && temN) verifs.push({ nome: "Força axial + momentos (interação)", item: rotuloED() + ", 5.5.1.2", passos: [{ rotulo: "Situação que governa: combinação " + pior.comb + ", x = " + br(pior.x, 2) + " m", formula: pior.formula, valor: br(pior.razao, 3), extra: "N = " + br(pior.N, 1) + " kN; Mx = " + br(pior.Mz, 2) + " kN·m; My = " + br(pior.My, 2) + " kN·m" }], resistencia: 1, unidade: "", solicitante: pior.razao, razao: pior.razao });
     if (pior.flt && pior.flt.aviso) avisos.push(pior.flt.aviso);
     var razao = Math.max.apply(null, [pior.razao].concat(verifs.map(function (v) { return v.razao || 0; })));
     var gov = verifs.slice().sort(function (a, b) { return (b.razao || 0) - (a.razao || 0); })[0];
-    return { ok: razao <= 1.0 + 1e-9 && !avisos.some(function (a) { return /não coberto|fora do campo/.test(a); }), razao: razao, governante: gov ? gov.nome : null, pior: pior, verificacoes: verifs, avisos: avisos, edicao: ED };
+    return { ok: razao <= 1.0 + 1e-9 && !avisos.some(function (a) { return /não coberto|fora do campo/.test(a); }), razao: razao, governante: gov ? gov.nome : null, pior: pior, verificacoes: verifs, avisos: avisos, edicao: rotuloED() };
   }
 
-  var AcoDim8800 = { ED: ED, opcoes: OPC, compressao2008: compressao2008, verificarBarra: verificarBarra, compressao: compressao, tracao: tracao, flexao: flexao, cortante: cortante, fatorQ: fatorQ, Ne: Ne, Cb: Cb };
+  var AcoDim8800 = { edicao: edicao, opcoes: OPC, compressao2008: compressao2008, verificarBarra: verificarBarra, compressao: compressao, tracao: tracao, flexao: flexao, cortante: cortante, fatorQ: fatorQ, Ne: Ne, Cb: Cb };
+  try { Object.defineProperty(AcoDim8800, "ED", { enumerable: true, get: rotuloED }); } catch (eD) { AcoDim8800.ED = rotuloED(); }
   global.AcoDim8800 = AcoDim8800;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDim8800;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

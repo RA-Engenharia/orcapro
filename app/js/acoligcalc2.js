@@ -66,6 +66,10 @@
   function bordaMin(d, tipo) { var N = Nor(); if (N && N.bordaMin) { var r = N.bordaMin(d, tipo || "laminada"); if (r && r.e) return r.e + BACR; } return Math.ceil((tipo === "serra" ? 1.75 : 1.25) * d) + BACR; }
   function furo(d) { var L = LC(); return L && L.furoPadrao ? L.furoPadrao(d) : d + 1.5; }
   function FvRd(d, fub) { return LC().parafusoCisal(d, fub, true); }
+  /* 22/11 (revisão 8800:2008): o TEXTO do cisalhamento do parafuso e do σc,Rd acompanha a edição que o AcoLigCalc usou no VALOR */
+  function EDP() { var L = LC(); try { return L && L.edicao ? "NBR 8800:" + L.edicao() : ED24; } catch (e) { return ED24; } }
+  function KV() { return /2008/.test(EDP()) ? "0,40" : "0,45"; }
+  function TXC() { return /2008/.test(EDP()) ? "fck·√(A2/A1)/(γc·γn)" : "0,85·fck/γc·√(A2/A1)"; }
   function FtRd(d, fub) { return LC().parafusoTracao(d, fub); }
   function Fc(d, t, fu, lf) { return LC().pressaoContato(d, t, fu, lf); }
   function soldaMm(a, fw, fy) { return LC().soldaFilete(a, 1, fw, fy); }
@@ -252,8 +256,8 @@
       if (!op.soldadaNaViga) {
         var lx = op.simples ? linhaExcentrica(n, s, V, gW + tw / 2) : null;
         var Fb = op.simples ? lx.F : webPorBolt, cap = op.simples ? fvr : 2 * fvr;
-        vs.push(verif("Parafusos na alma da viga ao cisalhamento (" + n + " × " + pf.id + ", " + (op.simples ? "1 plano, com excentricidade" : "2 planos") + ")", ED24 + ", 6.3.3.2 (Fv,Rd = 0,45·Ab·fub/γa2)" + (op.simples ? "; excentricidade pelo método elástico (" + PRATICA + ")" : ""),
-          [passo("Fv,Rd por plano", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Força por parafuso", op.simples ? "√((V/n)² + (V·e·ymáx/Σy²)²), e = g + tw/2 = " + br(gW + tw / 2, 0) + " mm" : "V/n", br(Fb, 1) + " kN", comb(e.combV))], cap, Fb));
+        vs.push(verif("Parafusos na alma da viga ao cisalhamento (" + n + " × " + pf.id + ", " + (op.simples ? "1 plano, com excentricidade" : "2 planos") + ")", EDP() + ", 6.3.3.2 (Fv,Rd = " + KV() + "·Ab·fub/γa2)" + (op.simples ? "; excentricidade pelo método elástico (" + PRATICA + ")" : ""),
+          [passo("Fv,Rd por plano", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Força por parafuso", op.simples ? "√((V/n)² + (V·e·ymáx/Σy²)²), e = g + tw/2 = " + br(gW + tw / 2, 0) + " mm" : "V/n", br(Fb, 1) + " kN", comb(e.combV))], cap, Fb));
         var bw = sumBearing(n, d, tw, e.fuV, op.recorte ? num(op.recorte.ev, ev) : ev, s, !op.recorte);
         vs.push(verif("Pressão de contato na alma da viga (tw = " + br(tw, 2) + " mm)", ED08 + ", 6.3.3.3",
           [passo("Soma das resistências dos furos", "Σ mín(1,2·lf·t·fu; 2,4·db·t·fu)/γa2", br(bw.total, 1) + " kN", op.recorte ? "furo de cima a " + br(num(op.recorte.ev, ev), 0) + " mm do recorte" : "alma contínua acima do 1º furo")], bw.total, op.simples ? lx.F * n : V));
@@ -273,7 +277,7 @@
       /* lado do apoio */
       var nS = nA * n, FbS = V / nS;
       if (apoioComMesa(e)) vs.push(vBorda("furos das cantoneiras na mesa do apoio", op.simples ? e.apoio.bf / 2 - (tw / 2 + gS) : (e.apoio.bf - (tw + 2 * gS)) / 2, d, "laminada"));
-      vs.push(verif("Parafusos no apoio ao cisalhamento (" + nS + " × " + pf.id + ", 1 plano)", ED24 + ", 6.3.3.2", [passo("Fv,Rd", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Força por parafuso", "V/" + nS, br(FbS, 1) + " kN")], fvr, FbS));
+      vs.push(verif("Parafusos no apoio ao cisalhamento (" + nS + " × " + pf.id + ", 1 plano)", EDP() + ", 6.3.3.2", [passo("Fv,Rd", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Força por parafuso", "V/" + nS, br(FbS, 1) + " kN")], fvr, FbS));
       var bS = sumBearing(n, d, e.tApoio, e.fuA, ev, s, true);
       vs.push(verif("Pressão de contato no apoio (" + (e.face === "alma" ? "alma" : "mesa") + " t = " + br(e.tApoio, 2) + " mm)", ED08 + ", 6.3.3.3", [passo("Por parafuso", "2,4·db·t·fu/γa2 (sem borda na direção da força)", br(bS.ponta, 1) + " kN")], bS.ponta, FbS));
       var bA = sumBearing(n, d, ct.t, e.fu, ev, s, false);
@@ -338,8 +342,8 @@
          repartida igual nos n parafusos e somada à componente do momento no parafuso extremo (a favor). Sem op.axial: como antes. */
       var NtA = op.axial ? num(op.axial.Nt, 0) : 0, NcA = op.axial ? num(op.axial.Nc, 0) : 0, Nax = Math.max(NtA, NcA);
       if (Nax > 0) lx = { F: Math.sqrt(sq(lx.Fv) + sq(lx.Fh + Nax / n)), Fv: lx.Fv, Fh: lx.Fh + Nax / n, Iy: lx.Iy };
-      vs.push(verif("Parafusos ao cisalhamento (" + n + " × " + pf.id + ", " + (nP === 2 ? "2 planos, " : "") + "com excentricidade" + (Nax > 0 ? " e força axial" : "") + ")", ED24 + ", 6.3.3.2; método elástico do grupo (" + PRATICA + ")",
-        [passo("Excentricidade", "e = distância da solda à linha de parafusos", br(a, 0) + " mm")].concat(Nax > 0 ? [passo("Força axial da viga", "|N| (a maior entre tração e compressão)", br(Nax, 1) + " kN")] : []).concat([passo("Força no parafuso extremo", Nax > 0 ? "√((V/n)² + (V·e·ymáx/Σy² + N/n)²)" : "√((V/n)² + (V·e·ymáx/Σy²)²)", br(lx.F, 1) + " kN", comb(e.combV)), passo("Fv,Rd" + (nP === 2 ? " × 2 planos" : ""), "0,45·Ab·fub/γa2", br(nP * fvr, 1) + " kN")]), nP * fvr, lx.F));
+      vs.push(verif("Parafusos ao cisalhamento (" + n + " × " + pf.id + ", " + (nP === 2 ? "2 planos, " : "") + "com excentricidade" + (Nax > 0 ? " e força axial" : "") + ")", EDP() + ", 6.3.3.2; método elástico do grupo (" + PRATICA + ")",
+        [passo("Excentricidade", "e = distância da solda à linha de parafusos", br(a, 0) + " mm")].concat(Nax > 0 ? [passo("Força axial da viga", "|N| (a maior entre tração e compressão)", br(Nax, 1) + " kN")] : []).concat([passo("Força no parafuso extremo", Nax > 0 ? "√((V/n)² + (V·e·ymáx/Σy² + N/n)²)" : "√((V/n)² + (V·e·ymáx/Σy²)²)", br(lx.F, 1) + " kN", comb(e.combV)), passo("Fv,Rd" + (nP === 2 ? " × 2 planos" : ""), KV() + "·Ab·fub/γa2", br(nP * fvr, 1) + " kN")]), nP * fvr, lx.F));
       var bp = sumBearing(n, d, t, e.fu, ev, s, false), bw = sumBearing(n, d, tw, e.fuV, op.recorte ? num(op.recorte.ev, ev) : ev, s, !op.recorte);
       var FcMin = Math.min(nP * bp.ponta, nP * bp.meio, bw.ponta, bw.meio);
       vs.push(verif("Pressão de contato (chapa t = " + br(t, 1) + " mm e alma tw = " + br(tw, 2) + " mm)", ED08 + ", 6.3.3.3",
@@ -417,7 +421,7 @@
     function avaliar(pf, t, n) {
       var d = pf.d, s = cima5(ESPF * d), ev = cima5(bordaMin(d, e.bordaChapa)), Lp = (n - 1) * s + 2 * ev; if (Lp > Lmax + 1e-6) return null;
       var dh = furo(d), dh2 = dh + 2, tw = num(v.tw, 6), eh = cima5(bordaMin(d, e.bordaChapa)), gage = cima5(Math.max(90, 3 * d, tw + 2 * 8 + 2 * dh)), bp = gage + 2 * eh, vs = [], fvr = FvRd(d, e.fub), nT = 2 * n;
-      vs.push(verif("Parafusos ao cisalhamento (" + nT + " × " + pf.id + ")", ED24 + ", 6.3.3.2", [passo("Fv,Rd", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "V/" + nT, br(V / nT, 1) + " kN", comb(e.combV))], fvr, V / nT));
+      vs.push(verif("Parafusos ao cisalhamento (" + nT + " × " + pf.id + ")", EDP() + ", 6.3.3.2", [passo("Fv,Rd", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "V/" + nT, br(V / nT, 1) + " kN", comb(e.combV))], fvr, V / nT));
       var bp1 = sumBearing(n, d, t, e.fu, ev, s, false), bs1 = sumBearing(n, d, e.tApoio, e.fuA, ev, s, true);
       if (apoioComMesa(e)) vs.push(vBorda("furos na mesa do apoio", (e.apoio.bf - gage) / 2, d, "laminada"));
       vs.push(verif("Pressão de contato (chapa t = " + br(t, 1) + " mm; apoio t = " + br(e.tApoio, 1) + " mm)", ED08 + ", 6.3.3.3", [passo("Chapa: soma das 2 colunas", "Σ 1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(2 * bp1.total, 1) + " kN"), passo("Apoio por parafuso", "2,4·db·t·fu/γa2", br(bs1.ponta, 1) + " kN")], Math.min(2 * bp1.total, nT * bs1.ponta), V));
@@ -470,7 +474,7 @@
       var vEMa = vEntreMesas(e, "A cantoneira de assento (comprimento)", Lang); if (vEMa) vs.push(vEMa);
       if (apoioComMesa(e)) vs.push(vBorda("furos do assento na mesa do apoio", (e.apoio.bf - gxA) / 2, pf.d, "laminada"));
       vs.push(vBorda("furos na ponta da cantoneira de assento", (Lang - gxA) / 2, pf.d, "serra"));
-      vs.push(verif("Parafusos do assento no apoio (" + nb + " × " + pf.id + ")", ED24 + ", 6.3.3.2", [passo("Fv,Rd", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "R/" + nb, br(R / nb, 1) + " kN", comb(e.combV))], fvr, R / nb));
+      vs.push(verif("Parafusos do assento no apoio (" + nb + " × " + pf.id + ")", EDP() + ", 6.3.3.2", [passo("Fv,Rd", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "R/" + nb, br(R / nb, 1) + " kN", comb(e.combV))], fvr, R / nb));
       vs.push(verif("Pressão de contato (assento e apoio)", ED08 + ", 6.3.3.3", [passo("Por parafuso", "2,4·db·t·fu/γa2 (furo longe da borda na direção da força)", br(Fcm, 1) + " kN")], Fcm, R / nb));
       dims = { cat: melhor.cat, comprimento: Lang, parafuso: pf.id, n: nb, ln: Math.round(ln), topo: "L89X89X6.4 (estabilidade)" };
       desenhoA = { cat: melhor.cat, comprimento: Lang / 1000, parafuso: pf.id, parafusos: nb };
@@ -564,7 +568,7 @@
       var gage = cima5(Math.max(3 * d, v.tw + 20 + 2 * d)), bp = Math.max(v.bf, gage + 2 * cima5(bordaMin(d, "laminada")));
       vs.push(verif("Parafusos à tração (2 linhas de 2 junto à mesa tracionada, " + pf.id + " " + e.classe + ")", ED08 + ", 6.3.3.1; distribuição plástica M = 2·Ft·(h1 + h2)",
         [passo("Braços", "h1 = d − 1,5·tf − pfi; h2 = h1 − s", br(h1, 0) + " e " + br(h2, 0) + " mm"), passo("Ft,Sd por parafuso", "M/(2·(h1 + h2)) + N/4", br(Ft, 1) + " kN", comb(e.combM)), passo("Ft,Rd", "0,75·Ab·fub/γa2", br(ftr, 1) + " kN")], ftr, Ft));
-      vs.push(verif("Parafusos ao cisalhamento (" + nTot + ")", ED24 + ", 6.3.3.2", [passo("Fv,Sd", "V/" + nTot, br(Vb, 1) + " kN")], fvr, Vb));
+      vs.push(verif("Parafusos ao cisalhamento (" + nTot + ")", EDP() + ", 6.3.3.2", [passo("Fv,Sd", "V/" + nTot, br(Vb, 1) + " kN")], fvr, Vb));
       vs.push(verif("Tração + cisalhamento", ED08 + ", 6.3.3.4", [passo("(Ft/FtRd)² + (Fv/FvRd)²", "", br(it2, 3))], 1, it2, ""));
       var bl = pfi - d / 2, Msd = Ft * 1000 * bl / (bp / 2), MRd = tp * tp * e.fy / 4 / g.a1;
       if (apoioComMesa(e)) vs.push(vBorda("furos na mesa do pilar", (e.apoio.bf - gage) / 2, d, "laminada"));
@@ -611,7 +615,7 @@
       if (!sold) {
         var fvr = FvRd(d, e.fub); nb = Math.max(4, 2 * Math.ceil(Ff / fvr / 2));
         var nr = nb / 2, bpl = sumBearing(nr, d, tp, e.fu, ev, s, false), bfl = sumBearing(nr, d, v.tf, e.fuV, ev, s, false);
-        vs.push(verif("Parafusos da tala na mesa da viga (" + nb + " × " + pf.id + ", 1 plano)", ED24 + ", 6.3.3.2", [passo("Fv,Rd", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "Ff/" + nb, br(Ff / nb, 1) + " kN")], fvr, Ff / nb));
+        vs.push(verif("Parafusos da tala na mesa da viga (" + nb + " × " + pf.id + ", 1 plano)", EDP() + ", 6.3.3.2", [passo("Fv,Rd", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN"), passo("Por parafuso", "Ff/" + nb, br(Ff / nb, 1) + " kN")], fvr, Ff / nb));
         vs.push(verif("Pressão de contato (tala e mesa da viga)", ED08 + ", 6.3.3.3", [passo("Tala: 2 colunas", "Σ 1,2·lf·t·fu/γa2", br(2 * bpl.total, 1) + " kN"), passo("Mesa da viga: 2 colunas", "", br(2 * bfl.total, 1) + " kN")], Math.min(2 * bpl.total, 2 * bfl.total), Ff));
         var gg = cima5(Math.max(3 * d, v.tw + 2 * num(v.r, 0) + 2 * d)), rsg = LC().rasgamento({ t: v.tf, fy: e.fyV, fu: e.fuV, lv: 2 * ((nr - 1) * s + ev), furosV: 2 * (nr - 0.5), lt: v.bf - gg, furosT: 1, dh: dh2, Cts: 1 });
         vs.push(verif("Colapso por rasgamento da mesa da viga (blocos de fora)", ED08 + ", 6.5.6", [passo("Fr,Rd", "(0,60·fu·Anv + fu·Ant)/γa2 ≤ (0,60·fy·Agv + fu·Ant)/γa2", br(rsg.Rd, 1) + " kN", "gabarito " + gg + " mm")], rsg.Rd, Ff));
@@ -739,7 +743,7 @@
         if (!sold) {
           var fvr = FvRd(d, e.fub); nb = Math.max(4, 2 * Math.ceil(Ff / fvr / 2)); var nr = nb / 2;
           var bm = sumBearing(nr, d, Math.min(tp, sec.tf), Math.min(e.fu, e.fuV), ev, s, false);
-          vs.push(verif(rot + ": parafusos de cada lado (" + nb + " × " + pf.id + ", 1 plano)", ED24 + ", 6.3.3.2", [passo("Por parafuso", "Ff/" + nb, br(Ff / nb, 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, Ff / nb));
+          vs.push(verif(rot + ": parafusos de cada lado (" + nb + " × " + pf.id + ", 1 plano)", EDP() + ", 6.3.3.2", [passo("Por parafuso", "Ff/" + nb, br(Ff / nb, 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, Ff / nb));
           vs.push(verif(rot + ": pressão de contato (mesa/tala)", ED08 + ", 6.3.3.3", [passo("2 colunas", "Σ 1,2·lf·t·fu/γa2 (a chapa mais fina)", br(2 * bm.total, 1) + " kN")], 2 * bm.total, Ff));
           var gg = cima5(Math.max(3 * d, sec.tw + 2 * num(sec.r, 0) + 2 * d)), rs = LC().rasgamento({ t: sec.tf, fy: e.fyV, fu: e.fuV, lv: 2 * ((nr - 1) * s + ev), furosV: 2 * (nr - 0.5), lt: sec.bf - gg, furosT: 1, dh: dh2, Cts: 1 });
           vs.push(verif(rot + ": rasgamento da mesa", ED08 + ", 6.5.6", [passo("Fr,Rd", "", br(rs.Rd, 1) + " kN")], rs.Rd, Ff));
@@ -766,7 +770,7 @@
     /* alma: duas talas, a cortante com a excentricidade do grupo (um lado da emenda) */
     var hw = v.d - 2 * (v.tf + num(v.r, 0)) - 10, pf = tm.pf, d = pf.d, s = cima5(ESPF * d), ev = cima5(bordaMin(d, "laminada")), n = Math.max(2, Math.min(9, Math.floor((hw - 2 * ev) / s) + 1));
     var eW = 5 + ev, lx = linhaExcentrica(n, s, e.V, eW), fvr = FvRd(d, e.fub), tA = 8, Vg = 2 * 0.6 * e.fy * ((n - 1) * s + 2 * ev) * tA / g.a1 / 1000;
-    if (!sold) vs.push(verif("Alma: parafusos de cada lado (" + n + " × " + pf.id + ", 2 planos, com excentricidade)", ED24 + ", 6.3.3.2; método elástico (" + PRATICA + ")", [passo("Força no parafuso extremo", "√((V/n)² + (V·e·ymáx/Σy²)²), e = " + eW + " mm", br(lx.F, 1) + " kN", comb(e.combV)), passo("Resistente (2 planos)", "2·Fv,Rd", br(2 * fvr, 1) + " kN")], 2 * fvr, lx.F));
+    if (!sold) vs.push(verif("Alma: parafusos de cada lado (" + n + " × " + pf.id + ", 2 planos, com excentricidade)", EDP() + ", 6.3.3.2; método elástico (" + PRATICA + ")", [passo("Força no parafuso extremo", "√((V/n)² + (V·e·ymáx/Σy²)²), e = " + eW + " mm", br(lx.F, 1) + " kN", comb(e.combV)), passo("Resistente (2 planos)", "2·Fv,Rd", br(2 * fvr, 1) + " kN")], 2 * fvr, lx.F));
     if (!sold) { var FcAl = Math.min(Fc(d, num(v.tw, 6), e.fuV, Infinity), Fc(d, 2 * tA, e.fu, Infinity));
       vs.push(verif("Alma: pressão de contato (alma tw = " + br(v.tw, 2) + " mm e 2 talas de " + br(tA, 1) + " mm)", ED08 + ", 6.3.3.3", [passo("Por parafuso", "mín(2,4·db·tw·fu; 2,4·db·2t·fu)/γa2", br(FcAl, 1) + " kN"), passo("Parafuso extremo", "", br(lx.F, 1) + " kN")], FcAl, lx.F)); }
     vs.push(verif("Alma: talas ao cisalhamento (2 × " + br(tA, 1) + " mm)", ED08 + ", 6.5.5", [passo("Escoamento", "2·0,60·fy·h·t/γa1", br(Vg, 1) + " kN")], Vg, e.V));
@@ -846,7 +850,7 @@
       if (sig <= sRd && M <= MRd && f <= cap) best = { bl: bl, hl: hl, tl: tl, sig: sig, M: M, MRd: MRd, aW: aW, f: f, cap: cap };
     }
     if (!best) best = { bl: 400, hl: 250, tl: CHAPAS[8], sig: V * 1000 / (400 * 225), M: V * (gr + 112.5) / 1000, MRd: 400 * Math.pow(CHAPAS[8], 2) / 4 * e.fy / g.a1 / 1e6, aW: 10, f: 0, cap: 1 };
-    var vs = [verif("Contato da barra no concreto (" + best.bl + " × " + (best.hl - gr) + " mm embutidos)", ED24 + ", 6.6 (σc,Rd) — aplicado à face da barra (a favor)", [passo("σ", "V/(b·(h − graute))", br(best.sig, 2) + " MPa", comb(e.combV)), passo("σc,Rd", "0,85·fck/γc·√(A2/A1)", br(sRd, 2) + " MPa")], sRd, best.sig, "MPa"),
+    var vs = [verif("Contato da barra no concreto (" + best.bl + " × " + (best.hl - gr) + " mm embutidos)", EDP() + ", 6.6 (σc,Rd) — aplicado à face da barra (a favor)", [passo("σ", "V/(b·(h − graute))", br(best.sig, 2) + " MPa", comb(e.combV)), passo("σc,Rd", TXC(), br(sRd, 2) + " MPa")], sRd, best.sig, "MPa"),
       verif("Barra à flexão (t = " + br(best.tl, 1) + " mm)", "b·t²·fy/4/γa1 (" + PRATICA + ")", [passo("Momento", "V·(graute + h_emb/2)", br(best.M, 2) + " kN·m"), passo("Resistente", "", br(best.MRd, 2) + " kN·m")], best.MRd, best.M, "kN·m"),
       verif("Solda da barra na placa (filete " + best.aW + " mm, 2 lados)", ED08 + ", 6.2.5", [passo("Força por mm", "√[(V/2b)² + (M/(b·(t + a)))²]", br(best.f, 0) + " N/mm"), passo("Resistência por mm", "", br(best.cap, 0) + " N/mm")], best.cap, best.f, "N/mm")];
     var fe = fecha(vs);
@@ -878,7 +882,7 @@
     return melhor;
     function avaliar(tG, pf, n) {
       var d = pf.d, dh = furo(d), dh2 = dh + 2, s = cima5(ESPF * d), ev = cima5(bordaMin(d, "laminada")), vs = [], fvr = FvRd(d, e.fub), Lg = (n - 1) * s;
-      vs.push(verif("Parafusos da diagonal (" + n + " × " + pf.id + ", 1 plano)", ED24 + ", 6.3.3.2", [passo("Por parafuso", "N/" + n, br(N / n, 1) + " kN", "N = " + br(N, 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, N / n));
+      vs.push(verif("Parafusos da diagonal (" + n + " × " + pf.id + ", 1 plano)", EDP() + ", 6.3.3.2", [passo("Por parafuso", "N/" + n, br(N / n, 1) + " kN", "N = " + br(N, 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, N / n));
       var bG = sumBearing(n, d, tG, e.fu, ev, s, false), bD = sumBearing(n, d, num(dg.t, 6), fuD, ev, s, false);
       vs.push(verif("Pressão de contato (gusset t = " + br(tG, 1) + " mm; diagonal t = " + br(dg.t, 2) + " mm)", ED08 + ", 6.3.3.3", [passo("Gusset", "Σ 1,2·lf·t·fu/γa2", br(bG.total, 1) + " kN"), passo("Diagonal", "", br(bD.total, 1) + " kN")], Math.min(bG.total, bD.total), N));
       var Lw = 2 * Lg * Math.tan(Math.PI / 6), Ty = Lw * tG * e.fy / g.a1 / 1000, Tu = (Lw - dh2) * tG * e.fu / g.a2 / 1000;
@@ -1069,7 +1073,7 @@
     return melhor;
     function avaliar(pf, tt, n) {
       var d = pf.d, dh = furo(d), dh2 = dh + 2, s = cima5(ESPF * d), ev = cima5(bordaMin(d, "laminada")), vs = [], np = duas ? 2 : 1, fvr = FvRd(d, e.fub), lc = (n - 1) * s;
-      vs.push(verif("Parafusos de cada lado da emenda (" + n + " × " + pf.id + ", " + np + " plano" + (np > 1 ? "s" : "") + ")", ED24 + ", 6.3.3.2", [passo("Por parafuso", "N/" + n, br(N / n, 1) + " kN", "N = " + br(N, 1) + " kN"), passo("Resistente", np + "·Fv,Rd", br(np * fvr, 1) + " kN")], np * fvr, N / n));
+      vs.push(verif("Parafusos de cada lado da emenda (" + n + " × " + pf.id + ", " + np + " plano" + (np > 1 ? "s" : "") + ")", EDP() + ", 6.3.3.2", [passo("Por parafuso", "N/" + n, br(N / n, 1) + " kN", "N = " + br(N, 1) + " kN"), passo("Resistente", np + "·Fv,Rd", br(np * fvr, 1) + " kN")], np * fvr, N / n));
       var bB = sumBearing(n, d, tb, fuB, ev, s, false), bT = sumBearing(n, d, np * tt, e.fu, ev, s, false);
       vs.push(verif("Pressão de contato (barra t = " + br(tb, 2) + " mm; tala" + (np > 1 ? "s 2 × " : " ") + br(tt, 1) + " mm)", ED08 + ", 6.3.3.3", [passo("Barra", "Σ 1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(bB.total, 1) + " kN"), passo("Tala(s)", "", br(bT.total, 1) + " kN")], Math.min(bB.total, bT.total), N));
       var Ct = b0.forma === "chapa" ? 1 : Math.max(0.6, Math.min(0.9, 1 - num(b0.xc, 20) / Math.max(1, lc))), An = Ab - dh2 * tb, NtRd = Math.min(Ab * fyB / g.a1, Ct * An * fuB / g.a2) / 1000;
@@ -1241,7 +1245,7 @@
       vs.push(verif("Parafusos à tração (8 junto da mesa tracionada: 4 linhas de 2, " + pf.id + " " + e.classe + ")", ED08 + ", 6.3.3.1; distribuição plástica M = 2·Ft·(h1 + h2 + h3 + h4) — AISC Design Guide 4 (2ª ed.) e AISC 358-16, 6.8 (chapa espessa, sem alavanca)",
         [passo("Braços (do centro da mesa comprimida)", "h1 = d − tf/2 + pfo + pb; h2 = d − tf/2 + pfo; h3 = d − 1,5·tf − pfi; h4 = h3 − pb", br(h1, 0) + "; " + br(h2, 0) + "; " + br(h3, 0) + "; " + br(h4, 0) + " mm", "pfo = " + pfo + "; pfi = " + pfi + "; pb = " + pb + " mm"),
          passo("Ft,Sd por parafuso", "M/(2·Σh) + N/16", br(Ft, 1) + " kN", comb(cg.T)), passo("Ft,Rd", "0,75·Ab·fub/γa2", br(ftr, 1) + " kN")], ftr, Ft));
-      vs.push(verif("Parafusos ao cisalhamento (os 8 da mesa comprimida)", ED24 + ", 6.3.3.2 (Fv,Rd = 0,45·Ab·fub/γa2) — a cortante só nos parafusos do lado comprimido (AISC Design Guide 4; a favor)", [passo("Fv,Sd", "V/8", br(Vc, 1) + " kN", comb(cg.V)), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, Vc));
+      vs.push(verif("Parafusos ao cisalhamento (os 8 da mesa comprimida)", EDP() + ", 6.3.3.2 (Fv,Rd = " + KV() + "·Ab·fub/γa2) — a cortante só nos parafusos do lado comprimido (AISC Design Guide 4; a favor)", [passo("Fv,Sd", "V/8", br(Vc, 1) + " kN", comb(cg.V)), passo("Fv,Rd", "", br(fvr, 1) + " kN")], fvr, Vc));
       vs.push(verif("Tração + cisalhamento nos parafusos tracionados", ED08 + ", 6.3.3.4 (com Fv = V/8 em cada parafuso tracionado: a cortante que o lado comprimido levaria — a favor, e vale para o momento nos dois sentidos)", [passo("(Ft/FtRd)² + (Fv/FvRd)²", "Fv = V/8", br(it2, 3), comb(cg.i))], 1, it2, ""));
       var FcP = Fc(d, tp, fu, eP - dh / 2), FcM = Fc(d, tp, fu, pb - dh), FcC = c ? Fc(d, c.tf, e.fuA, Infinity) : FcP, FcR = Math.min(FcP, FcM, FcC);
       vs.push(verif("Pressão de contato (chapa t = " + br(tp, 1) + " mm" + (c ? "; mesa do pilar tf = " + br(c.tf, 1) + " mm" : "") + ")", ED08 + ", 6.3.3.3",
@@ -1338,7 +1342,7 @@
         vs.push(verif("Mesa do pilar à flexão sob os parafusos da de topo", "EN 1993-1-8:2005, Tabela 6.4 (mesa do pilar sem enrijecedor, linha isolada" + (topo ? ", linha de ponta com e1 = " + br(e1, 0) + " mm até o topo — a favor" : "") + "); " + REF_TSTUB, passosTstub(tsC, Math.min(cp, nc), nc, c.tf, "Mesa do pilar"), tsC.F, T));
         vs.push(vBorda("furos na mesa do pilar", ec, d, "laminada"));
       }
-      vs.push(verif("Parafusos na mesa da viga (de topo: " + 2 * nh + " × " + pf.id + ", 1 plano)", ED24 + ", 6.3.3.2", [passo("Por parafuso", "T/" + 2 * nh, br(T / (2 * nh), 1) + " kN"), passo("Fv,Rd", "0,45·Ab·fub/γa2", br(fvr, 1) + " kN")], fvr, T / (2 * nh)));
+      vs.push(verif("Parafusos na mesa da viga (de topo: " + 2 * nh + " × " + pf.id + ", 1 plano)", EDP() + ", 6.3.3.2", [passo("Por parafuso", "T/" + 2 * nh, br(T / (2 * nh), 1) + " kN"), passo("Fv,Rd", KV() + "·Ab·fub/γa2", br(fvr, 1) + " kN")], fvr, T / (2 * nh)));
       var bA = sumBearing(nh, d, ta, e.fu, eToe, s, false), bV = sumBearing(nh, d, v.tf, e.fuV, gh - FOLGA, s, false);
       vs.push(verif("Pressão de contato (aba da de topo t = " + br(ta, 1) + " mm e mesa da viga tf = " + br(v.tf, 1) + " mm)", ED08 + ", 6.3.3.3", [passo("Aba: 2 colunas (borda da ponta da aba)", "Σ 1,2·lf·t·fu/γa2 ≤ 2,4·db·t·fu/γa2", br(2 * bA.total, 1) + " kN"), passo("Mesa da viga: 2 colunas (borda da ponta da viga)", "", br(2 * bV.total, 1) + " kN")], Math.min(2 * bA.total, 2 * bV.total), T));
       var rsV = LC().rasgamento({ t: v.tf, fy: e.fyV, fu: e.fuV, lv: 2 * ((nh - 1) * s + gh - FOLGA), furosV: 2 * (nh - 0.5), lt: v.bf - gx, furosT: 1, dh: dh2, Cts: 1 });
@@ -1355,7 +1359,7 @@
       vs.push(vBorda("furos na mesa da viga", (v.bf - gx) / 2, d, "laminada"));
       /* compressão: parafusos da aba horizontal do assento, mesa comprimida da viga */
       var bC = sumBearing(nh, d, ta, e.fu, gh - ta - ra, s, false), bCv = sumBearing(nh, d, v.tf, e.fuV, 0, s, true);
-      vs.push(verif("Parafusos na mesa de baixo (assento: " + 2 * nh + " × " + pf.id + ") sob a compressão", ED24 + ", 6.3.3.2 e " + ED08 + ", 6.3.3.3", [passo("Por parafuso", "C/" + 2 * nh, br(C / (2 * nh), 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN"), passo("Pressão de contato: aba / mesa", "a borda é a aba vertical (a favor)", br(2 * bC.total, 1) + " / " + br(2 * bCv.total, 1) + " kN")], Math.min(fvr, 2 * bC.total / (2 * nh), 2 * bCv.total / (2 * nh)), C / (2 * nh)));
+      vs.push(verif("Parafusos na mesa de baixo (assento: " + 2 * nh + " × " + pf.id + ") sob a compressão", EDP() + ", 6.3.3.2 e " + ED08 + ", 6.3.3.3", [passo("Por parafuso", "C/" + 2 * nh, br(C / (2 * nh), 1) + " kN"), passo("Fv,Rd", "", br(fvr, 1) + " kN"), passo("Pressão de contato: aba / mesa", "a borda é a aba vertical (a favor)", br(2 * bC.total, 1) + " / " + br(2 * bCv.total, 1) + " kN")], Math.min(fvr, 2 * bC.total / (2 * nh), 2 * bCv.total / (2 * nh)), C / (2 * nh)));
       var FcfRd = v.bf * v.tf * e.fyV / g.a1 / 1000;
       vs.push(verif("Mesa comprimida da viga", "EN 1993-1-8:2005, 6.2.6.7 (mesa da viga à compressão) — bf·tf·fy/γa1", [passo("Resistente", "bf·tf·fy/γa1", br(FcfRd, 1) + " kN")], FcfRd, C));
       /* a cortante no assento (a mesma cantoneira e os mesmos parafusos) */

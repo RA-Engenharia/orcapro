@@ -18,6 +18,8 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  /* edição da NBR 8800 usada no cálculo: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) */
+  function _ed8800() { var N = global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.ed8800 ? N.ed8800() : "2008"; }
   function B() { return global.BIM; }
   function M() { return global.BimMetal; }
   function L() { return global.BimMetalLig; }
@@ -702,7 +704,7 @@
         "<tr><td>Formato DSTV (blocos ST, BO, AK, IK, SI, EN)</td><td>DSTV — Standard Description for Steel Structure Pieces for the Numerical Controls, 7ª ed., jul/1998</td><td>conferido; ângulo de corte, cabeçalho de chapa e oblongo: conferir no pós-processador</td></tr>" +
         "<tr><td>Perfis</td><td>" + esc((global.PerfisAco && PerfisAco.FONTE) || "catálogo") + " · Gerdau (folder técnico 10/18)</td><td>catálogo</td></tr>" +
         "<tr><td>Massa específica do aço</td><td>7 850 kg/m³</td><td>usada no peso de todas as peças</td></tr></tbody></table>" +
-        '<p class="muted" style="font-size:11px">A ABNT NBR 8800:2024 já existe: conferir qual edição a obra adota.</p>';
+        '<p class="muted" style="font-size:11px">Cálculo pela ABNT NBR 8800:' + _ed8800() + ' em todas as verificações (a edição 2024 também está publicada).</p>';
       UI.modal("De onde vem cada número", h, [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     }
   };

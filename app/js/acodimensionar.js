@@ -25,6 +25,7 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  function _norma8800() { var N = (typeof window !== "undefined" ? window : global).BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.dados8800 ? N : null; }
 
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
   function Mod() { return dep("AcoModelo", "./acomodelo.js"); }
@@ -546,8 +547,9 @@
         if (m1 > minDesl) razaoDesl = Math.max(razaoDesl, m2 / m1);
       });
     });
-    var classe = razaoDesl <= 1.13 ? "pequena" : razaoDesl <= 1.55 ? "média" : "grande";   /* NBR 8800:2024, 4.10 (com imperfeições): 1,13 e 1,55 — eram 1,1 e 1,4 */
-    G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:2024, 4.10 (limites 1,13 e 1,55)" + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
+    var N88 = _norma8800(), d88 = N88 ? N88.dados8800() : { ano: "2008", deslocPequena: 1.10, deslocMedia: 1.40, itemDesloc: "4.9.4 (pequena ≤ 1,1; média ≤ 1,4)" };
+    var classe = razaoDesl <= d88.deslocPequena ? "pequena" : razaoDesl <= d88.deslocMedia ? "média" : "grande";   /* edição pela opção central (js/metalnorma.js EDICAO_8800): 2008 = 4.9.4, 1,1 e 1,4; 2024 = 4.10, 1,13 e 1,55 */
+    G.decisoes.push({ tema: "Análise estrutural", decisao: "2ª ordem (P-Δ e P-δ) com forças nocionais de 0,3 % das cargas gravitacionais; deslocabilidade " + classe + " (Δ2/Δ1 máx. = " + br(razaoDesl, 3) + ")", motivo: "NBR 8800:" + d88.ano + ", " + d88.itemDesloc + (classe !== "pequena" ? " — rigidez reduzida a 80 % (imperfeição de material)" : "") });
     if (classe !== "pequena") {
       var elu80 = elu.map(function (c) { return { id: c.id, fatores: c.fatores, segundaOrdem: true, nocional: c.nocional, reducaoRigidez: 0.8 }; });
       var res80 = A.analisar(G.modelo, { combinacoes: elu80, estacoes: 7 });

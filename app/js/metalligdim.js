@@ -295,16 +295,21 @@
   }
 
   /* ================================================================ VERIFICAR (a estrutura inteira) */
+  /* edição da NBR 8800 deste módulo: SEMPRE 2008. Revisão de 22/11/2026: este módulo já calculava pela 2008 antes da opção
+     central (forçava opcoes.edicao = "2008"); seguir EDICAO_8800 = "2024" mudava o resultado do rollback (o rollback tem de
+     devolver o resultado antigo idêntico). Com a opção central em 2008 o efeito é o mesmo. */
+  function ED() { return "2008"; }
   function verificar(r, op) {
     op = op || {};
+    var ed = ED();
     var out = { ligacoes: [], n: 0, reprovados: 0, pior: null, cobertos: { base: false, rotuladas: false, tubo: false }, naoDim: [], modelo: { porBarra: {}, placas: {} }, pendencias: [], resumo: "",
-                premissas: "esforços = envoltória das combinações últimas de cada barra; coeficientes da NBR 8800:2008 do js/metalnorma.js LIGDIM (conferir no texto); " + FONTE_FCK };
+                premissas: "esforços = envoltória das combinações últimas de cada barra; coeficientes da NBR 8800:" + ed + " do js/metalnorma.js LIGDIM (conferir no texto); " + FONTE_FCK };
     if (!r || !r.ok || !r.modelo || !r.analise || !r.analise.combinacoes) { out.resumo = "sem cálculo"; return out; }
-    var LCc = LC(), opc = LCc && LCc.opcoes, edAnt = opc ? opc.edicao : null; if (opc) opc.edicao = "2008";
+    var LCc = LC(), opc = LCc && LCc.opcoes, edAnt = opc ? opc.edicao : null; if (opc) opc.edicao = ed;
     try { verificar0(r, op, out, LCc); } finally { if (opc) opc.edicao = edAnt; }
     out.ligacoes.forEach(function (l) { out.n++; if (!l.ok) out.reprovados++; if (!out.pior || l.razao > out.pior.razao) out.pior = l; });
     var cont = {}; out.ligacoes.forEach(function (l) { cont[l.tipo] = (cont[l.tipo] || 0) + 1; });
-    out.resumo = out.n + " ligação(ões) dimensionada(s) pela NBR 8800:2008 (" + Object.keys(cont).map(function (k) { return cont[k] + " " + (ROT[k] || k); }).join(", ") + "): " + out.reprovados + " reprovada(s)" +
+    out.resumo = out.n + " ligação(ões) dimensionada(s) pela NBR 8800:" + ed + " (" + Object.keys(cont).map(function (k) { return cont[k] + " " + (ROT[k] || k); }).join(", ") + "): " + out.reprovados + " reprovada(s)" +
       (out.pior ? "; pior razão " + br(out.pior.razao, 3) + " (" + out.pior.nome + ": " + out.pior.governante + ")" : "") + (out.naoDim.length ? "; NÃO dimensionado: " + out.naoDim.join("; ") : "");
     return out;
   }
@@ -492,7 +497,7 @@
     out.pendencias.push("Cone de arrancamento do concreto, bloco/pedestal e armadura de fretagem: projeto de fundação (com as reações deste memorial) — a NBR 8800 e a NBR 6118 9.4 não tratam o cone.");
 
     function fechaLig(l, tipo, nome, m, E) {
-      if (tipo === "clip" || tipo === "barra" || tipo === "placaBase") txt2008(l);
+      if (tipo === "clip" || tipo === "barra" || tipo === "placaBase") { if (ED() === "2008") txt2008(l); }
       l.tipo = tipo; l.nome = nome; l.membro = m ? m.id : null; l.peca = m ? m.peca : null; l.barraId = m && m.calc ? m.calc.barraId : null;
       if (E) l.esforcos = { Nt: E.Nt, Nc: E.Nc, V: E.V, comb: E.combN || E.combV };
       if (!l.resumo) l.resumo = l.n ? l.n + " parafusos " + l.id + " " + l.classe + (l.soldaPeca ? "; chapa " + T_GUSSET + " mm soldada (" + l.soldaPeca.filetes + " × " + l.soldaPeca.dw + " mm × " + l.soldaPeca.Lw + " mm)" : "") : (l.resumo || "");

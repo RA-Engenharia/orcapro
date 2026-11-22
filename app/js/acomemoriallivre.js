@@ -24,6 +24,8 @@
  * ===================================================================== */
 (function (global) {
   "use strict";
+  /* edição da NBR 8800 usada no cálculo: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) */
+  function _ed8800() { var N = global.BimMetalNorma || (typeof require === "function" ? (function () { try { return require("./metalnorma.js"); } catch (e) { return null; } })() : null); return N && N.ed8800 ? N.ed8800() : "2008"; }
 
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
   function fin(v) { return typeof v === "number" && isFinite(v); }
@@ -62,7 +64,7 @@
   var NOMES = { pilar: "Pilar", viga: "Viga", terca: "Terça", diagonal: "Diagonal" };
   var COND = { rigida: "rígida", rotulada: "rotulada", continua: "contínua", livre: "livre (balanço)", apoio: "apoio" };
   var NORMAS = [
-    ["ABNT NBR 8800", "Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edifícios", "2024 (errata 02/2025)", "2008 nas expressões sem mudança confirmada; 2024 onde a mudança foi confirmada (compressão por área efetiva, Cb, deslocabilidade 1,13/1,55) — conferir no texto oficial"],
+    ["ABNT NBR 8800", "Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edifícios", "2024 (errata 02/2025)", "__ED8800__"],
     ["ABNT NBR 14762", "Dimensionamento de estruturas de aço constituídas por perfis formados a frio", "2010", "2010 (método da resistência direta, Anexo C)"],
     ["ABNT NBR 6120", "Ações para o cálculo de estruturas de edificações", "2019", "2019 (texto oficial na biblioteca técnica)"],
     ["ABNT NBR 8681", "Ações e segurança nas estruturas — procedimento", "2025", "coeficientes γf e ψ das Tabelas 1 e 2 da NBR 8800:2008 — conferir na 8681:2025"],
@@ -238,8 +240,8 @@
       (img.perspectiva ? fig('<img src="' + esc(img.perspectiva) + '" alt="Perspectiva">', "Perspectiva do modelo calculado (aproveitamento das barras)") : fig(svgModelo(r), "Modelo de cálculo em perspectiva isométrica (barras e apoios; em vermelho as que não atendem)")));
 
     /* 2. normas */
-    sec("normas", "Normas e edições", tabela(["Norma", "Título", "Edição vigente", "Edição usada no cálculo"], NORMAS.filter(function (n) { return n[0] !== "ABNT NBR 6123" || r.vento; }).map(function (n) { return [esc(n[0]), esc(n[1]), esc(n[2]), esc(n[3])]; }), { legenda: leg("Normas aplicadas") }) +
-      '<p class="nota">A NBR 8800:2024, a NBR 6123:2023 e a NBR 8681:2025 ainda não estão no texto oficial da biblioteca técnica: cada verificação cita o item e a edição usados.</p>');
+    sec("normas", "Normas e edições", tabela(["Norma", "Título", "Edição vigente", "Edição usada no cálculo"], NORMAS.filter(function (n) { return n[0] !== "ABNT NBR 6123" || r.vento; }).map(function (n) { return [esc(n[0]), esc(n[1]), esc(n[2]), esc(n[3] === "__ED8800__" ? (_ed8800() === "2008" ? "2008 em todas as verificações (compressão com o fator Q do Anexo F, FLT do Anexo G com Cb, deslocabilidade 1,1/1,4)" : "2024 (compressão por área efetiva, Cb só no Mcr, deslocabilidade 1,13/1,55)") : n[3])]; }), { legenda: leg("Normas aplicadas") }) +
+      '<p class="nota">O dimensionamento segue a ABNT NBR 8800:' + _ed8800() + ' em todas as verificações. A NBR 6123:2023 e a NBR 8681:2025 ainda não estão no texto oficial da biblioteca técnica: cada verificação cita o item e a edição usados.</p>');
 
     /* 3. materiais */
     var acos = {}; membros.forEach(function (m) { var a = obj(m.aco); if (!acos[a.id]) acos[a.id] = { a: a, ps: [] }; acos[a.id].ps.push(m.id); });
@@ -317,7 +319,7 @@
     }).filter(Boolean);
     var fl = arr(r.flambagem);
     sec("analise", "Análise estrutural",
-      "<p>Método dos deslocamentos, pórtico espacial (6 graus de liberdade por nó), barras subdivididas para o efeito local P-δ. Análise de 2ª ordem iterada com o esforço normal; barras redondas só trabalham à tração. Deslocabilidade pela relação Δ2/Δ1 dos deslocamentos horizontais (NBR 8800:2024, 4.10): <b>Δ2/Δ1 = " + br(obj(r.deslocabilidade).razao, 3) + " — " + esc(obj(r.deslocabilidade).classe) + " deslocabilidade</b>" + (obj(r.deslocabilidade).classe !== "pequena" ? " (rigidez reduzida a 80 % nas combinações últimas)" : "") + ".</p>" +
+      "<p>Método dos deslocamentos, pórtico espacial (6 graus de liberdade por nó), barras subdivididas para o efeito local P-δ. Análise de 2ª ordem iterada com o esforço normal; barras redondas só trabalham à tração. Deslocabilidade pela relação Δ2/Δ1 dos deslocamentos horizontais (NBR 8800:" + _ed8800() + (_ed8800() === "2008" ? ", 4.9.4" : ", 4.10") + "): <b>Δ2/Δ1 = " + br(obj(r.deslocabilidade).razao, 3) + " — " + esc(obj(r.deslocabilidade).classe) + " deslocabilidade</b>" + (obj(r.deslocabilidade).classe !== "pequena" ? " (rigidez reduzida a 80 % nas combinações últimas)" : "") + ".</p>" +
       (r.estabilidadeGlobal && !r.estabilidadeGlobal.ok ? caixa("<b>Não atende:</b> " + t(r.estabilidadeGlobal.texto, "estabilidade"), true) : "") +
       (fl.length ? "<p>Flambagem global (autovalor da rigidez geométrica): " + fl.map(function (f) { return "λcr = " + br(f.lambda, 2) + " na combinação " + esc(f.combinacao); }).join("; ") + ".</p>" : "") +
       (img.deformada ? fig('<img src="' + esc(img.deformada) + '" alt="Deformada">', "Deformada (ampliada)") : "") + (img.flambagem ? fig('<img src="' + esc(img.flambagem) + '" alt="Modo de flambagem">', "Primeiro modo de flambagem global") : "") +

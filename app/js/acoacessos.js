@@ -58,6 +58,9 @@
   "use strict";
 
   function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+  /* edição da NBR 8800 nos textos: a opção central (js/metalnorma.js, EDICAO_8800; padrão 2008) — os valores vêm do js/acodim8800.js e do js/acoligcalc.js, que leem a mesma opção */
+  function N88() { var N = dep("BimMetalNorma", "./metalnorma.js"); try { return N && N.norma8800 ? N.norma8800() : "NBR 8800:2008"; } catch (e) { return "NBR 8800:2008"; } }
+  function kvE() { return /2024/.test(N88()) ? "0,45" : "0,40"; }
   function D88() { return dep("AcoDim8800", "./acodim8800.js"); }
   function Mat() { return dep("AcoMateriais", "./acomateriais.js"); }
   function Cat() { return dep("PerfisAco", "./perfisaco.js"); }
@@ -77,7 +80,7 @@
     nr12: { sigla: "NR-12", titulo: "Segurança no trabalho em máquinas e equipamentos — Anexo III: meios de acesso", edicao: "texto atualizado 2025 (Portaria MTb 3.214/1978 e alterações; Anexo III com a Portaria MTP 428/2021)", fonte: "gov.br/trabalho-e-emprego (NR-12); biblioteca RA: NR-12 (texto atualizado 2025).pdf; transcrito em docs/metalica/pesquisa/NORMAS-INDUSTRIAL.md (seção 4)", lido: true },
     nbr6120: { sigla: "ABNT NBR 6120", titulo: "Ações para o cálculo de estruturas de edificações", edicao: "2019", fonte: "texto oficial na biblioteca RA (ABNT NBR 6120-2019.pdf); Tabelas 10 e 12 transcritas em docs/metalica/pesquisa/NORMAS-INDUSTRIAL.md", lido: true },
     nr35: { sigla: "NR-35", titulo: "Trabalho em altura — Anexo III: escadas (escada fixa vertical de uso individual)", edicao: "texto atualizado 2025 (Anexo III com as Portarias MTE 1.680/2025 e 1.259/2026)", fonte: "gov.br/trabalho-e-emprego (NR-35); biblioteca RA: NR-35 (texto atualizado 2025).txt — itens 4.1.2, 4.1.2.1, 5.2.1.1, 5.2.1.2", lido: true },
-    nbr8800: { sigla: "ABNT NBR 8800", titulo: "Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edificações", edicao: "2024 (expressões de 2008 onde a mudança não foi confirmada — js/acodim8800.js)", fonte: "js/acodim8800.js", lido: false },
+    nbr8800: { sigla: "ABNT NBR 8800", titulo: "Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edificações", edicao: "2008 (opção central EDICAO_8800, js/metalnorma.js — decisão de 21/11/2026; o caminho 2024 fica para rollback)", fonte: "js/acodim8800.js", lido: false },
     nbr9050: { sigla: "ABNT NBR 9050", titulo: "Acessibilidade a edificações, mobiliário, espaços e equipamentos urbanos", edicao: "2020 (Versão Corrigida:2021, com a Emenda 1 — catálogo ABNT, 14/10/2026; itens e valores conferidos na lista federal da IN MPDG 2/2017, que cita a 2015)", fonte: "https://bombinhas.sc.gov.br/uploads/sites/369/2023/06/2066489_Lista_de_Verificacao_de_Acessibilidade.pdf — conferir no texto da 2020", lido: false },
     nbr14718: { sigla: "ABNT NBR 14718", titulo: "Esquadrias — Guarda-corpos para edificação — Requisitos, procedimentos e métodos de ensaio", edicao: "2019 (3ª edição, cancela a 2008)", fonte: "https://cbic.org.br/publicada-revisao-da-norma-de-guarda-corpos-para-edificacao/ (altura) — sem texto na biblioteca RA", lido: false },
     nbr9077: { sigla: "ABNT NBR 9077", titulo: "Projeto de saídas de emergência", edicao: "2025 (Versão Corrigida:2026; a 9077:1993/2001 foi CANCELADA — catálogo ABNT, pesquisa P1 de 14/10/2026)", fonte: "sem texto na biblioteca RA — nenhum valor da 2025 foi conferido; os números do motor vêm da NPT 011/2024 (CBPMPR), que segue a IT-11/2019 (CBPMESP)", lido: false },
@@ -477,8 +480,8 @@
     if (q != null && q < mt.q - 1e-9) { avs.push("Sobrecarga de " + br(q, 2) + " kN/m² abaixo do mínimo da NBR 6120:2019, Tabela 10 (" + mt.rotulo + ": " + br(mt.q, 1) + " kN/m²) para este tipo de acesso: usado " + br(mt.q, 1) + " kN/m²"); q = mt.q; }
     return { q: q, P: 2.5, avisos: avs, uso: u.id, rotulo: u.rotulo, ref: ref("nbr6120", "Tabela 10" + (/escada/.test(u.id) ? " e nota t" : "")), texto: (q == null ? "informe a carga" : br(q, 1) + " kN/m²") + " (" + u.rotulo + "); degrau isolado: 2,5 kN concentrada na posição mais desfavorável, sem a distribuída (nota t)" };
   }
-  var GAMA = { g: 1.25, q: 1.50, ref: "NBR 8800:2024, Tabela 1 — expressão da 2008, sem mudança confirmada (γg = 1,25 peso próprio de estrutura metálica; γq = 1,50 ação variável de uso)" };
-  var FLECHA = { piso: 350, ref: "NBR 8800:2024, Anexo C — limite da 2008 (vigas de piso: L/350), sem mudança confirmada" };
+  var GAMA = { g: 1.25, q: 1.50, ref: N88() + ", Tabela 1 — expressão da 2008, sem mudança confirmada (γg = 1,25 peso próprio de estrutura metálica; γq = 1,50 ação variável de uso)" };
+  var FLECHA = { piso: 350, ref: N88() + ", Anexo C — limite da 2008 (vigas de piso: L/350), sem mudança confirmada" };
 
   /* ============================================================ PISOS
    * kg/m² pela geometria (grade e expandida) ou pela espessura (chapa); o
@@ -600,7 +603,7 @@
     if (sp.material === "grade") {
       var h = num(sp.gradeH, 0.025), t = num(sp.gradeT, 0.003), aa = num(sp.gradeA, 0.03), nb = Math.max(2, Math.floor(pp / aa) + 1), Wb = t * 1000 * Math.pow(h * 1000, 2) / 4, Ib = t * 1000 * Math.pow(h * 1000, 3) / 12;
       var nP = Math.max(1, Math.min(nb, Math.floor(0.20 / aa) + 1)), MP = GAMA.q * P * W / 4 / nP, MRd = 1.0 * Wb * a.fy / g1 / 1e6;
-      out.verificacoes.push({ nome: "Degrau em grade — carga concentrada", item: ref("nbr6120", "Tabela 10, nota t (2,5 kN)") + "; NBR 8800:2024 (expressão da 2008), 5.4 (MRd = Z·fy/γa1, seção retangular cheia)", passos: [
+      out.verificacoes.push({ nome: "Degrau em grade — carga concentrada", item: ref("nbr6120", "Tabela 10, nota t (2,5 kN)") + "; " + N88() + ", 5.4 (MRd = Z·fy/γa1, seção retangular cheia)", passos: [
         { rotulo: "Barras portantes no degrau", formula: "n = p/a + 1", valor: nb + " barras de " + br(h * 1000, 0) + " × " + br(t * 1000, 0) + " mm" },
         { rotulo: "Barras que recebem a carga (premissa: 2,5 kN repartida pelas barras numa faixa de 20 cm)", formula: "nP = 0,20/a + 1", valor: nP + " barras" },
         { rotulo: "Momento por barra", formula: "MSd = 1,5·P·W/4/nP", valor: br(MP, 3) + " kN·m" },
@@ -613,7 +616,7 @@
     if (sp.material === "dobrada") return degrauDobrado(sp, a, W, pp, P, q, out);
     var tt = num(sp.t, 0.00635), Z = pp * 1000 * Math.pow(tt * 1000, 2) / 4, Wc = pp * 1000 * Math.pow(tt * 1000, 2) / 6, MRd2 = Math.min(Z, 1.5 * Wc) * a.fy / g1 / 1e6;
     var MP2 = GAMA.q * P * W / 4, Mq = (GAMA.q * q * pp + GAMA.g * 0.6 * pp) * W * W / 8, Md = Math.max(MP2, Mq);
-    out.verificacoes.push({ nome: "Degrau em chapa — flexão", item: ref("nbr6120", "Tabela 10, nota t") + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular cheia: MRd = Z·fy/γa1 ≤ 1,5·W·fy/γa1)", passos: [
+    out.verificacoes.push({ nome: "Degrau em chapa — flexão", item: ref("nbr6120", "Tabela 10, nota t") + "; " + N88() + ", 5.4 (seção retangular cheia: MRd = Z·fy/γa1 ≤ 1,5·W·fy/γa1)", passos: [
       { rotulo: "Carga concentrada (nota t) e distribuída — a pior, separadas", formula: "MP = 1,5·2,5·W/4; Mq = (1,5·q + 1,25·g)·p·W²/8", valor: "MP = " + br(MP2, 3) + " kN·m; Mq = " + br(Mq, 3) + " kN·m" },
       { rotulo: "Resistência (chapa plana sem dobra, largura = piso do degrau)", formula: "Z = p·t²/4", valor: "MRd = " + br(MRd2, 3) + " kN·m" }], resistencia: MRd2, solicitante: Md, unidade: "kN·m", razao: Md / MRd2, ok: Md <= MRd2 + 1e-9 });
     var Ich = pp * 1000 * Math.pow(tt * 1000, 3) / 12, dch = 1.5 * 1000 * Math.pow(W * 1000, 3) / (48 * E_() * Ich), dlch = Math.min(W * 1000 / 300, 6);
@@ -644,7 +647,7 @@
        A flecha que a pessoa sente é a GLOBAL (a peça entre as longarinas) + a LOCAL (a chapa entre as dobras), com o mesmo limite
        do degrau em grade e em chapa: mín(W/300; 6 mm) (ISO 14122-3, 4.2.1). */
     var Lp = b, bs = 100, c = 100, PdL = GAMA.q * P, MdL = Lp > c ? PdL * (2 * Lp - c) / 8 / 1000 : PdL * Lp / 8 / 1000, MRdL = bs * t * t / 4 * fy / ga1() / 1e6;
-    out.verificacoes.push({ nome: "Degrau em chapa dobrada — flexão local da chapa entre as dobras", item: ref("nbr6120", "Tabela 10, nota t (2,5 kN na posição mais desfavorável)") + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular cheia: MRd = Z·fy/γa1, Z = 1,5·W)", passos: [
+    out.verificacoes.push({ nome: "Degrau em chapa dobrada — flexão local da chapa entre as dobras", item: ref("nbr6120", "Tabela 10, nota t (2,5 kN na posição mais desfavorável)") + "; " + N88() + ", 5.4 (seção retangular cheia: MRd = Z·fy/γa1, Z = 1,5·W)", passos: [
       { rotulo: "Faixa da chapa entre as dobras", formula: "vão = parte plana b; faixa de 100 mm (a largura carregada); biapoiada nas dobras", valor: "vão " + br(Lp, 1) + " mm; t = " + br(t, 2) + " mm" },
       { rotulo: "Momento (2,5 kN em 100 mm no meio do vão)", formula: "MSd = 1,5·P·(2·b − c)/8", valor: br(MdL, 4) + " kN·m" },
       { rotulo: "Resistência", formula: "MRd = (100·t²/4)·fy/γa1", valor: br(MRdL, 4) + " kN·m" }], resistencia: MRdL, solicitante: MdL, unidade: "kN·m", razao: MdL / MRdL, ok: MdL <= MRdL + 1e-9 });
@@ -711,7 +714,7 @@
     else { D = s.h || s.d || 48; Bw = s.b || D; Sw = (Bw * D + D * D / 3) * aG; Aw = 2 * (Bw + D) * aG; }
     var B = Bw;
     var sig = Md * 1e6 / Sw, tau = Fd * 1000 / Aw, res = Math.sqrt(sig * sig + tau * tau), Rd = 0.60 * fw / gw2;
-    out.verificacoes.push({ nome: "Montante — solda da base (" + (aberta ? "filete no contorno da seção aberta" : "filete em volta") + ")", item: "NBR 8800:2024 (expressão da 2008), 6.2.5.1 (metal da solda: 0,60·fw/γw2) — método da solda como linha", passos: [
+    out.verificacoes.push({ nome: "Montante — solda da base (" + (aberta ? "filete no contorno da seção aberta" : "filete em volta") + ")", item: N88() + ", 6.2.5.1 (metal da solda: 0,60·fw/γw2) — método da solda como linha", passos: [
       { rotulo: "Filete", formula: "a = 0,707·perna", valor: "perna " + br(perna, 0) + " mm; a = " + br(aG, 2) + " mm; eletrodo E70XX (fw = " + fw + " MPa)" },
       { rotulo: "Tensões", formula: s.forma === "tubo-circ" ? "Sw = π·D²·a/4; Aw = π·D·a" : (aberta ? "seção aberta (bf × d): metade do Sw do contorno retangular + as duas linhas da alma (h²/6), a favor da segurança" : "Sw = (B·D + D²/3)·a; Aw = 2(B + D)·a"), valor: "σ = " + br(sig, 1) + " MPa; τ = " + br(tau, 1) + " MPa; resultante " + br(res, 1) + " MPa" },
       { rotulo: "Resistência", formula: "0,60·fw/γw2", valor: br(Rd, 1) + " MPa" }], resistencia: Rd, solicitante: res, unidade: "MPa", razao: res / Rd, ok: res <= Rd + 1e-9 });
@@ -721,7 +724,7 @@
     if (sc && D88()) {
       var Mt = sp.corrimaoSo ? GAMA.q * 0.9 * esp / 4 : GAMA.q * fg.f * esp * esp / 8, ft = D88().flexao(sc, aco(sp.aco), E_(), 77000, esp * 1000, 1, "x"), MRt = ft ? ft.MRd : 0;
       (sp.corrimaoSo ? ["corrimão de cima (0,92 m)", "corrimão de baixo (0,70 m)"] : ["travessão superior", "travessa intermediária"]).forEach(function (nm) {
-        out.verificacoes.push({ nome: "Guarda-corpo — " + nm + " entre montantes", item: fg.ref + " (a mesma força distribuída); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento (vão entre montantes)", formula: sp.corrimaoSo ? "MSd = 1,5·0,9·s/4" : "MSd = 1,5·f·s²/8", valor: br(Mt, 3) + " kN·m (" + (sp.corrimaoSo ? "P = 0,9 kN" : "f = " + br(fg.f, 2) + " kN/m") + ", s = " + m2(esp) + ")" }, { rotulo: "Resistência (" + (sc.nome || sp.corrimao) + ")", formula: "MRd (Anexo G)", valor: br(MRt, 3) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 });
+        out.verificacoes.push({ nome: "Guarda-corpo — " + nm + " entre montantes", item: fg.ref + " (a mesma força distribuída); " + N88() + ", 5.4", passos: [{ rotulo: "Momento (vão entre montantes)", formula: sp.corrimaoSo ? "MSd = 1,5·0,9·s/4" : "MSd = 1,5·f·s²/8", valor: br(Mt, 3) + " kN·m (" + (sp.corrimaoSo ? "P = 0,9 kN" : "f = " + br(fg.f, 2) + " kN/m") + ", s = " + m2(esp) + ")" }, { rotulo: "Resistência (" + (sc.nome || sp.corrimao) + ")", formula: "MRd (Anexo G)", valor: br(MRt, 3) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 });
       });
     } else out.naoVerificados.push("não verificado: travessão superior e intermediária — perfil do corrimão não informado (CRÍTICO)");
     return out;
@@ -743,7 +746,7 @@
       } else if (C) out.avisos.push("A grade " + br(num(sp.gradeH, 0.025) * 1000, 0) + " × " + br(num(sp.gradeT, 0.003) * 1000, 0) + " mm a " + br(num(sp.gradeA, 0.03) * 1000, 0) + " × " + br(num(sp.gradeB, 0.1) * 1000, 0) + " mm não está nas tabelas de vão × carga do catálogo — confira com o fabricante");
       var h = num(sp.gradeH, 0.025), t = num(sp.gradeT, 0.003), aa = num(sp.gradeA, 0.03), Wb = t * 1000 * Math.pow(h * 1000, 2) / 6, Ib = t * 1000 * Math.pow(h * 1000, 3) / 12, kg = pisoKgM2("grade", sp).kgm2;
       var wd = (GAMA.q * q + GAMA.g * kg * 9.81 / 1000) * aa, Md = wd * L * L / 8, MRd = Wb * a.fy / g1 / 1e6;
-      out.verificacoes.push({ nome: "Piso em grade — barra portante", item: "NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular, regime elástico); sobrecarga " + ref("nbr6120", "Tabela 10"), passos: [
+      out.verificacoes.push({ nome: "Piso em grade — barra portante", item: N88() + ", 5.4 (seção retangular, regime elástico); sobrecarga " + ref("nbr6120", "Tabela 10"), passos: [
         { rotulo: "Carga por barra (faixa a)", formula: "wd = (1,5·q + 1,25·g)·a", valor: br(wd, 3) + " kN/m" }, { rotulo: "Momento", formula: "MSd = wd·L²/8", valor: br(Md, 4) + " kN·m" }, { rotulo: "Resistência", formula: "MRd = (t·h²/6)·fy/γa1", valor: br(MRd, 4) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9, conferir: true });
       var dq = 5 * q * aa * Math.pow(L * 1000, 4) / (384 * E_() * Ib), dl = Math.min(L * 1000 / 200, 10);
       out.verificacoes.push({ nome: "Piso em grade — flecha", item: "limite L/200 e 10 mm adotado (premissa usual de fabricante — conferir na tabela)", passos: [{ rotulo: "δ = 5·q·a·L⁴/(384·E·I)", formula: "", valor: br(dq, 1) + " mm ≤ " + br(dl, 1) + " mm" }], resistencia: dl, solicitante: dq, unidade: "mm", razao: dq / dl, ok: dq <= dl, els: true, conferir: true });
@@ -752,7 +755,7 @@
     }
     if (sp.material === "expandida" || sp.material === "perfurada") { out.naoVerificados.push("não verificado: piso em chapa " + sp.material + " — usar a tabela de vão × carga do fabricante"); return out; }
     var tt = num(sp.t, 0.00635), Z = 1000 * Math.pow(tt * 1000, 2) / 4, Ic = 1000 * Math.pow(tt * 1000, 3) / 12, MRd2 = Z * a.fy / g1 / 1e6, wd2 = GAMA.q * q + GAMA.g * tt * 78.5, Md2 = wd2 * L * L / 8;
-    out.verificacoes.push({ nome: "Piso em chapa — flexão (faixa de 1 m, biapoiada)", item: "NBR 8800:2024 (expressão da 2008), 5.4; sobrecarga " + ref("nbr6120", "Tabela 10"), passos: [{ rotulo: "Momento", formula: "MSd = (1,5·q + 1,25·g)·L²/8", valor: br(Md2, 3) + " kN·m/m" }, { rotulo: "Resistência", formula: "MRd = (t²/4)·fy/γa1 por metro", valor: br(MRd2, 3) + " kN·m/m" }], resistencia: MRd2, solicitante: Md2, unidade: "kN·m/m", razao: Md2 / MRd2, ok: Md2 <= MRd2 + 1e-9 });
+    out.verificacoes.push({ nome: "Piso em chapa — flexão (faixa de 1 m, biapoiada)", item: N88() + ", 5.4; sobrecarga " + ref("nbr6120", "Tabela 10"), passos: [{ rotulo: "Momento", formula: "MSd = (1,5·q + 1,25·g)·L²/8", valor: br(Md2, 3) + " kN·m/m" }, { rotulo: "Resistência", formula: "MRd = (t²/4)·fy/γa1 por metro", valor: br(MRd2, 3) + " kN·m/m" }], resistencia: MRd2, solicitante: Md2, unidade: "kN·m/m", razao: Md2 / MRd2, ok: Md2 <= MRd2 + 1e-9 });
     var d2 = 5 * q * Math.pow(L * 1000, 4) / (384 * E_() * Ic), dl2 = L * 1000 / 200;
     out.verificacoes.push({ nome: "Piso em chapa — flecha", item: "limite L/200 adotado (premissa — conferir no projeto)", passos: [{ rotulo: "δ = 5·q·L⁴/(384·E·I)", formula: "", valor: br(d2, 1) + " mm ≤ " + br(dl2, 1) + " mm" }], resistencia: dl2, solicitante: d2, unidade: "mm", razao: d2 / dl2, ok: d2 <= dl2, els: true, conferir: true });
     return out;
@@ -762,20 +765,20 @@
     var s = secao(sp.perfil), a = aco(sp.aco), out = { verificacoes: [], naoVerificados: [], avisos: [] }, P = 0.9, g1 = ga1(), D = D88();
     if (!s || !D) { out.naoVerificados.push("não verificado: corrimão — perfil \"" + sp.perfil + "\" sem propriedades"); return out; }
     var L = num(sp.vao, 1.2), Md = GAMA.q * P * L / 4, f = D.flexao(s, a, E_(), 77000, L * 1000, 1, "x"), MRd = f ? f.MRd : 0;
-    out.verificacoes.push({ nome: "Corrimão — tubo entre suportes", item: "NPT 011:2024 (CBPMPR), 5.8.3.2 (900 N em qualquer ponto); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento (carga no meio do vão entre suportes)", formula: "MSd = 1,5·0,9·L/4", valor: br(Md, 3) + " kN·m (L = " + m2(L) + ")" }, { rotulo: "Resistência do tubo", formula: "MRd (Anexo G)", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
+    out.verificacoes.push({ nome: "Corrimão — tubo entre suportes", item: "NPT 011:2024 (CBPMPR), 5.8.3.2 (900 N em qualquer ponto); " + N88() + ", 5.4", passos: [{ rotulo: "Momento (carga no meio do vão entre suportes)", formula: "MSd = 1,5·0,9·L/4", valor: br(Md, 3) + " kN·m (L = " + m2(L) + ")" }, { rotulo: "Resistência do tubo", formula: "MRd (Anexo G)", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
     var d = num(sp.suporteD, 0.016), b = num(sp.braco, 0.1), Ms = GAMA.q * P * b, Zs = Math.pow(d * 1000, 3) / 6, MRs = Math.min(Zs, 1.5 * Math.PI * Math.pow(d * 1000, 3) / 32) * a.fy / g1 / 1e6;
-    out.verificacoes.push({ nome: "Corrimão — suporte em balanço (barra redonda)", item: "NPT 011:2024, 5.8.3.2; NBR 8800:2024 (expressão da 2008), 5.4 (seção circular cheia)", passos: [{ rotulo: "Momento no engaste da parede", formula: "MSd = 1,5·0,9·braço", valor: br(Ms, 3) + " kN·m (braço " + br(b * 100, 1) + " cm)" }, { rotulo: "Resistência", formula: "Z = d³/6", valor: br(MRs, 3) + " kN·m (Ø " + br(d * 1000, 0) + " mm)" }], resistencia: MRs, solicitante: Ms, unidade: "kN·m", razao: Ms / MRs, ok: Ms <= MRs + 1e-9 });
+    out.verificacoes.push({ nome: "Corrimão — suporte em balanço (barra redonda)", item: "NPT 011:2024, 5.8.3.2; " + N88() + ", 5.4 (seção circular cheia)", passos: [{ rotulo: "Momento no engaste da parede", formula: "MSd = 1,5·0,9·braço", valor: br(Ms, 3) + " kN·m (braço " + br(b * 100, 1) + " cm)" }, { rotulo: "Resistência", formula: "Z = d³/6", valor: br(MRs, 3) + " kN·m (Ø " + br(d * 1000, 0) + " mm)" }], resistencia: MRs, solicitante: Ms, unidade: "kN·m", razao: Ms / MRs, ok: Ms <= MRs + 1e-9 });
     return out;
   }
   /* MARINHEIRO: degrau (barra redonda biapoiada nos montantes) e montante (barra chata entre fixações) */
   function marinheiro(sp) {
     var a = aco(sp.aco || "ASTM A36"), W = num(sp.largura, 0.45), d = num(sp.diamDegrau, 0.025), P = Math.max(2.5, num(sp.P, 2.5)), out = { verificacoes: [], naoVerificados: [], avisos: [] }, g1 = ga1();
     var quad = sp.secaoDegrau === "quadrada", Z = quad ? Math.pow(d * 1000, 3) / 4 : Math.pow(d * 1000, 3) / 6, Wd = quad ? Math.pow(d * 1000, 3) / 6 : Math.PI * Math.pow(d * 1000, 3) / 32, MRd = Math.min(Z, 1.5 * Wd) * a.fy / g1 / 1e6, Md = GAMA.q * P * W / 4;
-    out.verificacoes.push({ nome: "Marinheiro — degrau (barra " + (quad ? "quadrada" : "redonda") + ")", item: ref("nbr6120", "Tabela 10, nota t (degrau isolado: 2,5 kN na posição mais desfavorável)") + "; a ISO 14122-4 pede 1,5 kN (menos: a NBR governa); NBR 8800:2024 (expressão da 2008), 5.4", passos: [
+    out.verificacoes.push({ nome: "Marinheiro — degrau (barra " + (quad ? "quadrada" : "redonda") + ")", item: ref("nbr6120", "Tabela 10, nota t (degrau isolado: 2,5 kN na posição mais desfavorável)") + "; a ISO 14122-4 pede 1,5 kN (menos: a NBR governa); " + N88() + ", 5.4", passos: [
       { rotulo: "Momento", formula: "MSd = 1,5·P·W/4", valor: br(Md, 3) + " kN·m (P = " + br(P, 1) + " kN, W = " + m2(W) + ")" }, { rotulo: "Resistência", formula: quad ? "Z = d³/4 ≤ 1,5·W" : "Z = d³/6 ≤ 1,5·W", valor: "MRd = " + br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9, conferir: true });
     var b = num(sp.montB, 0.0635), t = num(sp.montT, 0.0095), Lf = num(sp.espFixacao, 2.0);
     var Wz = t * 1000 * Math.pow(b * 1000, 2) / 6, Mz = GAMA.q * P * Lf / 4, MRdz = Math.min(t * 1000 * Math.pow(b * 1000, 2) / 4, 1.5 * Wz) * a.fy / g1 / 1e6;
-    out.verificacoes.push({ nome: "Marinheiro — montante entre fixações (força do degrau para fora da parede)", item: "NBR 8800:2024 (expressão da 2008), 5.4 (barra chata no eixo forte); fixação a cada " + m2(Lf) + " (premissa)", passos: [
+    out.verificacoes.push({ nome: "Marinheiro — montante entre fixações (força do degrau para fora da parede)", item: N88() + ", 5.4 (barra chata no eixo forte); fixação a cada " + m2(Lf) + " (premissa)", passos: [
       { rotulo: "Momento", formula: "MSd = 1,5·P·Lf/4 (P no meio do vão entre fixações)", valor: br(Mz, 3) + " kN·m" }, { rotulo: "Resistência (barra " + br(b * 1000, 1) + " × " + br(t * 1000, 1) + " mm)", formula: "Z = t·b²/4", valor: br(MRdz, 3) + " kN·m" }], resistencia: MRdz, solicitante: Mz, unidade: "kN·m", razao: Mz / MRdz, ok: Mz <= MRdz + 1e-9, conferir: true });
     out.naoVerificados.push("não verificado: suportes (orelhas) e chumbadores da escada de marinheiro na estrutura/equipamento — detalhar com a parede onde fixa");
     out.naoVerificados.push("não verificado: gaiola (arcos e barras verticais) — elemento de proteção sem carga de projeto definida no texto da NR-12");
@@ -808,23 +811,23 @@
     if (sp.preenchimento === "vidro") return out;
     if (sp.preenchimento === "barras") {
       var d = num(sp.barraD, 0.016) * 1000, s = num(sp.passo, 0.11) * 1000, Md = GAMA.q * q * (s / 1000) * h * h / 8, Z = Math.pow(d, 3) / 6, Wb = Math.PI * Math.pow(d, 3) / 32, MRd = Math.min(Z, 1.5 * Wb) * a.fy / g1 / 1e6;
-      out.verificacoes.push({ nome: "Preenchimento — barra vertical (Ø " + br(d, 0) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção circular cheia)", passos: [
+      out.verificacoes.push({ nome: "Preenchimento — barra vertical (Ø " + br(d, 0) + " mm)", item: REF_PREENCH + "; " + N88() + ", 5.4 (seção circular cheia)", passos: [
         { rotulo: "Carga na faixa da barra (passo s)", formula: "w = 1,2 kPa · s", valor: br(q * s / 1000, 3) + " kN/m (s = " + br(s, 0) + " mm)" }, { rotulo: "Momento (barra biapoiada nas travessas, vão h)", formula: "MSd = 1,5·w·h²/8", valor: br(Md, 4) + " kN·m (h = " + m2(h) + ")" },
         { rotulo: "Resistência", formula: "Z = d³/6 ≤ 1,5·W", valor: "MRd = " + br(MRd, 4) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
     } else if (sp.preenchimento === "tela") {
       var df = num(sp.fio, 0.004) * 1000, af = (num(sp.malha, 0.05) + num(sp.fio, 0.004)) * 1000, Mf = GAMA.q * q * (af / 1000) * h * h / 8, MRf = Math.min(Math.pow(df, 3) / 6, 1.5 * Math.PI * Math.pow(df, 3) / 32) * 250 / g1 / 1e6;
-      out.verificacoes.push({ nome: "Preenchimento — tela (fio Ø " + br(df, 1) + " mm a cada " + br(af, 0) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 — fio vertical biapoiado nas travessas, sem a contribuição dos fios horizontais e com fy = 250 MPa (aço da tela não informado: a favor)", passos: [
+      out.verificacoes.push({ nome: "Preenchimento — tela (fio Ø " + br(df, 1) + " mm a cada " + br(af, 0) + " mm)", item: REF_PREENCH + "; " + N88() + ", 5.4 — fio vertical biapoiado nas travessas, sem a contribuição dos fios horizontais e com fy = 250 MPa (aço da tela não informado: a favor)", passos: [
         { rotulo: "Momento no fio", formula: "MSd = 1,5·1,2 kPa·a·h²/8", valor: br(Mf, 5) + " kN·m (h = " + m2(h) + ")" }, { rotulo: "Resistência do fio", formula: "Z = d³/6", valor: br(MRf, 5) + " kN·m" }], resistencia: MRf, solicitante: Mf, unidade: "kN·m", razao: Mf / MRf, ok: Mf <= MRf + 1e-9 });
       out.avisos.push("Tela do guarda-corpo: peso pela geometria do fio (valor de partida) — pedir a ficha do fabricante");
     } else if (sp.preenchimento === "perfurada") {
       var tp = num(sp.t, 0.003) * 1000, Lc = Math.min(h, Math.max(0.1, esp - 0.08)), ef = Math.max(0.2, 1 - num(sp.furoD, 0.008) / num(sp.furoPasso, 0.012)), Mp = GAMA.q * q * Lc * Lc / 8, MRp = 1000 * tp * tp / 4 * ef * a.fy / g1 / 1e6;
-      out.verificacoes.push({ nome: "Preenchimento — chapa perfurada (" + br(tp, 1) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 — faixa de 1 m no menor vão, a seção líquida pela perda dos furos (1 − d/passo)", passos: [
+      out.verificacoes.push({ nome: "Preenchimento — chapa perfurada (" + br(tp, 1) + " mm)", item: REF_PREENCH + "; " + N88() + ", 5.4 — faixa de 1 m no menor vão, a seção líquida pela perda dos furos (1 − d/passo)", passos: [
         { rotulo: "Momento (faixa de 1 m, vão " + m2(Lc) + ")", formula: "MSd = 1,5·1,2 kPa·L²/8", valor: br(Mp, 4) + " kN·m/m" }, { rotulo: "Resistência", formula: "MRd = (t²/4)·(1 − d/passo)·fy/γa1", valor: br(MRp, 4) + " kN·m/m (fator " + br(ef, 2) + ")" }], resistencia: MRp, solicitante: Mp, unidade: "kN·m/m", razao: Mp / MRp, ok: Mp <= MRp + 1e-9 });
     }
     /* as travessas do preenchimento levam a carga das barras/painéis até os montantes */
     var sc = sp.corrimao ? secao(sp.corrimao) : null;
     if (sc && D88()) { var wt = q * h / 2, Mt = GAMA.q * wt * esp * esp / 8, ft = D88().flexao(sc, aco(sp.aco), E_(), 77000, esp * 1000, 1, "x"), MRt = ft ? ft.MRd : 0;
-      out.verificacoes.push({ nome: "Preenchimento — travessa entre montantes", item: REF_PREENCH + " (metade da faixa em cada travessa); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·(1,2·h/2)·s²/8", valor: br(Mt, 4) + " kN·m" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRt, 4) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 }); }
+      out.verificacoes.push({ nome: "Preenchimento — travessa entre montantes", item: REF_PREENCH + " (metade da faixa em cada travessa); " + N88() + ", 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·(1,2·h/2)·s²/8", valor: br(Mt, 4) + " kN·m" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRt, 4) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 }); }
     out.naoVerificados.push("não verificado: ensaio de impacto de corpo mole do preenchimento (NBR 14718:2019) — é ensaio de laboratório, não conta; pedir o laudo do fabricante");
     return out;
   }
@@ -838,7 +841,7 @@
     var sc = secao(sp.corrimao || "HSS48.3X3.7"), fg = forcaGuarda(sp.uso), L = num(sp.largura, 0.8), out = { verificacoes: [], naoVerificados: ["não verificado: dobradiças, mola de autofechamento e trinco da cancela — especificar pelo fabricante (o quadro foi verificado)"], avisos: [] };
     if (!sc || !D88()) { out.naoVerificados.push("não verificado: quadro da cancela — perfil sem propriedades (CRÍTICO)"); return out; }
     var Md = GAMA.q * fg.f * L * L / 8, f = D88().flexao(sc, aco(sp.aco), E_(), 77000, L * 1000, 1, "x"), MRd = f ? f.MRd : 0;
-    out.verificacoes.push({ nome: "Cancela — travessa de cima (vão da abertura)", item: fg.ref + "; NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·f·L²/8", valor: br(Md, 3) + " kN·m (f = " + br(fg.f, 2) + " kN/m, L = " + m2(L) + ")" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
+    out.verificacoes.push({ nome: "Cancela — travessa de cima (vão da abertura)", item: fg.ref + "; " + N88() + ", 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·f·L²/8", valor: br(Md, 3) + " kN·m (f = " + br(fg.f, 2) + " kN/m, L = " + m2(L) + ")" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
     return out;
   }
   /* spec = { itens: [{ tipo: "longarina"|"degrau"|"viga"|"console"|"montante"|"piso"|"marinheiro"|"fixacao"|"pilarete", ... }], carga: {uso, q}, guarda: {uso} } */
