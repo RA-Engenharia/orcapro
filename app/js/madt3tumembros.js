@@ -336,10 +336,16 @@
     function baiasDe(lista) { var o = []; lista.forEach(function (g) { for (k = 0; k < g.length - 1; k++) o.push([g[k], g[k + 1]]); }); return o; }
     function sel(baias) { return baias.length < 2 ? baias : MTp.baiasContraventadas(baias).map(function (ix) { return baias[ix]; }); }
     var selBar = []; grupos.forEach(function (g) { selBar = selBar.concat(sel(baiasDe([g]))); });      /* cada GRUPO de tesouras (fora da boca de uma perna solta) é contraventado por si: o X de um grupo não trava o outro */
+    /* vãos travadas pelo X da boca da perna solta (T), calculadas antes do X de água */
+    var bocaVao = {};
+    legs.forEach(function (L) {
+      if (L.flushL || L.flushR) return;
+      grupos.forEach(function (g) { if (g.length < 2) return; var lado = g[g.length - 1] <= L.xl + 1e-6 ? "esq" : (g[0] >= L.xr - 1e-6 ? "dir" : null); if (!lado) return; bocaVao[(lado === "esq" ? g[g.length - 2] : g[0]) + "|" + (lado === "esq" ? g[g.length - 1] : g[1])] = 1; });
+    });
     selBar.forEach(function (bay) {
       [["F", 0, 1], ["B", b, -1]].forEach(function (S) {
         var zl = [S[1]], jj; for (jj = 1; jj <= nH; jj++) zl.push(S[1] + S[2] * dlA[jj]);
-        zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: "A", p0: P3(d2[0], za, yTs(za, b)), p1: P3(d2[1], zb, yTs(zb, b)), tracao: true, mad: true }); }); });
+        zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; if (q === 0 && (bocaVao[bay[0] + "|" + bay[1]] || bocaVao[bay[1] + "|" + bay[0]])) return;      /* vão da BOCA: o painel de beiral do X de água (z = 0 até a 1ª linha) cruzaria o X da boca no mesmo nó do beiral (interpenetração); a boca já trava esse painel no plano do banzo inferior e o X de água segue nos demais */ [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: "A", p0: P3(d2[0], za, yTs(za, b)), p1: P3(d2[1], zb, yTs(zb, b)), tracao: true, mad: true }); }); });
       });
       for (k = 1; k < 2 * nH; k++) { var zk = k * dz; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DV" + (++fv), g: "DV", asa: "A", p0: P3(d2[0], zk, Hp), p1: P3(d2[1], zk, yTs(zk, b)), tracao: true, mad: true }); }); }
     });
@@ -354,10 +360,15 @@
     });
     legs.forEach(function (L) {
       sel(baiasDe([L.zs])).forEach(function (bay) {
-        [["W" + (L.j ? "2" : ""), 0, 1], ["I" + (L.j ? "2" : ""), L.w, -1]].forEach(function (S) {
-          var xl = [S[1]], jj; for (jj = 1; jj <= L.nHB; jj++) xl.push(S[1] + S[2] * L.dl[jj]);
-          xl.slice(0, xl.length - 1).forEach(function (xa, q) { var xb = xl[q + 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: L.asa, p0: P3(L.xl + xa, d2[0], yTs(xa, L.w)), p1: P3(L.xl + xb, d2[1], yTs(xb, L.w)), tracao: true, mad: true }); }); });
+        /* painel cujo X fica quase paralelo à terça (ângulo < 10° com ela: vão de terça muito mais longo que o painel) não leva X próprio — o X encostaria na terça (interpenetração); o último painel de cada água é então JUNTADO com o do outro lado, terça a terça através da cumeeira */
+        var Lb = Math.abs(bay[1] - bay[0]), angP = function (xa, xb) { return Math.atan2(Math.sqrt(Math.pow(xb - xa, 2) + Math.pow(yTs(xb, L.w) - yTs(xa, L.w), 2)), Lb) * 180 / Math.PI; },
+          xlW = [0], xlI = [L.w], jj2; for (jj2 = 1; jj2 <= L.nHB; jj2++) { xlW.push(L.dl[jj2]); xlI.push(L.w - L.dl[jj2]); }
+        var curto = angP(xlW[L.nHB - 1], xlW[L.nHB]) < 10;
+        [["W" + (L.j ? "2" : ""), xlW], ["I" + (L.j ? "2" : ""), xlI]].forEach(function (S) {
+          var xl = S[1];
+          xl.slice(0, xl.length - 1).forEach(function (xa, q) { var xb = xl[q + 1]; if (curto && q === xl.length - 2) return; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: L.asa, p0: P3(L.xl + xa, d2[0], yTs(xa, L.w)), p1: P3(L.xl + xb, d2[1], yTs(xb, L.w)), tracao: true, mad: true }); }); });
         });
+        if (curto) { var xj0 = xlW[L.nHB - 1], xj1 = xlI[L.nHB - 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: "W" + (L.j ? "2" : ""), asa: L.asa, p0: P3(L.xl + xj0, d2[0], yTs(xj0, L.w)), p1: P3(L.xl + xj1, d2[1], yTs(xj1, L.w)), tracao: true, mad: true }); }); }
         for (k = 1; k < 2 * L.nHB; k++) { var sk = k <= L.nHB ? L.dl[k] : L.w - L.dl[2 * L.nHB - k]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DV" + (++fv), g: "DV", asa: L.asa, p0: P3(L.xl + sk, d2[0], Hp), p1: P3(L.xl + sk, d2[1], yTs(sk, L.w)), tracao: true, mad: true }); }); }
       });
     });

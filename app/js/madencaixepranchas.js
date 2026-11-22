@@ -73,7 +73,9 @@
       });
       isoPonta(D, Sj, P, e, xd + wd - 18, yd + 16, 30);
       var ty = yP + bb / 2 + 5 + 3.2 * Math.min(3, Object.keys(seen).length);
-      pe.planos.forEach(function (a, k) { D.texto(xd, ty + k * 3.9, (a.tipo === "folga" ? "folga " + br(a.folga_mm, 0) : "contato") + " " + (a.contra || "-") + ": pl " + br(Math.abs(a.planta), 1) + " el " + br(Math.abs(a.elevacao), 1) + " bis " + br(a.bisel, 1), fs); });
+      var nl2 = Math.max(1, pe.planos.length), tyMax = y + h - 7.2 - (nl2 - 1) * 3.0, passo = 3.9;      /* T/U: ficha com peça alta/vários contatos (frechal) não pisa na linha dos ids; sem colisão nada muda (ty e passo de sempre) */
+      if (!(c && c.res && c.res.tipologia === "T3TU")) { /* L, T3, T2 e demais: layout de sempre (não muda de resultado) */ } else if (ty > tyMax) { ty = tyMax; passo = 3.0; } else if (ty + (nl2 - 1) * 3.9 > y + h - 7.2) passo = Math.max(3.0, (y + h - 7.2 - ty) / Math.max(1, nl2 - 1));
+      pe.planos.forEach(function (a, k) { D.texto(xd, ty + k * passo, (a.tipo === "folga" ? "folga " + br(a.folga_mm, 0) : "contato") + " " + (a.contra || "-") + ": pl " + br(Math.abs(a.planta), 1) + " el " + br(Math.abs(a.elevacao), 1) + " bis " + br(a.bisel, 1), fs); });
       if (!pe.planos.length) D.texto(xd, ty, "esquadro (90 graus) ou ponta livre", fs);
     });
     var nfx = arr(P.fixa).reduce(function (q, z) { return q + z.n; }, 0);

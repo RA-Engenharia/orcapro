@@ -163982,7 +163982,7 @@ t1: { p1x: 0, p1y: 0, vao: 6, comp: 6, cotaPiso: 0, peDireito: 2.4, altDisp: 0.7
 vAltVar: true, hPonta: 0.30, hPontaMax: null, lambri: 0.025, sTerca: 0.95, hParedeTopo: null, telhaPeso: 0.12, lambriPeso: 6.0 },
 t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
 telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
-t3: { planta: "retangular", vaoB: 5, compB: 11, vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
+t3: { planta: "retangular", l1x0: 4, l1w: 4, l1c: 11, l2x0: 0, l2w: 0, l2c: 11, vaoB: 5, compB: 11, vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
 t5: { vao: 3.6, comp: 6.0, peDireito: 2.8, balCaibro: 0.5, balViga: 0.5, sPilarMax: 3.0, sCaibro: 0.6, mfD: 0.7, plantas: 0, ripado: { ativo: false, s: 0.12, b: 0.03, h: 0.05 }, cobertura: { tipo: "nenhuma", peso: "", incl: 10 }, encostado: { ativo: false, lado: "alto" }, obstrucao: "", presaEm: "caibros", diafragma: "nao" },
 t4: { fechamento: "", n: "6", R: 4, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, vMaxPilar: 4.0, sTercaMax: 1.4, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", pilarCentral: "nao", caibroMeio: "auto" },
 t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
@@ -164108,7 +164108,7 @@ return { proj: proj, partida: secoesPartidaT2(est, o, sis), t7: null, opcao: oT2
 }
 function t3Params(est) {
 var t = est.t3 || {}, tu = t.planta === "TU", planta = t.planta === "L" ? { planta: "L", c: num(t.compB, 11), bb: num(t.vaoB, 5) } : (tu ? { planta: "TU" } : {});
-var legs = tu ? (Array.isArray(t.legs) ? t.legs : []).map(function (L) { return { x0: num(L.x0, 0), w: num(L.w, 0), c: num(L.c, 0) }; }) : undefined;
+var legs = tu ? (Array.isArray(t.legs) ? t.legs : [{ x0: t.l1x0, w: t.l1w, c: t.l1c }].concat(num(t.l2w, 0) > 0 ? [{ x0: t.l2x0, w: t.l2w, c: t.l2c }] : [])).map(function (L) { return { x0: num(L.x0, 0), w: num(L.w, 0), c: num(L.c, 0) }; }) : undefined;
 var pr = { nome: est.obra.nome || "Telhado de 4 águas", planta: planta.planta, c: planta.c, bb: planta.bb, a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
 telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: t.tesoura === "howe" ? "howe" : "pratt" } };
 if (tu) pr.legs = legs;
@@ -164763,13 +164763,13 @@ try {
 "use strict";
 var NO_WORKER = typeof global.importScripts === "function" && typeof global.document === "undefined";
 var MOTORES = ["acoisopletas.js", "acoanalise.js", "acocargas.js", "acovento.js", "madmateriais.js", "madviga.js", "maddim7190.js", "madtipologias.js", "madligacoes.js",
-"madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt3l.js", "madt3lcalc.js", "madt3llig.js", "madt3lsaidas.js", "madt3tu.js", "madt3tumembros.js", "madt3tucalc.js", "madt3tusaidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
+"madauditor.js", "maddeck.js", "maddimensionar2.js", "madengentrada.js", "madorcamento.js", "madt3.js", "madt3calc.js", "madt3lig.js", "madt3saidas.js", "madt3l.js", "madt3lcalc.js", "madt3llig.js", "madt3lsaidas.js", "madt3tu.js", "madt3tumembros.js", "madt3tucalc.js", "madt3tulig.js", "madt3tusaidas.js", "madt4.js", "madt4calc.js", "madt4lig.js", "madt4saidas.js",
 "madt5.js", "madt5calc.js", "madt5lig.js", "madt5saidas.js",
 "madencaixe.js", "madencaixetip.js", "madtelhadodesenhado.js",
 "madligcalc.js", "madwoodframe.js", "woodframequadro.js", "woodframecalc.js"];
 var GLOBAL_DE = { "acoisopletas.js": "AcoIsopletas", "acoanalise.js": "AcoAnalise", "acocargas.js": "AcoCargas", "acovento.js": "AcoVento", "madmateriais.js": "MadMateriais", "madviga.js": "MadViga",
 "maddim7190.js": "MadDim", "madtipologias.js": "MadTipologias", "madligacoes.js": "MadLig", "madauditor.js": "MadAuditor", "maddeck.js": "MadDeck", "maddimensionar2.js": "MadDimensionar2",
-"madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt3l.js": "MadT3L", "madt3lcalc.js": "MadT3LCalc", "madt3llig.js": "MadT3LLig", "madt3lsaidas.js": "MadT3LSaidas", "madt3tu.js": "MadT3TU", "madt3tumembros.js": "MadT3TUMembros", "madt3tucalc.js": "MadT3TUCalc", "madt3tusaidas.js": "MadT3TUSaidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
+"madengentrada.js": "MadEngEntrada", "madorcamento.js": "MadOrcamento", "madt3.js": "MadT3", "madt3calc.js": "MadT3Calc", "madt3lig.js": "MadT3Lig", "madt3saidas.js": "MadT3Saidas", "madt3l.js": "MadT3L", "madt3lcalc.js": "MadT3LCalc", "madt3llig.js": "MadT3LLig", "madt3lsaidas.js": "MadT3LSaidas", "madt3tu.js": "MadT3TU", "madt3tumembros.js": "MadT3TUMembros", "madt3tucalc.js": "MadT3TUCalc", "madt3tulig.js": "MadT3TULig", "madt3tusaidas.js": "MadT3TUSaidas", "madt4.js": "MadT4", "madt4calc.js": "MadT4Calc", "madt4lig.js": "MadT4Lig", "madt4saidas.js": "MadT4Saidas",
 "madt5.js": "MadT5", "madt5calc.js": "MadT5Calc", "madt5lig.js": "MadT5Lig", "madt5saidas.js": "MadT5Saidas",
 "madencaixe.js": "MadEncaixe", "madencaixetip.js": "MadEncaixeTip", "madtelhadodesenhado.js": "MadTelhadoDes",
 "madligcalc.js": "MadLigCalc", "madwoodframe.js": "MadWoodFrame", "woodframequadro.js": "WoodFrameQuadro", "woodframecalc.js": "WoodFrameCalc" };
@@ -172079,6 +172079,7 @@ if ((P.g === "E" || P.g === "RC") && e === 0 && P.noCalc0 && P.noCalc0[2] < I.Hp
 if (P.g === "BS" && e === 0 && P.noCalc0 && P.noCalc0[2] < I.Hp - 1e-6) return "ponta do beiral (balanço livre)";
 if (P.g === "CB" && e === 0) return "ponta do beiral (balanço livre)";
 if (I.tipologia === "T3L" && P.g === "CM") { var qE = e === 0 ? P.noCalc0 : P.noCalc1; if (qE && Math.abs(qE[1] - I.b / 2) < 1e-3 && Math.abs(qE[0] - I.b / 2) < 1e-3) return "ponta no nó do cume (topo da cumeeira A): sem contato madeira–madeira, apoiada na chapa de nó do vértice (espigões E1 e E6, caibro de meio e cumeeira B) — carga só por chapa e pinos"; }
+if (I.tipologia === "T3TU" && P.g === "CM") { var qT = e === 0 ? P.noCalc0 : P.noCalc1, nosT = [[I.b / 2, I.b / 2], [I.a - I.b / 2, I.b / 2]]; (I.pernas || []).forEach(function (Lg) { if (Lg.V) nosT.push([Lg.V[0], Lg.V[1]]); nosT.push([Lg.xc, Lg.zE]); }); if (qT && nosT.some(function (n) { return Math.abs(qT[0] - n[0]) < 1e-3 && Math.abs(qT[1] - n[1]) < 1e-3; })) return "ponta no nó do cume (topo da cumeeira da barra ou da perna): sem contato madeira–madeira, apoiada na chapa de nó do vértice (espigões, rincão, caibro de meio e cumeeira vizinha) — carga só por chapa e pinos"; }
 if (P.g === "MS" && e === 0) return "ponta do beiral (balanço livre)";
 if (G_T2 && (P.g === "T" || P.g === "CM" || P.g === "FR")) { var X = e === 0 ? P.p0[0] : P.p1[0]; if (X <= G_T2.x0 + 1e-3 || X >= G_T2.x1 - 1e-3) return "beiral de empena (balanço livre, testeira)"; }
 return null;
@@ -173824,10 +173825,15 @@ var fx = 0, fv = 0, MTp = D().MT.T2;
 function baiasDe(lista) { var o = []; lista.forEach(function (g) { for (k = 0; k < g.length - 1; k++) o.push([g[k], g[k + 1]]); }); return o; }
 function sel(baias) { return baias.length < 2 ? baias : MTp.baiasContraventadas(baias).map(function (ix) { return baias[ix]; }); }
 var selBar = []; grupos.forEach(function (g) { selBar = selBar.concat(sel(baiasDe([g]))); });
+var bocaVao = {};
+legs.forEach(function (L) {
+if (L.flushL || L.flushR) return;
+grupos.forEach(function (g) { if (g.length < 2) return; var lado = g[g.length - 1] <= L.xl + 1e-6 ? "esq" : (g[0] >= L.xr - 1e-6 ? "dir" : null); if (!lado) return; bocaVao[(lado === "esq" ? g[g.length - 2] : g[0]) + "|" + (lado === "esq" ? g[g.length - 1] : g[1])] = 1; });
+});
 selBar.forEach(function (bay) {
 [["F", 0, 1], ["B", b, -1]].forEach(function (S) {
 var zl = [S[1]], jj; for (jj = 1; jj <= nH; jj++) zl.push(S[1] + S[2] * dlA[jj]);
-zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: "A", p0: P3(d2[0], za, yTs(za, b)), p1: P3(d2[1], zb, yTs(zb, b)), tracao: true, mad: true }); }); });
+zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; if (q === 0 && (bocaVao[bay[0] + "|" + bay[1]] || bocaVao[bay[1] + "|" + bay[0]])) return; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: "A", p0: P3(d2[0], za, yTs(za, b)), p1: P3(d2[1], zb, yTs(zb, b)), tracao: true, mad: true }); }); });
 });
 for (k = 1; k < 2 * nH; k++) { var zk = k * dz; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DV" + (++fv), g: "DV", asa: "A", p0: P3(d2[0], zk, Hp), p1: P3(d2[1], zk, yTs(zk, b)), tracao: true, mad: true }); }); }
 });
@@ -173841,10 +173847,14 @@ zl.slice(0, zl.length - 1).forEach(function (za, q2) { var zb = zl[q2 + 1]; [[xi
 });
 legs.forEach(function (L) {
 sel(baiasDe([L.zs])).forEach(function (bay) {
-[["W" + (L.j ? "2" : ""), 0, 1], ["I" + (L.j ? "2" : ""), L.w, -1]].forEach(function (S) {
-var xl = [S[1]], jj; for (jj = 1; jj <= L.nHB; jj++) xl.push(S[1] + S[2] * L.dl[jj]);
-xl.slice(0, xl.length - 1).forEach(function (xa, q) { var xb = xl[q + 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: L.asa, p0: P3(L.xl + xa, d2[0], yTs(xa, L.w)), p1: P3(L.xl + xb, d2[1], yTs(xb, L.w)), tracao: true, mad: true }); }); });
+var Lb = Math.abs(bay[1] - bay[0]), angP = function (xa, xb) { return Math.atan2(Math.sqrt(Math.pow(xb - xa, 2) + Math.pow(yTs(xb, L.w) - yTs(xa, L.w), 2)), Lb) * 180 / Math.PI; },
+xlW = [0], xlI = [L.w], jj2; for (jj2 = 1; jj2 <= L.nHB; jj2++) { xlW.push(L.dl[jj2]); xlI.push(L.w - L.dl[jj2]); }
+var curto = angP(xlW[L.nHB - 1], xlW[L.nHB]) < 10;
+[["W" + (L.j ? "2" : ""), xlW], ["I" + (L.j ? "2" : ""), xlI]].forEach(function (S) {
+var xl = S[1];
+xl.slice(0, xl.length - 1).forEach(function (xa, q) { var xb = xl[q + 1]; if (curto && q === xl.length - 2) return; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: S[0], asa: L.asa, p0: P3(L.xl + xa, d2[0], yTs(xa, L.w)), p1: P3(L.xl + xb, d2[1], yTs(xb, L.w)), tracao: true, mad: true }); }); });
 });
+if (curto) { var xj0 = xlW[L.nHB - 1], xj1 = xlI[L.nHB - 1]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DX" + (++fx), g: "DX", agua: "W" + (L.j ? "2" : ""), asa: L.asa, p0: P3(L.xl + xj0, d2[0], yTs(xj0, L.w)), p1: P3(L.xl + xj1, d2[1], yTs(xj1, L.w)), tracao: true, mad: true }); }); }
 for (k = 1; k < 2 * L.nHB; k++) { var sk = k <= L.nHB ? L.dl[k] : L.w - L.dl[2 * L.nHB - k]; [[bay[0], bay[1]], [bay[1], bay[0]]].forEach(function (d2) { add({ id: "DV" + (++fv), g: "DV", asa: L.asa, p0: P3(L.xl + sk, d2[0], Hp), p1: P3(L.xl + sk, d2[1], yTs(sk, L.w)), tracao: true, mad: true }); }); }
 });
 });
@@ -173889,7 +173899,6 @@ function arr(v) { return Array.isArray(v) ? v : []; }
 function r(x, n) { var p = Math.pow(10, n); return Math.round(x * p + (x >= 0 ? 1e-9 : -1e-9)) / p; }
 function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 var FAIXA = "Documento gerado pelo sistema — emissão somente após conferência e ART do responsável técnico";
-var MSG_PRANCHAS = "Pranchas detalhadas do T/U (planta, cortes, tesouras, rincões e fichas de corte): próxima versão. Nenhuma prancha foi gerada, para não sair desenho vazio ou errado; o cálculo, as reações nas paredes, o orçamento por peças e o memorial já valem.";
 var NOMES = { P: "Pilar do perímetro", PO: "Pilar de cabeceira", FR: "Frechal", BS: "Banzo superior da tesoura", BI: "Banzo inferior da tesoura", PD: "Montante da tesoura", DG: "Diagonal da tesoura", MS: "Banzo superior da meia-tesoura", MI: "Banzo inferior da meia-tesoura", MP: "Montante da meia-tesoura", MG: "Diagonal da meia-tesoura", E: "Espigão", RC: "Rincão", CB: "Caibro de meio", T: "Terça", CM: "Cumeeira", LB: "Linha do banzo inferior", DX: "Diagonal de contraventamento (águas)", DV: "Diagonal de contraventamento (vertical)", DP: "Diagonal de contraventamento (parede)" };
 function pecasDe(membros, sec, classe) {
 var nomeClasse = String(classe || "mlc:GL24h").split(":")[1] || "GL24h", mat = "MLC " + nomeClasse + " (EN 14080)", marcas = {}, ordem = [], out = [], cont = {};
@@ -173926,58 +173935,11 @@ return { apoios: apoios, soma: soma, cargas: cargas, erro: erro, ok: ok };
 function cargasNasParedes(rp) {
 return arr(rp && rp.apoios).map(function (a) { return { apoio: a.apoio, kN: a.kN, vigas: 1, x: a.x, z: a.z, kNk: r(a.G1 + a.G2 + a.Q, 3) }; });
 }
-function ligacoesNosTU(q, sec, rr, G) {
-var TL = dep("MadT3L", "./madt3l.js"), L3m = dep("MadT3Lig", "./madt3lig.js"), C3 = dep("MadT3Calc", "./madt3calc.js"), LL = dep("MadT3LLig", "./madt3llig.js");
-if (!TL || !L3m || !C3 || !LL) return { ligacoes: {}, avisos: ["ligações dos nós não calculadas: módulos madt3l/madt3lig/madt3llig ausentes"], ok: false };
-var Dm = TL._util.D(), ML = Dm.ML, MM = Dm.MM, cl = MM.classe2022(q.classe), agg = {}, perf = C3.perfilFn(q), p = q.params, I = G.info, noChapa = L3m.noChapa, noChapaM = L3m.noChapaM, tg = p.incl, k0, RAX;
-Object.keys(rr.reacoes).forEach(function (k) { var o = rr.reacoes[k], a1 = agg.P || (agg.P = { Nmax: -1e9, Nmin: 1e9, Hmax: 0, NminEq: 1e9, HmaxEq: 0 }); a1.Nmax = Math.max(a1.Nmax, o.Nmax); a1.Nmin = Math.min(a1.Nmin, o.Nmin); a1.Hmax = Math.max(a1.Hmax, o.Hmax); a1.NminEq = Math.min(a1.NminEq, o.NminEq); a1.HmaxEq = Math.max(a1.HmaxEq, o.HmaxEq); });
-var c = { kmod: rr.kmodRef, kmod1: rr.kmod1Ref, kmod2: rr.kmod2Ref, rhok: cl.rhok, k90Tipo: cl.grupo === "dicotiledonea" ? "folhosa" : "conifera" }, cc = ML.cfg(c), Lp0 = Math.abs(p.peDireito), pesoPil = { P: Math.max(sec.P.b * sec.P.h * Lp0 * q.pesoMLC, sec.PO.b * sec.PO.h * Lp0 * q.pesoMLC) };
-var howe = null;
-if (p.tesoura.tipo === "howe") {
-var bs = 0, bi = 0; G.membros.forEach(function (m) {
-if (m.g !== "DG" || m.tes !== 0) return; var lg = null; arr(p.legs).forEach(function (Lg) { if (Lg.asa === m.asa) lg = Lg; });
-var ci = lg ? 0 : 1, span = lg ? lg.w : p.b, off = lg ? lg.xl : 0, hb = span / 2, top = m.p0[2] > m.p1[2] ? m.p0 : m.p1, bot = top === m.p0 ? m.p1 : m.p0, dz = bot[ci] - top[ci], dy = bot[2] - top[2], Ld = Math.sqrt(dz * dz + dy * dy) || 1, sg = (top[ci] - off) < hb ? 1 : -1, Lu = Math.sqrt(1 + p.incl * p.incl);
-bs = Math.max(bs, Math.acos(Math.min(1, Math.abs(dz * sg + dy * p.incl) / (Ld * Lu)))); bi = Math.max(bi, Math.acos(Math.min(1, Math.abs(dz) / Ld)));
-}); howe = { betaBS: bs, betaBI: bi };
-}
-var esf = copia(rr.esf); ["BS", "BI", "PD", "DG", "T"].forEach(function (g) { if (!esf[g]) esf[g] = { Nt: 0, Nc: 0, V: 0, NtEq: 0, NcEq: 0, VEq: 0 }; });
-var L = ML.pacoteT2({ howe: howe, sistema: "tesoura", pesoPilar: pesoPil, secoes: sec, cfg: c, esf: esf, reacoes: agg, incl: p.incl, contrav: rr.contrav || null, f90Perp: rr.f90Perp || null, mat: { fc90k: cl.fc90k, fc0k: cl.fc0k, kmod90: perf("longa").kmod } });
-function eqv(x, k) { return x && x[k + "Eq"] != null ? x[k + "Eq"] : (x && x[k]) || 0; }
-k0 = ML.PARAFUSOS["WT-T-8,2"]; RAX = ML.roscaRaxd({ Rk_ref: k0.RaxK_cruzado150, lefRef: k0.lefRef, lefA: k0.lefRef * 0.8, lefB: k0.lefRef * 0.8, kmod: cc.kmod }).Rd;
-var wMax = 0; arr(p.legs).forEach(function (Lg) { wMax = Math.max(wMax, Lg.w); });
-var vl = LL.ventoLocal(q, rr, { p: p, info: { incl: I.incl, sc: I.sc, dz: I.dz, beiral: I.beiral, b: p.b, bb: wMax || p.b } });
-var E = rr.espigao, Sa = Math.max(0.05, E.apice.S || 0), Seqa = Math.max(0.05, E.apice.SEq || 0);
-L.ligacoes.espigaoCumeeira = noChapa(ML, cc, "espigão × cumeeira (ponta)", Math.max(0.05, E.apice.N), Math.max(0.05, E.apice.NEq), Sa, Seqa, sec.E, {});
-var tgH = tg / Math.SQRT2, cosH = 1 / Math.sqrt(1 + tgH * tgH), Sh = Math.max(0.05, E.heel.S || 0, vl.V_sela * cosH), Seqh = Math.max(0.05, E.heel.SEq || 0, vl.V_sela * cosH), Nh = Math.max(0.05, E.heel.N), Nheq = Math.max(0.05, E.heel.NEq);
-L.ligacoes.espigaoCanto = noChapa(ML, cc, "espigão × canto (assentado no cruzamento dos frechais)", Nh, Nheq, Sh, Seqh, sec.E, {});
-var fim = rr.cinta.fim || { N: rr.cinta.N, NEq: rr.cinta.NEq, S: 0, SEq: 0 };
-L.ligacoes.cintaCanto = noChapaM(ML, cc, "cinta do canto (frechal × frechal)", Math.max(0.05, fim.N), Math.max(0.05, fim.NEq), Math.max(0.05, fim.S), Math.max(0.05, fim.SEq), 0, sec.FR, {});
-var mt = rr.meia, Sm = Math.max(0.05, mt.V || 0), Smeq = Math.max(0.05, mt.VEq || 0);
-L.ligacoes.meiaTesoura = noChapa(ML, cc, "meia-tesoura × tesoura de extremidade (cume)", Math.max(0.05, mt.N), Math.max(0.05, mt.NEq), Sm, Smeq, sec.MS, {});
-var pmi = rr.pontaMI || { N: 0, NEq: 0, S: 0, SEq: 0, PD: 0, PDEq: 0, R: 0, REq: 0 }, tChM = 0.008;
-var gMI = noChapaM(ML, cc, "ponta da MI (grupo na MI, axial)", Math.max(0.05, pmi.N), Math.max(0.05, pmi.NEq), Math.max(0.05, pmi.S), Math.max(0.05, pmi.SEq), 0, sec.MI, {});
-var pBI = L3m.pinosMom(ML, cc, "ponta da MI no BI (força ⊥ às fibras: MI ⊕ montante)", 0, Math.max(0.05, pmi.REq), 0, sec.BI.b, sec.BI.h, tChM), chBI = L3m.chapaNBR8800(cc, pBI, tChM, Math.max(0.03, sec.BI.h - 0.05), Math.max(0.05, pmi.R), Math.max(0.05, pmi.REq));
-L.ligacoes.pontaMI = { pinos: gMI.pinos, chapa: gMI.chapa, banzo: { BI: { pinos: pBI, chapa: chBI } } };
-var RCr = rr.rincao || { heel: { N: 0, NEq: 0, S: 0, SEq: 0, V: 0, H: 0 }, apice: { N: 0, NEq: 0, S: 0, SEq: 0 }, cintaC: { N: 0, NEq: 0, S: 0, SEq: 0 } }, secRC = sec.RC || sec.E;
-L.ligacoes.rincaoApice = noChapa(ML, cc, "rincão × cumeeira / espigão interno (vértice V)", Math.max(0.05, RCr.apice.N), Math.max(0.05, RCr.apice.NEq), Math.max(0.05, RCr.apice.S), Math.max(0.05, RCr.apice.SEq), secRC, {});
-var cintaC = RCr.cintaC || { N: 0, NEq: 0, S: 0, SEq: 0 }, NhR = Math.max(0.05, RCr.heel.N, cintaC.N), NhReq = Math.max(0.05, RCr.heel.NEq, cintaC.NEq), ShR = Math.max(0.05, RCr.heel.S), ShReq = Math.max(0.05, RCr.heel.SEq);
-L.ligacoes.rincaoCanto = noChapa(ML, cc, "rincão × canto côncavo (sela de aço sobre o cruzamento dos frechais)", NhR, NhReq, ShR, ShReq, secRC, {});
-var E6 = rr.espigao6 || { heel: { N: 0, NEq: 0, S: 0, SEq: 0 }, apice: { N: 0, NEq: 0, S: 0, SEq: 0 } };
-if (G.membros.some(function (m) { return m.g === "E" && m.interior; })) L.ligacoes.espigaoInterno = noChapa(ML, cc, "espigão interno (vértice × topo da cumeeira)", Math.max(0.05, E6.heel.N, E6.apice.N), Math.max(0.05, E6.heel.NEq, E6.apice.NEq), Math.max(0.05, E6.heel.S, E6.apice.S), Math.max(0.05, E6.heel.SEq, E6.apice.SEq), sec.E, {});
-var eCB = rr.esf.CB || { Nt: 0, Nc: 0, V: 0, NtEq: 0, NcEq: 0, VEq: 0 };
-if (G.membros.some(function (m) { return m.g === "CB"; })) L.ligacoes.caibroMeio = noChapa(ML, cc, "caibro de meio da cabeceira (pé sobre o pilar de meio de parede e topo na cumeeira)", Math.max(0.05, eCB.Nt, eCB.Nc), Math.max(0.05, eqv(eCB, "Nt"), eqv(eCB, "Nc")), Math.max(0.05, eCB.V), Math.max(0.05, eqv(eCB, "V")), sec.CB, {});
-[["MS", "nó do banzo superior da meia-tesoura"], ["MI", "nó do banzo inferior da meia-tesoura (tirante)"], ["MP", "nó do montante da meia-tesoura"], ["MG", "nó da diagonal da meia-tesoura"]].forEach(function (x) {
-var e = rr.esf[x[0]]; if (!e) return; var F = Math.max(e.Nt, e.Nc), Fq = Math.max(eqv(e, "Nt"), eqv(e, "Nc"));
-L.ligacoes["no" + x[0]] = noChapa(ML, cc, x[1], Math.max(F, 0.05), Math.max(Fq, 0.05), 0.05, 0.05, sec[x[0]], {});
-});
-var eT = rr.esf.T || { Nt: 0, Nc: 0, V: 0, NtEq: 0, NcEq: 0, VEq: 0 }, Vt = eT.VEq != null ? eT.VEq : eT.V, Vtu = Math.max(Vt, vl.V_terca), nS, tc;
-for (nS = 2; nS <= 24; nS += 2) { tc = ML.roscaInclinada({ F: Vtu + Vtu * tg, n: nS, anguloGraus: 45, Rax_d: RAX }); if (tc.ok) break; }
-L.ligacoes.tercaEspigao = { porApoio: nS };
-L.ligacoes.tercaEspigaoAxial = noChapa(ML, cc, "terça × espigão (esforço axial da terça pelo estribo)", Math.max(0.05, eT.Nt, eT.Nc), Math.max(0.05, eqv(eT, "Nt"), eqv(eT, "Nc")), Math.max(0.05, eT.V, vl.V_terca), Math.max(0.05, eqv(eT, "V"), vl.V_terca), sec.T, {});
-var Vem = Math.max(0.05, eT.V, vl.V_terca);
-L.ligacoes.emendaTerca = noChapa(ML, cc, "emenda passante da terça no banzo (chapa em fenda; só força axial)", Math.max(0.05, eT.Nt, eT.Nc), Math.max(0.05, eT.NtEq, eT.NcEq), Vem, Math.max(0.05, eT.VEq, vl.V_terca), sec.T, {});
-var falhaLig = Object.keys(L.ligacoes).filter(function (k) { return L.ligacoes[k] && L.ligacoes[k].ok === false; });
-return { ligacoes: L.ligacoes, avisos: falhaLig.map(function (k) { return "ligação " + k + " não fecha"; }), ok: falhaLig.length === 0, falhas: falhaLig, ventoLocal: { V_terca: vl.V_terca, V_sela: vl.V_sela } };
+function ligacoesNosTU(q, sec, rr, G, ap) {
+var TLg = dep("MadT3TULig", "./madt3tulig.js");
+if (!TLg) return { ligacoes: {}, avisos: ["ligações dos nós não calculadas: módulo madt3tulig ausente"], ok: false, falhas: [] };
+var L = TLg.ligacoes(q, sec, rr, G, ap || null), falhaLig = Object.keys(L.ligacoes).filter(function (k) { return L.ligacoes[k] && (L.ligacoes[k].ok === false || L.ligacoes[k].eta > 1 + 1e-9); });
+return { ligacoes: L.ligacoes, avisos: falhaLig.map(function (k) { return "ligação " + k + " não fecha"; }), ok: falhaLig.length === 0, falhas: falhaLig, ventoLocal: { V_terca: L.ventoLocal.V_terca, V_sela: L.ventoLocal.V_sela }, pacote: L };
 }
 function contagemNos(M3, howe) {
 var LS = dep("MadT3LSaidas", "./madt3lsaidas.js"), m = LS && LS.multGeo ? LS.multGeo(M3, !!howe) : null; if (!m) return null;
@@ -174039,7 +174001,7 @@ L("04.05", "Mobilização, desmobilização e canteiro", 1, "mobilizacao"); L("0
 var cd = r(itens.reduce(function (s, x) { return s + x.total; }, 0), 2), etapas = {}; itens.forEach(function (x) { etapas[x.etapa] = r((etapas[x.etapa] || 0) + x.total, 2); });
 return { opcao: e.opcao || "T3TU", nome: (e.preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + (e.nome || ""), preliminar: !!e.preliminar, rotulo: e.preliminar ? "PRELIMINAR — NÃO ATENDE" : "", parcial: !PC.ok, rotuloParcial: PC.ok ? "" : "PARCIAL — ligações dos nós (pinos e chapas) não calculadas", estimativaLigacoes: PC.ok, rotuloEstimativa: PC.ok ? "Pinos e chapas dos nós: quantidade pelo critério de contagem do L (hipóteses no memorial); ligações detalhadas na etapa 3b" : "", itens: itens, etapas: etapas, custo_direto: cd, bdi: bdi, preco: r(cd * (1 + bdi), 2), volumes: { mlc: r(vMlc, 3) }, area_verniz: r(aVerniz, 1), area_telhado_m2: r(aInc, 2), pinos: { total: PC.nPinos, base: nPil * (2 * (base.n || 0)), porLigacao: PC.porLig }, kgChapa: r(PC.kgChapa, 1), nWT: PC.nWT, kgBase: r(kgBase, 1), nChumb: nChumb,
 adotados: itens.filter(function (x) { return x.adotado; }).length,
-pendencias: [PC.ok ? "Pinos e chapas dos nós (02.03 a 02.05): quantidades pelo critério de contagem do L (nº de ligações por tipo de nó × pinos/chapa do grupo dimensionado com os esforços do T/U); as verificações de detalhe das ligações (fendilhamento, torção, chapa única do canto, folgas) e as pranchas ficam para a etapa 3b — conferir antes de comprar." : "ORÇAMENTO PARCIAL: as ligações dos nós não foram calculadas (módulos ausentes); o custo real é MAIOR que o somado.", "Preço da telha cerâmica = o da telha PIR do banco (o mais alto; sem referência cerâmica publicada nesta base) — substituir pelo da obra.", "Ripas, caibrinhos e cumeeira/espigões cerâmicos dentro do preço da telha; caibros secundários não modelados.", "Preço da calha do rincão = o da calha dos beirais (adoção); calha de rincão tem desenvolvimento e mão de obra maiores — substituir pela cotação da obra.", "Fundação e vedações fora do escopo da madeira."] };
+pendencias: [PC.ok ? "Pinos e chapas dos nós (02.03 a 02.05): quantidades pelo critério de contagem do L (nº de ligações por tipo de nó × pinos/chapa do grupo dimensionado com os esforços do T/U); a verificação detalhada de cada ligação (fendilhamento, torção, chapa única do canto, folgas) está no quadro de ligações das pranchas (folha E07) — conferir antes de comprar." : "ORÇAMENTO PARCIAL: as ligações dos nós não foram calculadas (módulos ausentes); o custo real é MAIOR que o somado.", "Preço da telha cerâmica = o da telha PIR do banco (o mais alto; sem referência cerâmica publicada nesta base) — substituir pelo da obra.", "Ripas, caibrinhos e cumeeira/espigões cerâmicos dentro do preço da telha; caibros secundários não modelados.", "Preço da calha do rincão = o da calha dos beirais (adoção); calha de rincão tem desenvolvimento e mão de obra maiores — substituir pela cotação da obra.", "Fundação e vedações fora do escopo da madeira."] };
 }
 function rodar(sol, proj, avisa, t0, MO) {
 var CT = dep("MadT3TUCalc", "./madt3tucalc.js"), C3 = dep("MadT3Calc", "./madt3calc.js"), SA = dep("MadEngSaidas", "./madengsaidas.js"), itAtual = 0;
@@ -174068,12 +174030,15 @@ var rp = reacoesParedes(rr), perim = 0;
 var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), cnt = TM.contornoDe(P); cnt.forEach(function (p, i) { var p2 = cnt[(i + 1) % cnt.length]; perim += Math.sqrt(Math.pow(p2[0] - p[0], 2) + Math.pow(p2[1] - p[1], 2)); });
 var pecas = pecasDe(membros, d.secoes, q.classe);
 avisa("orcamento");
-var ligNos = ligacoesNosTU(q, d.secoes, rr, G), orc = orcarT3TU({ opcao: sol.opcao, nome: sol.nomeOpcao, pecas: pecas, params: P, secoes: d.secoes, ligacoes: b.LG, ligacoesNos: ligNos, membros: membros, info: I, perimetro: perim, extras: sol.extras, precos: sol.precos, bdi: sol.bdi });
+var TLg = dep("MadT3TULig", "./madt3tulig.js"), det = null, erroDet = null;
+try { det = TLg ? TLg.detalhar(q, d.secoes, rr, G) : null; } catch (eD) { erroDet = String(eD && eD.message || eD); }
+var ligNos = det ? { ligacoes: det.ligacoes.ligacoes, ok: det.ligacoes.ok !== false, falhas: det.ligacoes.verificacoes.filter(function (v) { return !v.ok; }).map(function (v) { return v.nome; }), avisos: [] } : { ligacoes: {}, ok: false, falhas: [], avisos: ["ligações dos nós não calculadas: " + (erroDet || "módulo madt3tulig ausente")] },
+orc = orcarT3TU({ opcao: sol.opcao, nome: sol.nomeOpcao, pecas: pecas, params: P, secoes: d.secoes, ligacoes: b.LG, ligacoesNos: ligNos, membros: membros, info: I, perimetro: perim, extras: sol.extras, precos: sol.precos, bdi: sol.bdi });
 var vento = q._vento || proj._vento || {}, avisos = (rr.avisos || []).slice();
 var ligs = copia(b.LG || { ok: true, verificacoes: [] }); ligs.verificacoes = ligs.verificacoes || [];
 if (ligNos.ok === false) ligs.ok = false;
 var pTU = copia(rr.preliminarTU || { preliminar: false, motivos: [], pendenciasRT: 0 }), extra = [];
-arr(ligNos.falhas).forEach(function (k) { extra.push("ligação " + k + " não fecha (pinos/chapa do nó)"); });
+if (det) det.motivos.concat(det.motivosNaoVerificado).forEach(function (t) { extra.push(t); }); else extra.push("verificação detalhada das ligações NÃO feita: " + (erroDet || "módulo madt3tulig ausente"));
 if (rp && rp.ok === false) extra.push("reações nas paredes não fecham o equilíbrio (Σ reações ≠ Σ cargas, ±1 %)" + (rp.motivo ? ": " + rp.motivo : ""));
 arr(I.avisos).forEach(function (t) { extra.push("geometria: " + t); });
 if (extra.length) { pTU.preliminar = true; pTU.motivos = arr(pTU.motivos).concat(extra); }
@@ -174081,12 +174046,11 @@ var res = {
 ok: !d.semSolucao && ligs.ok !== false && !pTU.preliminar, semSolucao: !!d.semSolucao, tipologia: "T3TU", planta: rr.planta, sistema: "tesoura",
 opcao: sol.opcao, nomeOpcao: sol.nomeOpcao, secoes: d.secoes, iteracoes: d.historico.length, pior: d.pior, grupos: rr.grupos, flechas: rr.flechas, flechasMm: rr.flechasMm || null, reacoes: rr.reacoes,
 combinacoes: rr.combinacoes, avisos: avisos, avisosAnalise: rr.avisosAnalise || [], v0: vento.v0 != null ? vento.v0 : (vento.entrada && vento.entrada.v0) || null, cargasTotais: rr.cargasTotais || null, QCOB: rr.QCOB || null,
-ligacoes: ligs, rigidezBase: rigidez, fonte: { pecas: pecas, volume_por_material_m3: volumePorMaterial(pecas) }, auditoria: { achados: [], porRegra: {}, ok: true }, orcamento: orc, t7: null,
-t3: { params: P, info: copia(I), membros: membros.map(function (m) { return { id: m.id, g: m.g, agua: m.agua || null, aguaId: m.aguaId || null, asa: m.asa || null, tes: m.tes == null ? null : m.tes, p0: m.p0, p1: m.p1, eixo0: m.eixo0 || null, eixo1: m.eixo1 || null, nos: m.nos || [], canto: m.canto || null, concavo: !!m.concavo }; }) },
+ligacoes: ligs, rigidezBase: rigidez, fonte: { pecas: pecas, volume_por_material_m3: volumePorMaterial(pecas) }, auditoria: det ? det.auditoria : { achados: [], porRegra: {}, ok: true }, aparo: det ? det.aparo : null, ligacoesT3: det ? det.ligacoes : null, naoVerificado: det ? det.naoVerificado : [], orcamento: orc, t7: null,
+t3: { params: P, info: copia(I), membros: (det ? det.membros : membros).map(function (m) { return { id: m.id, g: m.g, agua: m.agua || null, aguaId: m.aguaId || null, asa: m.asa || null, tes: m.tes == null ? null : m.tes, pe: m.pe || null, sx: m.sx == null ? null : m.sx, sz: m.sz == null ? null : m.sz, interior: !!m.interior, plano: m.plano || null, p0: m.p0, p1: m.p1, eixo0: m.eixo0 || null, eixo1: m.eixo1 || null, nos: m.nos || [], bisel: m.bisel || null, canto: m.canto || null, concavo: !!m.concavo }; }) },
 espigao: rr.espigao, rincao: rr.rincao || null, cinta: rr.cinta, meia: rr.meia, porModelo: rr.porModelo || null, slipT: rr.slipT || null, pontaMI: rr.pontaMI || null, torcaoFR: rr.torcaoFR || null, contrav: rr.contrav || null, esf: rr.esf, compressaoE: rr.compressaoE || null, compressaoDG: rr.compressaoDG || null, compressaoMG: rr.compressaoMG || null,
 pendenciasRT: copia(rr.pendenciasRT || []), preliminarTU: pTU, reacoesParedes: rp, cargasNasParedes: cargasNasParedes(rp), rincaoCalhaKNm: rr.rincaoCalhaKNm,
-pranchas: { ok: false, folhas: [], motivo: MSG_PRANCHAS }, ms: Date.now() - t0 };
-res.pendencias3b = ["Pranchas detalhadas do T/U (planta, cortes, tesouras, rincões, fichas de corte).", "Verificação detalhada das ligações dos nós (η, fendilhamento, torção do frechal, chapa única do canto); os pinos e as chapas do orçamento já saem pela contagem do L.", "Auditor de encontros (folgas ≥ 10 mm) e manual de montagem."];
+pranchas: { ok: !d.semSolucao, geradas: false, motivo: d.semSolucao ? "o cálculo não fechou: sem pranchas" : null }, ms: Date.now() - t0 };
 var preX = SA ? SA.preliminar(res) : { preliminar: !res.ok };
 if (preX.preliminar || res.preliminarTU.preliminar) { orc.preliminar = true; orc.rotulo = "PRELIMINAR — NÃO ATENDE"; orc.nome = "PRELIMINAR — NÃO ATENDE — " + (sol.nomeOpcao || ""); }
 res.memoria = { vento: vento.ok ? { memoria: vento.memoria, avisos: vento.avisos, v0: vento.v0, s1: vento.s1, s2: vento.s2, s3: vento.s3, vk: vento.vk, q: vento.q, cpi: vento.cpi, excentricidade: vento.excentricidade, casos: (vento.casos || []).map(function (c) { return { id: c.id, nome: c.nome, direcao: c.direcao, cpi: c.cpi, cpiMotivo: c.cpiMotivo, q: c.q }; }), geometria: vento.geometria, norma: vento.norma, edicao: vento.edicao } : null,
@@ -174097,10 +174061,16 @@ function semSolucao(sol, proj, erro, t0) {
 var motivo = "T/U: o dimensionamento 3D não achou equilíbrio estável com as tesouras a " + br(proj.params && proj.params.tesoura && proj.params.tesoura.sTes) + " m (" + erro.replace(/\s+/g, " ").slice(0, 220) + ")";
 return { ok: false, semSolucao: true, motivo: motivo, tipologia: "T3TU", planta: null, sistema: "tesoura", opcao: sol.opcao, nomeOpcao: sol.nomeOpcao, secoes: {}, iteracoes: 0, pior: {}, grupos: {}, flechas: {}, reacoes: {}, combinacoes: 0, avisos: [], avisosAnalise: [],
 ligacoes: { ok: true, verificacoes: [] }, fonte: { pecas: [], volume_por_material_m3: {} }, auditoria: { achados: [], porRegra: {}, ok: true }, orcamento: null, t7: null, t3: { params: proj.params || null, info: {}, membros: [] }, pendenciasRT: [],
-preliminarTU: { preliminar: true, motivos: [motivo], pendenciasRT: 0 }, reacoesParedes: null, cargasNasParedes: [], pranchas: { ok: false, folhas: [], motivo: MSG_PRANCHAS }, ms: Date.now() - t0 };
+preliminarTU: { preliminar: true, motivos: [motivo], pendenciasRT: 0 }, reacoesParedes: null, cargasNasParedes: [], pranchas: { ok: false, geradas: false, motivo: "o cálculo não fechou: sem pranchas" }, ms: Date.now() - t0 };
 }
 function volumePorMaterial(pecas) { var o = {}; arr(pecas).forEach(function (p) { if (p.volume_m3) o[p.material] = r((o[p.material] || 0) + p.volume_m3, 4); }); return o; }
-function pranchas() { return { ok: false, folhas: [], motivo: MSG_PRANCHAS }; }
+function pranchas(res, opcoes) { var PT = dep("MadEngT3TU", "./madt3tupranchas.js"); if (!PT) return { ok: false, folhas: [], avisos: ["js/madt3tupranchas.js não carregou."], motivo: "O gerador de pranchas do T/U não carregou." }; return PT.gerar(res, opcoes); }
+function LSd() { return dep("MadT3LSaidas", "./madt3lsaidas.js"); }
+function pecasMembros(res) { var LS = LSd(); return LS ? LS.pecasMembros(res).map(function (p) { if (p.grupo) p.grupo = String(p.grupo).replace(/^T3L —/, "T3TU —"); return p; }) : []; }
+function pecasModelo(res) { var LS = LSd(); return LS ? LS.pecasModelo(res) : []; }
+function marcaPre(res) { var SA = dep("MadEngSaidas", "./madengsaidas.js"); return SA && SA.preliminar(res).preliminar ? "PRELIMINAR — NÃO ATENDE — " : ""; }
+function ifc(res, opts) { var SA = dep("MadEngSaidas", "./madengsaidas.js"); return SA.gerarIfc(pecasModelo(res), { projeto: marcaPre(res) + ((opts && opts.projeto) || "Telhado de 4 águas em T/U"), opcao: res.opcao, semente: (opts && opts.semente) || "t3tu:" + res.opcao, agora: opts && opts.agora }); }
+function dae(res, opts) { var EX = dep("MadEngExport", "./madengexport.js"); return EX.gerarDae(pecasModelo(res), { projeto: marcaPre(res) + ((opts && opts.projeto) || "Telhado de 4 águas em T/U") }); }
 var CSS = "body{font:11pt/1.45 'Segoe UI',Arial,sans-serif;color:#222;margin:24mm 20mm}h1{font-size:19pt;margin:0 0 4px}h2{font-size:13pt;border-bottom:2px solid #1f4e79;color:#1f4e79;margin-top:22px}table{border-collapse:collapse;width:100%;margin:8px 0;font-size:10pt}th,td{border:1px solid #999;padding:3px 6px;text-align:left}th{background:#e8eef5}.ok{color:#0a6b2d}.nok{color:#b00020;font-weight:700}.faixa{border:2px solid #b00020;color:#b00020;padding:6px 10px;margin:10px 0;font-weight:700}.aviso{border:2px solid #b9770e;color:#7a4b00;padding:6px 10px;margin:10px 0;font-weight:700}.nota{font-size:9.5pt;color:#555}@page{size:A4;margin:12mm}";
 function memorial(res, op) {
 op = op || {}; var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA ? SA.preliminar(res) : { preliminar: false, rotulo: "PRELIMINAR — NÃO ATENDE", motivos: [] }, o = op.obra || {}, d = op.documento || {}, Q = (res && res.t3) || {}, I = Q.info || {}, P = Q.params || {}, h = [], secoes = [];
@@ -174111,7 +174081,6 @@ var legs = arr(P.legs), nome = res.planta === "U" ? "U" : (res.planta === "L" ? 
 h.push("<!doctype html><html><head><meta charset='utf-8'><title>Memorial de cálculo — telhado de 4 águas em " + nome + "</title><style>" + CSS + "</style></head><body>");
 if (prelim) h.push("<div class='faixa'>PRELIMINAR — NÃO ATENDE em todos os itens; nada deste documento vale para execução.<br>" + motivos.map(esc).join("<br>") + "</div>");
 h.push("<h1>Memorial de cálculo — telhado de 4 águas em " + nome + " com rincão em cada canto côncavo, em MLC (T3TU)</h1><p>" + esc(o.nome || P.nome || "") + (o.cidade ? " — " + esc(o.cidade) : "") + " · " + esc(d.numero || "EST-MAD-T3TU-MEM") + " · rev. " + esc(d.revisao || "R00") + " · " + esc(d.data || "") + (res.nomeOpcao ? " · opção " + esc(res.opcao) + ": " + esc(res.nomeOpcao) : "") + "</p><div class='faixa'>" + esc(FAIXA) + "</div>");
-h.push("<div class='aviso'>" + esc(MSG_PRANCHAS) + "</div>");
 H2("1. Objeto e geometria");
 h.push("<p>Estrutura de madeira laminada colada (MLC) de cobertura em <b>4 águas em planta em " + nome + " ortogonal</b>: barra " + br(I.a) + " × " + br(I.b) + " m (ao longo de X) e " + legs.length + " perna(s) ao longo de Z (" + legs.map(function (L) { return "largura " + br(L.w) + " m, comprimento " + br(L.c) + " m, começando em x = " + br(L.x0) + " m"; }).join("; ") + "), pé-direito " + br(P.peDireito) + " m, inclinação " + br((I.incl || 0) * 100, 0) + " % (a MESMA em todas as águas), beiral " + br(I.beiral) + " m em todos os lados, tesouras " + (I.tesouraTipo === "howe" ? "Howe" : "Pratt") + ". Um <b>RINCÃO</b> em cada canto côncavo (" + arr(I.reflexos).length + " canto(s) côncavo(s): " + arr(I.reflexos).map(function (c) { return "(" + br(c[0]) + "; " + br(c[1]) + ")"; }).join(", ") + " no quadro da estrutura, origem no canto da barra), com calha metálica. Área do telhado (com beiral): " + br(I.areaTotal) + " m².</p>");
 H2("2. Normas e premissas");
@@ -174136,17 +174105,319 @@ h.push("<table><tr><th>Grupo</th><th>η flecha (L/" + (res.memoria && res.memori
 if (res.contrav && res.contrav.asa) h.push("<p>Rigidez K_br,1 (NBR 7190-1:2022, 6.6.2) por asa: " + Object.keys(res.contrav.asa).map(function (a) { var c = res.contrav.asa[a]; return "asa " + esc(a) + ": banzo superior " + Math.round(c.BS.Kbr) + " × " + Math.round(c.BS.Kmin) + " kN/m, banzo inferior " + Math.round(c.BI.Kbr) + " × " + Math.round(c.BI.Kmin) + " kN/m"; }).join("; ") + " — " + (res.contrav.ok ? "atende" : "<b class='nok'>NÃO atende</b>") + ".</p>");
 H2("8. Orçamento (resumo)");
 var O = res.orcamento || {}; h.push("<div class='aviso'>" + esc(O.rotuloParcial || O.rotuloEstimativa || "") + "</div><p>Custo direto R$ " + br(O.custo_direto, 2) + " · preço com BDI " + br((O.bdi || 0) * 100, 2) + " % = R$ " + br(O.preco, 2) + " · MLC " + br(O.volumes && O.volumes.mlc, 3) + " m³ · base dos pilares: " + br(O.kgBase, 1) + " kg de aço, " + (O.nChumb || 0) + " chumbadores. Pinos, chapas e parafusos dos nós: <b>" + (O.pinos ? O.pinos.total : 0) + " pinos</b>, " + br(O.kgChapa, 1) + " kg de chapa, " + (O.nWT || 0) + " parafusos WT — pelo critério de contagem do L (nº de ligações por tipo de nó × pinos do grupo dimensionado com os esforços do T/U). <b>Hipóteses:</b> (a) o contador geométrico é o do L, com três ajustes para o T/U: espigão interno = espigões marcados como interiores, a cinta do frechal sai de todos os cantos côncavos (a compressão do anel passa pela sela do rincão) e o caibro de meio conta por caibro; (b) vento local de aresta pela asa mais larga; (c) fendilhamento, torção do frechal, chapa única do canto e folgas do aparo não são verificados nesta versão.</p>");
-H2("9. Pendências ao responsável técnico");
+H2("9. Ligações dos nós (verificação detalhada) e folgas construtivas");
+var LG = (res.ligacoesT3 && res.ligacoesT3.ligacoes) || {}, folgR = res.aparo && res.aparo.resumo ? res.aparo.resumo : null;
+h.push("<p>Pinos inox A4, chapas internas de aço t = 8 mm (NBR 8800: seção bruta, líquida fu/1,35 e esmagamento) e parafusos de rosca total (SFS WT-T 8,2 × 300), dimensionados com os esforços do próprio modelo 3D; folga construtiva ≥ 10 mm em todas as pontas aparadas" + (folgR ? " (" + folgR.n + " pontas, mínima medida " + br(folgR.minimo_mm, 1) + " mm)" : "") + ". Auditor de encontros: " + (res.auditoria && res.auditoria.ok ? "sem achado" : arr(res.auditoria && res.auditoria.achados).length + " achado(s)") + ".</p><table><tr><th>Ligação</th><th>η</th><th>Situação</th></tr>" + Object.keys(LG).filter(function (k) { return LG[k] && isFinite(LG[k].eta); }).map(function (k) { return "<tr><td>" + esc(k) + "</td><td>" + br(LG[k].eta, 3) + "</td><td class='" + (LG[k].ok === false ? "nok" : "ok") + "'>" + (LG[k].ok === false ? "NÃO ATENDE" : "atende") + "</td></tr>"; }).join("") + "</table>");
+H2("10. Pendências ao responsável técnico");
 h.push("<p><b>Em cada canto côncavo</b> (sobrepressão local do vento na reentrância do rincão e sombreamento entre as asas, não cobertos pela Tabela 5):</p><ul>" + (arr(res.pendenciasRT).length ? res.pendenciasRT.map(function (p) { return "<li>" + esc(p.texto) + "</li>"; }).join("") : "<li>Nenhum canto côncavo.</li>") + "</ul>");
 h.push("<p><b>Peças e itens PRELIMINARES</b> (por peça e motivo):</p>" + (motivos.length ? "<ul>" + motivos.map(function (m) { return "<li class='nok'>" + esc(m) + "</li>"; }).join("") + "</ul>" : "<p class='ok'>Nenhuma peça reprova; flecha e K_br,1 atendem.</p>"));
-h.push("<p><b>Fica para a próxima versão:</b></p><ul>" + arr(res.pendencias3b).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul><ul><li>Torção por excentricidade do vento (6.6) e vento oblíquo: não modelados.</li><li>Caibros e ripas secundários: não modelados (dentro do preço da telha).</li><li>Tesoura de rincão (“falsa tesoura”): não modelada — o rincão é viga inclinada apoiada no canto côncavo e no vértice V.</li><li>Vento em 4 águas: premissa da Tabela 5 (duas águas) por asa — confirmar com o RT (ou ensaio em túnel de vento).</li><li>Valores da NBR 7190-1:2022 conferidos na transcrição da biblioteca; MLC pela EN 14080 (fonte secundária).</li></ul>");
+h.push("<p><b>NÃO VERIFICADO (a estrutura fica PRELIMINAR até o RT conferir):</b></p><ul>" + (arr(res.naoVerificado).length ? arr(res.naoVerificado).map(function (t) { return "<li class='nok'>" + esc(t) + "</li>"; }).join("") : "<li>Nada declarado como não verificado.</li>") + "</ul><p><b>Não modelado:</b></p><ul><li>Torção por excentricidade do vento (6.6) e vento oblíquo: não modelados.</li><li>Caibros e ripas secundários: não modelados (dentro do preço da telha).</li><li>Tesoura de rincão (“falsa tesoura”): não modelada — o rincão é viga inclinada apoiada no canto côncavo e no vértice V.</li><li>Vento em 4 águas: premissa da Tabela 5 (duas águas) por asa — confirmar com o RT (ou ensaio em túnel de vento).</li><li>Valores da NBR 7190-1:2022 conferidos na transcrição da biblioteca; MLC pela EN 14080 (fonte secundária).</li></ul>");
 h.push("<p class='nota'>" + esc(FAIXA) + "</p></body></html>");
 return { ok: true, html: h.join(""), titulo: "Memorial de cálculo — telhado de 4 águas em " + nome, secoes: secoes, avisos: [], situacao: pre, preliminar: prelim, pendenciasRT: arr(res.pendenciasRT).length };
 }
-var MadT3TUSaidas = { rodar: rodar, orcar: orcarT3TU, memorial: memorial, pranchas: pranchas, reacoesParedes: reacoesParedes, cargasNasParedes: cargasNasParedes, pecasDe: pecasDe, ligacoesNos: ligacoesNosTU, contagemNos: contagemNos, pinosChapasNos: pinosChapasNos, MSG_PRANCHAS: MSG_PRANCHAS };
+function manual(res, op) {
+op = op || {}; if (!res || res.tipologia !== "T3TU" || !res.t3) return { ok: false, html: "", avisos: ["Resultado sem a T3TU."], paginas: 0 };
+var SA = dep("MadEngSaidas", "./madengsaidas.js"), pre = SA ? SA.preliminar(res) : { preliminar: false, rotulo: "PRELIMINAR — NÃO ATENDE" }, I = res.t3.info, mem = res.t3.membros, f = arr(res.fonte && res.fonte.pecas), h = [], n = 0, legs = arr(I.pernas), nome = res.planta === "U" ? "U" : (res.planta === "L" ? "L" : "T");
+function cont(g) { return mem.filter(function (m) { return m.g === g; }).length; }
+var nInt = mem.filter(function (m) { return m.g === "E" && m.interior; }).length, nRC = cont("RC"), nCB = cont("CB");
+var EXIG = "Exigência de projeto: terça BIAPOIADA entre as tesouras/meias-tesouras; a emenda passante em cada tesoura transmite só a força AXIAL (tirante do arco do espigão); não é emenda rígida (não transmite momento).";
+var etapas = [["Pilares e frechal em anel", "Montar os " + (cont("P") + cont("PO")) + " pilares sobre as bases engastadas; assentar o frechal em anel (" + (cont("FR") ? "um frechal por trecho de parede" : "") + ") com garfo no topo de cada pilar. Os dois frechais de cada canto convexo ficam a ≥ 10 mm do espigão: o anel fecha pela CINTA de aço (chapa interna + pinos); em cada canto CÔNCAVO (" + nRC + ") o frechal para a ≥ 10 mm do rincão e a compressão passa pela sela de aço do rincão."],
+["Tesouras principais", "Pré-montar no chão as " + cont("BI") + " tesoura(s) (barra" + legs.map(function (L) { return " e perna " + (L.j + 1); }).join("") + "; a tesoura da boca de cada perna assenta no pilar do canto côncavo e na parede) " + (I.tesouraTipo === "howe" ? "Howe" : "Pratt") + " com chapa interna e pinos inox; içar e apoiar em garfo nos pilares; travar com as linhas do banzo inferior e as diagonais de contraventamento dos vãos de extremidade" + (legs.some(function (L) { return !L.flushL && !L.flushR; }) ? "; na boca da perna solta (T) instalar o X de diagonais de tração no plano do banzo inferior ANTES de içar a próxima tesoura" : "") + "."],
+["Meias-tesouras das cabeceiras", "Montar as " + cont("MS") + " meias-tesoura(s) das cabeceiras livres (banzo inferior = tirante, do pilar da parede à tesoura de extremidade)" + (nCB ? " e os " + nCB + " caibro(s) de meio com tirante MI nas pontas da barra encostadas às pernas (pé em sela sobre o pilar de meio de parede)" : "") + "; a ponta do banzo superior da meia-tesoura entra na tesoura de extremidade com folga de 10 mm das faces, ligada só por chapa e pinos."],
+["Cumeeiras, espigões e rincões", "Instalar a cumeeira da barra (" + br(I.La) + " m) e a cumeeira de cada perna sobre as tesouras — alturas DIFERENTES quando as larguras diferem (conferir as cotas na folha de elevações). Instalar os espigões do canto à cumeeira" + (nInt ? ", os " + nInt + " espigões internos (vértice V → topo da cumeeira da barra)" : "") + " e os " + nRC + " RINCÃO(ÕES) (canto côncavo → vértice V da perna): sela de aço sobre o cruzamento dos frechais e chapa interna + pinos nas pontas (folga ≥ 10 mm); sobre cada rincão colocar a CALHA metálica (aba de 0,30 m para cada lado, sob as telhas)."],
+["Terças", "A terça é BIAPOIADA entre tesouras: cada trecho é cortado em bisel composto contra a face vertical do espigão ou do rincão (folha de corte) e fica encostado na face lateral do banzo, apoiado em estribo/cantoneira de aço (4 pinos Ø12). Em cada tesoura passar a EMENDA PASSANTE — chapa interna de aço em fenda que atravessa o banzo, com pinos inox nos dois trechos —, que transmite só a força axial (tirante do arco do espigão); não é emenda rígida e não dispensa o estribo. A terça fica no plano do banzo (eixo no eixo), sem parafuso por cima."],
+["Contraventamento e conferência", "Instalar as diagonais de madeira em X (águas dos vãos de extremidade, planos verticais entre tesouras e painéis das paredes). Conferir: nenhuma peça sem folga na ponta aparada; torque dos pinos; cinta de todos os cantos convexos e sela dos " + nRC + " canto(s) côncavo(s). ITENS NÃO VERIFICADOS que o RT deve conferir antes de executar: " + (arr(res.naoVerificado).length ? arr(res.naoVerificado).map(function (t) { return String(t).replace(/ — confirmar pelo RT\.?$/, ""); }).join(" · ") : "nenhum declarado") + "."]];
+h.push("<!doctype html><html><head><meta charset='utf-8'><title>Manual de montagem — telhado de 4 águas em " + nome + "</title><style>" + CSS + "@page{size:A3 landscape;margin:12mm}.pg{page-break-after:always;min-height:240mm}</style></head><body>");
+h.push("<div class='pg'><h1>Manual de montagem — telhado de 4 águas em " + nome + " (com rincão em cada canto côncavo)</h1><div class='faixa'>" + esc(EXIG) + "</div>" + (pre.preliminar ? "<div class='faixa'>" + esc(pre.rotulo) + "</div>" : "") + "<p>" + esc((op.obra && op.obra.nome) || "") + " — " + f.length + " marcas de peça; " + mem.length + " peças individuais.</p><div class='faixa'>" + esc(FAIXA) + "</div><table><tr><th>Etapa</th><th>O que se monta</th></tr>" + etapas.map(function (e, i) { return "<tr><td>" + (i + 1) + ". " + esc(e[0]) + "</td><td>" + esc(e[1]) + "</td></tr>"; }).join("") + "</table></div>"); n++;
+etapas.forEach(function (e, i) { h.push("<div class='pg'><h2>Etapa " + (i + 1) + " — " + esc(e[0]) + "</h2><p>" + esc(e[1]) + "</p><table><tr><th>Marca</th><th>Descrição</th><th>Seção</th><th>Qtd.</th></tr>" + f.filter(function (p) { return p.marca; }).slice(0, 80).filter(function (p) { var g = p.marca; return (i === 0 && /^(P|PO|FR)$/.test(g)) || (i === 1 && /^(BI|BS|PD|DG|LB)$/.test(g)) || (i === 2 && /^(MI|MS|MP|MG|CB)$/.test(g)) || (i === 3 && /^(CM|E|RC)$/.test(g)) || (i === 4 && g === "T") || (i === 5 && /^(DX|DV|DP)$/.test(g)); }).map(function (p) { return "<tr><td>" + esc(p.id) + "</td><td>" + esc(p.descricao) + "</td><td>" + esc(p.especificacao) + "</td><td>" + p.qtd + "</td></tr>"; }).join("") + "</table></div>"); n++; });
+h.push("</body></html>");
+return { ok: true, html: h.join(""), paginas: n, etapas: etapas.length, avisos: [] };
+}
+var MadT3TUSaidas = { rodar: rodar, orcar: orcarT3TU, memorial: memorial, pranchas: pranchas, pecasMembros: pecasMembros, pecasModelo: pecasModelo, ifc: ifc, dae: dae, manual: manual, FAIXA: FAIXA, reacoesParedes: reacoesParedes, cargasNasParedes: cargasNasParedes, pecasDe: pecasDe, ligacoesNos: ligacoesNosTU, contagemNos: contagemNos, pinosChapasNos: pinosChapasNos };
 if (typeof module !== "undefined" && module.exports) module.exports = MadT3TUSaidas;
 else global.MadT3TUSaidas = MadT3TUSaidas;
 })(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/madt3tupranchas.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) { } } return null; }
+var EP = dep("MadEngPranchas", "./madengpranchas.js"), Q = EP && EP._p, I = Q && Q.I;
+function PL() { return dep("MadEngT3L", "./madt3lpranchas.js"); }
+function SX() { return dep("MadT3LSaidas", "./madt3lsaidas.js"); }
+var VERMELHO = "#c00000";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function br(v, c) { return I.br(v, c); }
+function R(x, n) { var p = Math.pow(10, n == null ? 3 : n); return Math.round(x * p) / p; }
+function X() { return PL()._i; }
+function eixosDe(prior, resto, sep) {
+var v = [];
+function poe(x, forte) { x = R(x, 3); for (var i = 0; i < v.length; i++) if (Math.abs(v[i] - x) < (forte ? 1e-6 : sep)) { return; } v.push(x); }
+prior.forEach(function (x) { poe(x, true); }); resto.forEach(function (x) { poe(x, false); });
+v.sort(function (a, b) { return a - b; });
+return v;
+}
+function eixosXY(res) {
+var TM = dep("MadT3TUMembros", "./madt3tumembros.js"), p = res.t3.params, inf = res.t3.info, cnt = TM.contornoDe(p), xs = [], ys = [];
+cnt.forEach(function (q) { xs.push(q[0]); ys.push(q[1]); });
+var vx = eixosDe(xs, arr(inf.xs).concat(arr(inf.pernas).map(function (L) { return L.xc; })), 0.5), vy = eixosDe(ys, arr(inf.pernas).reduce(function (o, L) { return o.concat(arr(L.zs)); }, []).concat([inf.b / 2]), 0.5);
+return { X: vx.map(function (v, i) { return { v: v, nome: String(i + 1) }; }), Y: vy.map(function (v, i) { return { v: v, nome: String.fromCharCode(65 + i) }; }) };
+}
+function nomeAsa(res, asa) { return asa === "A" ? "BARRA (asa A)" : "PERNA " + (asa === "B" ? "1 (asa B)" : "2 (asa C)"); }
+function tipoTes(res) { return res.t3.info.tesouraTipo === "howe" ? "HOWE" : "PRATT"; }
+function folhaE01(c) {
+var D = c.D, d = c.d, T = D.E.T, a = c.geo.area, res = c.res, inf = res.t3.info, lista = d.pcs.filter(function (p) { return !/^(PD|DG|MP|MG|DX|DV|DP|LB)$/.test(p.g); });
+var pl = Q.plantaPecas(c, lista, { tit: "PLANTA DE COBERTURA - ESPIGÕES, RINCÕES, CUMEEIRAS, TERÇAS, TESOURAS E MEIAS-TESOURAS (EIXOS E COTAS)", fw: 0.64 }), f3 = pl.f3, camada = X().camadaDe;
+var ord = { P: 0, PO: 0, FR: 1, T: 2, BS: 2, MS: 2, CB: 2, CM: 3, BI: 3, MI: 3, E: 4, RC: 5 };
+var itens = Q.desenharLista(D, c, lista.slice().sort(function (p, q) { return (ord[p.g] || 0) - (ord[q.g] || 0); }), f3, camada), ex = eixosXY(res);
+Q.eixosEmPlanta(c, f3, ex.X, ex.Y, pl.caixa, 12);
+Q.rotular(c, itens.filter(function (it) { return /^(E|RC|CM|BI|MI|FR)$/.test(it.pc.g); }), T.marca, { umaPorMarca: true, raio: 30 });
+Q.rotular(c, itens.filter(function (it) { return /^(BS|MS|CB|T)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 34 });
+Q.rotular(c, itens.filter(function (it) { return it.pc.prefixo === "PL"; }), T.marcaDensa, { umaPorMarca: true, raio: 30 });
+var xr = a.x + a.w * 0.66, yr = a.y + 18, PREFS = ["PL", "FR", "EP", "RC", "CB", "CM", "BS", "BI", "MS", "MI", "TL"];
+var Lg = Q.legenda(D, xr, yr, [{ tipo: "ret", cam: "MAD-PRINCIPAL", t: "espigão EP, RINCÃO RC, cumeeiras CM, banzos inferiores BI e MI, terças TL" }, { tipo: "ret", cam: "MAD-PECA", t: "pilar PL, frechal FR, banzos superiores BS e MS, caibro de meio CB" }, { tipo: "ret", cam: "MAD-PEND", t: "peça com pendência da auditoria (vermelho)" }], T.nota * 0.9);
+var yS = yr + Lg + 6, tx = [], legs = arr(inf.pernas), nRC = d.pcs.filter(function (p) { return p.g === "RC"; }).length, nEP = d.pcs.filter(function (p) { return p.g === "E"; }).length;
+tx.push("Telhado de 4 águas em " + inf.planta + " (MESMA inclinação i = " + Q.pct(inf.incl) + "), beiral " + br(inf.beiral, 2) + " m em todos os lados; barra " + br(inf.a, 2) + " x " + br(inf.b, 2) + " m (cumeeira a " + br(inf.hA - inf.Hp, 2) + " m do frechal)" + legs.map(function (L) { return "; perna " + (L.j + 1) + " de " + br(L.w, 2) + " x " + br(L.c - inf.b, 2) + " m a partir da barra (cumeeira a " + br(L.hB - inf.Hp, 2) + " m)"; }).join("") + ".");
+tx.push(nEP + " espigões EP (os do canto convexo vão do canto à cumeeira; os INTERNOS ligam o vértice V ao topo da cumeeira) e " + nRC + " RINCÃO(ÕES) RC, um por canto côncavo, até o vértice V da perna; terças das águas nas mesmas linhas, com ponta em bisel composto assentada no espigão ou no rincão (estribo, folga >= 10 mm). CALHA metálica sobre cada rincão.");
+tx.push("Frechal FR em anel: para a >= 10 mm do espigão/rincão em cada canto; a tração do anel passa pela CINTA de aço e a compressão do canto côncavo, pela sela do rincão (detalhes na folha E06). Eixos 1.. n e A.. n a partir dos vértices e das tesouras; cotas entre eixos em cm.");
+var yy2 = yS + 4 + D.textos(xr, yS + 4, tx, T.nota * 0.9, { wmax: a.x + a.w - xr - 3 }) + 2;
+Q.tabMarcas(c, xr, yy2 + 4, PREFS.filter(function (mk) { return d.pcs.some(function (p) { return p.prefixo === mk; }); }), "QUADRO DE MARCAS DA COBERTURA", 150);
+return { escala: "1:" + pl.esc0 };
+}
+function folhaE02(c) {
+var D = c.D, d = c.d, T = D.E.T, a = c.geo.area, res = c.res, inf = res.t3.info, lista = d.pcs.filter(function (p) { return /^(P|PO|FR|T|BS|MS|CB|CM)$/.test(p.g); });
+var pl = Q.plantaPecas(c, lista, { tit: "PLANTA DE TESOURAS, TERÇAS E FRECHAL (BANZOS SUPERIORES, TERÇAS TL, FRECHAL FR E PILARES PL)", fw: 0.64 }), f3 = pl.f3;
+var itens = Q.desenharLista(D, c, lista.slice().sort(function (p, q) { var o = { P: 0, PO: 0, FR: 1, T: 2, CM: 2, BS: 3, MS: 3, CB: 3 }; return (o[p.g] || 0) - (o[q.g] || 0); }), f3, X().camadaDe), ex = eixosXY(res);
+Q.eixosEmPlanta(c, f3, ex.X, ex.Y, pl.caixa, 12);
+Q.rotular(c, itens.filter(function (it) { return /^(BS|MS|CB)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 34 });
+Q.rotular(c, itens.filter(function (it) { return /^(T|FR|CM)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 30 });
+Q.rotular(c, itens.filter(function (it) { return it.pc.prefixo === "PL"; }), T.marcaDensa, { umaPorMarca: true, raio: 30 });
+var xr = a.x + a.w * 0.66, yr = a.y + 18;
+var Lg = Q.legenda(D, xr, yr, [{ tipo: "ret", cam: "MAD-PRINCIPAL", t: "cumeeira CM, terças TL" }, { tipo: "ret", cam: "MAD-PECA", t: "pilar PL, frechal FR, banzo superior BS/MS (eixo da tesoura), caibro de meio CB" }, { tipo: "ret", cam: "MAD-PEND", t: "peça com pendência da auditoria (vermelho)" }], T.nota * 0.9);
+var linhas = [], legs = arr(inf.pernas);
+linhas.push(["Barra (A)", tipoTes(res) + ", planos Z = const", br(inf.b, 2), String(arr(inf.xs).length), arr(inf.xs).map(function (x) { return br(x, 2); }).join("; ")]);
+legs.forEach(function (L) { linhas.push(["Perna " + (L.j + 1) + " (" + L.asa + ")", tipoTes(res) + ", planos X = const", br(L.w, 2), String(arr(L.zs).length), arr(L.zs).map(function (z) { return br(z, 2); }).join("; ")]); });
+var meias = d.pcs.filter(function (p) { return p.g === "MS"; }).map(function (p) { return p.marca || p.id; }), yT = yr + Lg + 8;
+var hT = I.tituloVista(D, xr, yT, "QUADRO DE TESOURAS POR ASA", null) + 1;
+var tb = D.tabela(xr, yT + hT, [{ t: "ASA" }, { t: ["TIPO", "E PLANO"] }, { t: ["VÃO", "(m)"] }, { t: "Nº" }, { t: ["POSIÇÕES", "NO EIXO (m)"] }], linhas, { fs: T.tabela * 0.85 });
+var tx = ["Meias-tesouras nas cabeceiras livres: " + (meias.length ? meias.filter(function (m, i, A) { return A.indexOf(m) === i; }).join(", ") : "nenhuma (pontas da barra encostadas nas pernas levam caibro de meio CB e tirante MI)") + ".", "A tesoura só existe onde há parede nos DOIS lados; nas bocas das pernas o assento fica a >= " + br(inf.assento, 2) + " m do canto côncavo (folga >= 20 mm entre pilares). Terças BIAPOIADAS entre tesouras, com emenda passante em cada tesoura (só força axial).", "Onde a perna é SOLTA (T) a boca não tem tirante nem meia-tesoura do lado do canto côncavo: o travamento é feito pelo X de diagonais no plano do banzo inferior (DX), dimensionado no cálculo."];
+D.textos(xr, yT + hT + tb.h + 6, tx, T.nota * 0.9, { wmax: a.x + a.w - xr - 3 });
+return { escala: "1:" + pl.esc0 };
+}
+function folhaE03(c) {
+var D = c.D, d = c.d, a = c.geo.area, T = D.E.T, tudo = d.pcs.filter(function (p) { return !/^(DX|DV|DP|LB)$/.test(p.g); }), h = (a.h - 10) / 2, w = a.w * 0.68, vp = X().vistaPecas;
+var v1 = vp(c, tudo, "xz", a.x + 4, a.y + 2, w, h, "ELEVAÇÃO FRONTAL (EIXO X) - PROJEÇÃO DE TODAS AS PEÇAS");
+var v2 = vp(c, tudo, "yz", a.x + 4, a.y + 2 + h + 6, w, h, "ELEVAÇÃO LATERAL (EIXO Z) - PROJEÇÃO DE TODAS AS PEÇAS");
+Q.rotular(c, v1.itens.filter(function (it) { return /^(E|RC|CM|T|FR)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 30 });
+var inf = c.res.t3.info, xr = a.x + w + 12, legs = arr(inf.pernas);
+var tx = ["Cumeeira da barra a " + br(inf.hA, 2) + " m do piso" + legs.map(function (L) { return "; cumeeira da perna " + (L.j + 1) + " a " + br(L.hB, 2) + " m" + (L.igual ? " (largura igual à da barra: mesma altura)" : " (mais estreita: cumeeira mais BAIXA)"); }).join("") + ". Pé-direito no respaldo: " + br(inf.Hp, 2) + " m.", "Espigões e rincões aparecem em escorço nas duas elevações; as terças são projetadas sobre o plano.", "Cortes longitudinais por asa: folha E04. Tesouras e meias-tesouras tipo de cada asa: folha E05."];
+D.textos(xr, a.y + 8, tx, T.nota * 0.9, { wmax: a.x + a.w - xr - 3 });
+return { escala: "1:" + v1.esc };
+}
+function folhaE04(c) {
+var D = c.D, d = c.d, a = c.geo.area, T = D.E.T, res = c.res, inf = res.t3.info, legs = arr(inf.pernas), n = 1 + legs.length, h = (a.h - 6 * n) / n, w = a.w * 0.72, vp = X().vistaPecas, tx = [], k = 0, esc0 = null;
+var base = d.pcs.filter(function (p) { return !/^(DX|DV|DP|LB)$/.test(p.g); });
+function faixa(lista, ci, lo, hi) { return lista.filter(function (p) { var m0 = Math.min(p.p0[ci], p.p1[ci]), m1 = Math.max(p.p0[ci], p.p1[ci]); return m1 >= lo - 1e-6 && m0 <= hi + 1e-6; }); }
+var ws = Math.max(0.6, inf.dz * 0.5), zc = inf.b / 2;
+var vA = vp(c, faixa(base, 1, zc - ws, zc + ws), "xz", a.x + 4, a.y + 2, w, h, "CORTE LONGITUDINAL DA BARRA (PLANO DA CUMEEIRA, Z = " + br(zc, 2) + " m) - PEÇAS NA FAIXA DE " + br(2 * ws, 2) + " m"); Q.rotular(c, vA.itens.filter(function (it) { return /^(E|RC|CM|T|FR|CB|MI)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 26 }); esc0 = vA.esc; k++;
+tx.push("Barra: faixa de " + br(2 * ws, 2) + " m em torno da cumeeira (Z = " + br(zc, 2) + " m); os banzos das tesouras aparecem em corte transversal.");
+legs.forEach(function (L) {
+var v = vp(c, faixa(base, 0, L.xc - ws, L.xc + ws), "yz", a.x + 4, a.y + 2 + k * (h + 6), w, h, "CORTE LONGITUDINAL DA PERNA " + (L.j + 1) + " (PLANO DA CUMEEIRA, X = " + br(L.xc, 2) + " m) - PEÇAS NA FAIXA DE " + br(2 * ws, 2) + " m");
+Q.rotular(c, v.itens.filter(function (it) { return /^(E|RC|CM|T|FR|MI|CB)$/.test(it.pc.g); }), T.marcaDensa, { umaPorMarca: true, raio: 26 }); k++;
+tx.push("Perna " + (L.j + 1) + ": faixa em torno da cumeeira (X = " + br(L.xc, 2) + " m); o rincão sobe do canto côncavo ao vértice V (Z = " + br(L.V[1], 2) + " m, cota " + br(L.hB, 2) + " m).");
+});
+var xr = a.x + w + 12; D.textos(xr, a.y + 8, tx.concat(["Cada corte é a projeção, no plano vertical da cumeeira, das peças cujo eixo cruza a faixa indicada (madeira engenharada, seções reais do cálculo)."]), T.nota * 0.9, { wmax: a.x + a.w - xr - 3 });
+return { escala: "1:" + esc0 };
+}
+function folhaE05(c) {
+var D = c.D, d = c.d, a = c.geo.area, T = D.E.T, res = c.res, inf = res.t3.info, legs = arr(inf.pernas), n = 1 + legs.length, h = (a.h - 8 * n) / n, w = a.w * 0.36, vp = X().vistaPecas, tx = [], escs = [];
+var pil = d.pcs.filter(function (p) { return /^(P|PO)$/.test(p.g); }), tip = tipoTes(res), M = res.t3.membros;
+function ult(asa) { var m = -1; M.forEach(function (x) { if (x.asa === asa && x.tes != null && x.tes > m) m = x.tes; }); return m; }
+var linhas = [{ asa: "A", nome: "BARRA", plano: "yz", pos: inf.xs[0], tes: 0, eixo: 0, msel: function (p) { return p.agua === "E" && /^(MS|MI|MP|MG)$/.test(p.g); }, mpos: [inf.a, inf.b / 2], mplano: "xz", mtxt: "MEIA-TESOURA DA CABECEIRA LESTE (EIXO Z = " + br(inf.b / 2, 2) + " m)" }];
+legs.forEach(function (L) { linhas.push({ asa: L.asa, nome: "PERNA " + (L.j + 1), plano: "xz", pos: L.zs[L.zs.length - 1], tes: ult(L.asa), eixo: 1, xl: L.xl, xr: L.xr, msel: function (p) { return p.agua === "N" && Math.abs(p.p0[0] - L.xc) < 1e-6 && /^(MS|MI|MP|MG)$/.test(p.g); }, mpos: [L.xc, L.c], mplano: "yz", mtxt: "MEIA-TESOURA DA CABECEIRA DA PERNA " + (L.j + 1) + " (EIXO X = " + br(L.xc, 2) + " m)" }); });
+linhas.forEach(function (ln, i) {
+var y = a.y + 2 + i * (h + 8), lista = d.pcs.filter(function (p) { return p.asa === ln.asa && p.tes === ln.tes && /^(BS|BI|PD|DG)$/.test(p.g); });
+var pp = pil.filter(function (p) { return ln.eixo === 0 ? Math.abs(p.p0[0] - ln.pos) < 1e-3 : (Math.abs(p.p0[1] - ln.pos) < 1e-3 && p.p0[0] >= ln.xl - 1e-3 && p.p0[0] <= ln.xr + 1e-3); });
+if (lista.length) { var v1 = vp(c, lista.concat(pp), ln.plano, a.x + 4, y, w, h, "TESOURA TIPO DA " + ln.nome + ", " + tip + " (EIXO " + (ln.eixo === 0 ? "X" : "Z") + " = " + br(ln.pos, 2) + " m) - ELEVAÇÃO"); Q.rotular(c, v1.itens, T.marcaDensa, { umaPorMarca: true, raio: 26 }); escs.push(v1.esc); }
+var ml = d.pcs.filter(ln.msel);
+if (ml.length) { var pm = pil.filter(function (p) { return Math.abs(p.p0[0] - ln.mpos[0]) < 1e-3 && Math.abs(p.p0[1] - ln.mpos[1]) < 1e-3; }), v2 = vp(c, ml.concat(pm), ln.mplano, a.x + 8 + w, y, w, h, ln.mtxt + " - ELEVAÇÃO"); Q.rotular(c, v2.itens, T.marcaDensa, { umaPorMarca: true, raio: 26 }); escs.push(v2.esc); }
+else { var cb = d.pcs.filter(function (p) { return (p.g === "CB" || p.g === "MI") && (p.agua === "E" || p.agua === "W") && ln.asa === "A"; }); if (cb.length) { var v3 = vp(c, cb, "xz", a.x + 8 + w, y, w, h, "CABECEIRA DA BARRA ENCOSTADA NA PERNA - CAIBRO DE MEIO CB E TIRANTE MI - ELEVAÇÃO"); Q.rotular(c, v3.itens, T.marcaDensa, { umaPorMarca: true, raio: 26 }); escs.push(v3.esc); } }
+});
+var xr = a.x + 2 * w + 16;
+tx.push("A diagonal " + (inf.tesouraTipo === "howe" ? "Howe é comprimida: a ponta é cortada em bisel com folga >= 10 mm das faces do banzo e do montante; a carga passa só pela chapa interna e pelos pinos." : "Pratt é tracionada; o montante é comprimido sob gravidade."));
+tx.push("Cada asa tem a SUA tesoura (vão e altura próprios): barra com vão " + br(inf.b, 2) + " m" + legs.map(function (L) { return ", perna " + (L.j + 1) + " com vão " + br(L.w, 2) + " m"; }).join("") + ". A tesoura da boca de cada perna assenta no pilar do canto côncavo e na parede, a >= " + br(inf.assento, 2) + " m do canto; não tem balanço do lado do canto côncavo (ali a água é a da barra).");
+tx.push("Meias-tesouras apoiam no pilar da parede e, no cume, na tesoura de extremidade; o banzo inferior (MI) é o tirante. Nas pontas da barra encostadas a uma perna, o caibro de meio CB e o tirante MI fazem esse papel.");
+D.textos(xr, a.y + 8, tx, T.nota * 0.9, { wmax: a.x + a.w - xr - 3 });
+return { escala: escs.length ? "1:" + escs.filter(function (e, i, A) { return A.indexOf(e) === i; }).sort(function (p, q) { return p - q; }).join(" e 1:") : "INDICADA" };
+}
+var NOME_LIG = { espigaoCumeeira: "Espigão x cumeeira", espigaoCanto: "Sela do espigão (canto)", cintaCanto: "Cinta do canto", chapaUnicaCanto: "Chapa única sela + cinta", torcaoFrechal: "Torção do frechal (canto)", meiaTesoura: "Meia-tesoura x tesoura", pontaMI: "Ponta da MI x BI", tercaEspigao: "Terça x espigão (rosca 45°)", tercaEspigaoAxial: "Terça x espigão (estribo)", rincaoApice: "Rincão no vértice V", rincaoCanto: "Rincão no canto côncavo (sela)", espigaoInterno: "Espigão interno", caibroMeio: "Caibro de meio", tercaRincao: "Terça x rincão (rosca 45°)", emendaTerca: "Emenda passante da terça", torcaoResidualBanzo: "Torção residual do banzo", pontaFrechalCabe: "Pinos cabem na ponta do frechal" };
+function nosDe(c) {
+var res = c.res, I3 = res.t3.info, L3 = (res.ligacoesT3 && res.ligacoesT3.ligacoes) || {}, S = res.secoes, d = c.d, ps = d.pcs, M = res.t3.membros;
+function folgaTxt(re) { var m = Infinity; (res.aparo ? res.aparo.folgas : []).forEach(function (f) { if (re.test(f.peca) && f.folga_mm < m) m = f.folga_mm; }); return isFinite(m) ? "Folga mínima medida no modelo aparado: " + br(m, 1) + " mm (>= 10 mm)." : "Folga de projeto: 10 mm (peça aparada na obra)."; }
+var tch = 8, ms = L3.espigaoCanto && L3.espigaoCanto.momentoSela, hostApice = S.CM ? { rot: "CM", S: S.CM } : { rot: "BS", S: S.BS }, RC = M.filter(function (m) { return m.g === "RC"; }).length, nInt = M.filter(function (m) { return m.g === "E" && m.interior; }).length, nCB = M.filter(function (m) { return m.g === "CB"; }).length;
+function par(cod, titulo, chave, A, B, extra) {
+var l = L3[chave]; if (!l || !l.pinos || !l.pinos.n) return null;
+var pnB = B.pn || (l.banzo && l.banzo.BI ? l.banzo.BI.pinos : l.pinos), chW = Math.max(l.chapa ? l.chapa.largura_mm : 0, l.banzo && l.banzo.BI && l.banzo.BI.chapa ? l.banzo.BI.chapa.largura_mm : 0, 30), gA = X().gPinos(cod + " " + A.rot, l.pinos, A.S), gB = X().gPinos(cod + " " + B.rot, pnB, B.S);
+var notas = [{ t: cod + " - " + titulo + ": " + (l.descricao || "") }, "1 - chapa interna de aço t = " + tch + " mm, " + chW + " mm de largura, em fenda nas duas peças; 2 - " + l.pinos.n + " pinos inox A4 Ø" + Math.round(l.pinos.d * 1000) + " em " + A.rot + " e " + pnB.n + " pinos Ø" + Math.round(pnB.d * 1000) + " em " + B.rot + " (esquema em linha; posição e ângulo do encontro: folhas E01 e E05); 3 - FOLGA CONSTRUTIVA de 10 mm entre as peças (cotada): nada encosta, a carga passa só por chapa + pinos; furo da chapa Ø(d + 1).",
+"Espaçamentos real | mínimo (mm) - " + A.rot + ": " + Q.esp2(gA) + (pnB !== l.pinos ? "; " + B.rot + ": " + Q.esp2(gB) : "; a peça hospedeira " + B.rot + " leva o MESMO NÚMERO de pinos (grupo espelhado): o arranjo (a2, a4) se ajusta à seção da hospedeira respeitando os mínimos — a confirmar pelo RT/fabricante") + ". Mínimo: " + Q.FONTE_MIN + "; conferir o ETA do fabricante.", Q.etaLinha(l.pinos, cod + "-pinos", "Pinos em " + A.rot + " (Johansen):")];
+if (pnB !== l.pinos) notas.push(Q.etaLinha(pnB, cod + "-pinos-b", "Pinos em " + B.rot + (l.banzo && l.banzo.BI ? " (força ⊥ às fibras)" : "") + " (Johansen):"));
+var chp = l.banzo && l.banzo.BI && l.banzo.BI.chapa && l.banzo.BI.chapa.eta > (l.chapa ? l.chapa.eta : 0) ? l.banzo.BI.chapa : l.chapa; if (chp) notas.push(Q.etaLinha(chp, cod + "-chapa", "Chapa (NBR 8800: bruta, líquida fu/1,35 e esmagamento):"));
+(extra || []).forEach(function (t) { notas.push(t); });
+return { cod: cod, titulo: titulo, A: { pn: l.pinos, S: A.S, rot: A.rot }, B: { pn: pnB, S: B.S, rot: B.rot }, gap: 10, chW: chW, tch: tch, notas: notas };
+}
+var cels = [
+par("N1", "SELA DO ESPIGÃO NO CANTO CONVEXO", "espigaoCanto", { rot: "EP", S: S.E }, { rot: "FR", S: S.FR }, [{ t: (ms ? "Momento da sela M = N·δ = " + br(ms.M_d_kNm, 2) + " kN·m (δ = h_FR/2 = " + br(ms.delta_m * 100, 0) + " cm); " : "") + "arrancamento " + br(L3.espigaoCanto ? L3.espigaoCanto.arrancamento_kN : 0, 2) + " kN (inclui a faixa de aresta, cpe local -1,2, a confirmar pelo RT). " + folgaTxt(/^FR\d+\/(ini|fim)/) }]),
+par("N2", "CINTA DO CANTO (FRECHAL X FRECHAL)", "cintaCanto", { rot: "FR", S: S.FR }, { rot: "FR", S: S.FR }, [{ t: "Força de EXTREMIDADE do frechal no canto: " + br(L3.cintaCanto ? L3.cintaCanto.N_fim_kN : 0, 1) + " kN. Os dois frechais param a >= 10 mm do espigão. " + folgaTxt(/^FR\d+\/(ini|fim)/) }]),
+par("N3", "ESPIGÃO NA CUMEEIRA", "espigaoCumeeira", { rot: "EP", S: S.E }, hostApice, [{ t: "Ponta do espigão aparada a >= 10 mm das faces de cumeeira, banzos, meia-tesoura e dos outros espigões; envolvente dos modelos (a) e (b). " + folgaTxt(/^E\d+$/) }]),
+par("N4", "MEIA-TESOURA X TESOURA DE EXTREMIDADE", "meiaTesoura", { rot: "MS", S: S.MS }, { rot: "BS", S: S.BS }, [{ t: "Ponta do banzo superior da meia-tesoura a >= 10 mm das faces dos banzos da tesoura. Folga de projeto: 10 mm." }]),
+par("N5", "PONTA DA MI NO BI (NÓ CENTRAL)", "pontaMI", { rot: "MI", S: S.MI }, { rot: "BI", S: S.BI }, [{ t: "Ligação própria: N da MI = " + br(L3.pontaMI ? L3.pontaMI.F_d : 0, 1) + " kN + montante do mesmo nó = " + br(L3.pontaMI ? L3.pontaMI.montante_kN : 0, 1) + " kN; resultante ⊥ às fibras do BI = " + br(L3.pontaMI ? L3.pontaMI.resultante_perp_kN : 0, 1) + " kN. Folga de projeto: 10 mm." }]),
+par("N6", "TERÇA NO ESPIGÃO OU NO RINCÃO (ESTRIBO)", "tercaEspigaoAxial", { rot: "TL", S: S.T }, { rot: "EP", S: S.E }, [{ t: "Terça em bisel COMPOSTO (45° em planta) a >= 10 mm do espigão ou do rincão, em estribo de aço; rosca total a 45°: " + (L3.tercaEspigao ? L3.tercaEspigao.porApoio + " parafusos WT-T por apoio (eta " + br(L3.tercaEspigao.eta, 3) + ")" : "") + ". " + folgaTxt(/^T[A-Z]*\d+_\d+\/(ini|fim)/) }]),
+par("N7", "RINCÃO NO VÉRTICE V (CUMEEIRA DA PERNA E ESPIGÃO INTERNO)", "rincaoApice", { rot: "RC", S: S.RC || S.E }, { rot: "CM", S: S.CM || S.BS }, [{ t: "Ponta do rincão aparada a >= 10 mm das faces da cumeeira da perna e do espigão interno; chapa interna em fenda + pinos (" + RC + " rincão(ões) na planta, um por canto côncavo). " + folgaTxt(/^RC\d+$/) }]),
+par("N8", "RINCÃO NO CANTO CÔNCAVO (SELA DE AÇO E CALHA)", "rincaoCanto", { rot: "RC", S: S.RC || S.E }, { rot: "FR", S: S.FR }, [{ t: "Sela de aço sobre o cruzamento dos frechais do canto côncavo; compressão do anel " + br(res.rincao && res.rincao.cintaC ? res.rincao.cintaC.N : 0, 1) + " kN passa pela chapa (os frechais param a >= 10 mm do rincão). A CALHA metálica do rincão lança no beiral para a calha do perímetro. A chapa do canto côncavo NÃO foi verificada à instabilidade: pendência ao RT." }]),
+nInt ? par("N9", "ESPIGÃO INTERNO (VÉRTICE V X TOPO DA CUMEEIRA)", "espigaoInterno", { rot: "EP", S: S.E }, { rot: "CM", S: S.CM || S.BS }, [{ t: "Espigão interno (canto virtual do retângulo da barra): " + nInt + " na planta; nas duas pontas chapa interna em fenda + pinos; pontas a >= 10 mm das faces vizinhas." }]) : null,
+nCB ? par("N10", "CAIBRO DE MEIO (CABECEIRA DA BARRA ENCOSTADA NA PERNA)", "caibroMeio", { rot: "CB", S: S.CB }, { rot: "CM", S: S.CM || S.BS }, [{ t: "Pé sobre o pilar de meio de parede (sela) e topo na cumeeira da barra; o tirante MI leva o empuxo horizontal do pé até a primeira tesoura da barra (" + nCB + " caibro(s) de meio na planta)." }]) : null
+].filter(function (o) { return !!o; });
+return cels;
+}
+function posGrupo(pn) { return X().posGrupo(pn); }
+function elevNo(o) {
+return function (cc, r) {
+var A = o.A, B = o.B, gA = posGrupo(A.pn), gB = posGrupo(B.pn), g = o.gap, hA = Math.round(A.S.h * 1000), hB = Math.round(B.S.h * 1000), hh = Math.max(hA, hB), chW = o.chW, m = 36;
+(cc.cels.pinosDes = cc.cels.pinosDes || []).push({ cod: o.cod, grupo: A.rot, n: gA.xr.length * gA.zc.length, d: gA.d }, { cod: o.cod, grupo: B.rot, n: gB.xr.length * gB.zc.length, d: gB.d });
+var V = Q.vista(cc, r, { x0: -gA.L - m, x1: g + gB.L + m, z0: -hh / 2, z1: hh / 2 }, [14, 14, 14, 24], [5, 10, 20, 25, 50]), xa = function (x) { return -gA.L + x; }, xb = function (x) { return g + gB.L - x; };
+V.fundo(-gA.L - m, -hA / 2, gA.L + m, hA); V.mad(-gA.L - m, -hA / 2, gA.L + m, hA, { horiz: true }); V.vis(-gA.L - m, -hA / 2, gA.L + m, hA, "MAD-PECA");
+V.fundo(g, -hB / 2, gB.L + m, hB); V.mad(g, -hB / 2, gB.L + m, hB, { horiz: true }); V.vis(g, -hB / 2, gB.L + m, hB, "MAD-PECA");
+V.oc(-gA.L, -chW / 2, gA.L, chW); V.oc(g, -chW / 2, gB.L, chW); V.aco(0, -chW / 2, g, chW);
+gA.xr.forEach(function (x) { gA.zc.forEach(function (z) { V.pino(xa(x), z, gA.d, true); }); }); gB.xr.forEach(function (x) { gB.zc.forEach(function (z) { V.pino(xb(x), z, gB.d, true); }); });
+V.cadH([-gA.L].concat(gA.xr.map(xa)).concat([0]), -hh / 2, -6, [String(gA.a3)].concat(gA.xr.slice(1).map(function () { return String(gA.a1); })).concat([String(gA.L - gA.xr[gA.xr.length - 1])]), { semExt: true });
+V.cadH([g].concat(gB.xr.map(xb).reverse()).concat([g + gB.L]), -hh / 2, -6, [String(gB.L - gB.xr[gB.xr.length - 1])].concat(gB.xr.slice(1).map(function () { return String(gB.a1); })).concat([String(gB.a3)]), { semExt: true });
+V.ch(0, g, hh / 2, 9, String(g), { semExt: false });
+V.tx(-4, hh / 2 + 5, A.rot + " (" + gA.xr.length * gA.zc.length + " pinos Ø" + gA.d + ")", null, { al: "D" }); V.tx(g + 4, hh / 2 + 5, B.rot + " (" + gB.xr.length * gB.zc.length + " pinos Ø" + gB.d + ")", null, { al: "E" });
+V.bal(g / 2, -chW / 2, 0, 13, 1); V.bal(xa(gA.xr[0]), gA.zc[0], -12, -14, 2);
+return V;
+};
+}
+function corteNo(o) { return X().corteNo(o); }
+function chapaNo(o) { return X().chapaNo(o); }
+function celulaNo(c, x, y, w, h, o) {
+var D = c.D, T = D.E.T, ht = I.tituloVista(D, x + 1, y + 1, o.cod + " - " + o.titulo, null), by = y + ht, bh = h - ht - 2, h1 = Math.round(bh * 0.32), h2 = Math.round(bh * 0.22), hv = 10, escs = [], reg = { cod: o.cod, vistas: [] };
+[["ELEVAÇÃO DO NÓ (corte na fenda; folga " + o.gap + " mm cotada)", elevNo(o), { x: x + 1, y: by, w: w - 2, h: h1 }], ["CORTE (peça " + o.A.rot + ")", corteNo(o), { x: x + 1, y: by + h1 + 2, w: w / 2 - 2, h: h2 }], ["CHAPA DE AÇO (peça isolada)", chapaNo(o), { x: x + w / 2 + 1, y: by + h1 + 2, w: w / 2 - 2, h: h2 }]].forEach(function (v) {
+var rp = v[2], V = v[1](c, { x: rp.x, y: rp.y + hv, w: rp.w, h: rp.h - hv });
+D.texto(rp.x + 0.5, rp.y + 3.4, v[0] + " - ESC 1:" + V.esc, T.nota, { peso: 0.12, attr: ' data-vista="1"' }); reg.vistas.push({ t: v[0], esc: V.esc }); if (escs.indexOf(V.esc) < 0) escs.push(V.esc);
+});
+var yn = by + h1 + h2 + 5, hu = D.textos(x + 1, yn, o.notas, T.nota * 0.92, { wmax: w - 3 });
+if (yn + hu > y + h + 0.5) c.avisos.push("Folha " + c.rotulo + ": a nota de " + o.cod + " passa do painel (" + Math.round(yn + hu - y) + " > " + Math.round(h) + " mm).");
+c.cels.push(reg); return escs;
+}
+function pontoPerto(ps, P, r) { return ps.filter(function (pc) { var A = pc.p0, B = pc.p1, dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2], L2 = dx * dx + dy * dy + dz * dz, t = Math.max(0, Math.min(1, ((P[0] - A[0]) * dx + (P[1] - A[1]) * dy + (P[2] - A[2]) * dz) / (L2 || 1))), Q2 = [A[0] + dx * t, A[1] + dy * t, A[2] + dz * t]; return Math.hypot(Q2[0] - P[0], Q2[1] - P[1], Q2[2] - P[2]) < r; }); }
+function folhaNos(c, cels, ind) {
+var D = c.D, d = c.d, a = c.geo.area, T = D.E.T, res = c.res, I3 = res.t3.info, ps = d.pcs, M = res.t3.membros, escs = [], vp = X().vistaPecas;
+var larg = 128, h = Math.round(a.h * 0.27), tira = /^(DX|DV|DP|LB|BS|BI|PD|DG)$/, tiraC = /^(DX|DV|DP|LB|MI|MP|MG|PD|DG)$/;
+var cm = M.filter(function (m) { return m.g === "CM"; })[0], rc = M.filter(function (m) { return m.g === "RC"; })[0], L0 = arr(I3.pernas)[0];
+var alvo = [[0, 0, I3.Hp], cm ? (cm.eixo0 || cm.p0) : [I3.b / 2, I3.b / 2, I3.hA], L0 ? L0.V : [I3.b / 2, I3.b / 2, I3.hA], rc && rc.canto ? [rc.canto[0], rc.canto[1], I3.Hp] : [0, I3.b, I3.Hp]];
+var tit = ["A - ESPIGÃO NO CANTO CONVEXO (PLANTA)", "B - ESPIGÃO NA CUMEEIRA (PLANTA)", "C - RINCÃO NO VÉRTICE V (PLANTA)", "D - RINCÃO NO CANTO CÔNCAVO (PLANTA)"], fil = [tira, tiraC, tiraC, tira], raio = [1.1, 1.0, 1.0, 1.1];
+if (ind === 0) {
+for (var k = 0; k < 4; k++) {
+var lst = pontoPerto(ps, alvo[k], raio[k]).filter(function (p) { return !fil[k].test(p.g); });
+if (!lst.length) { c.avisos.push("Folha " + c.rotulo + ": nenhuma peça perto do ponto " + tit[k]); continue; }
+var xk = a.x + 2 + k * (larg + 3), v = vp(c, lst, "xy", xk, a.y + 2, larg, h, tit[k]); Q.rotular(c, v.itens, T.marcaDensa, { umaPorMarca: true, raio: 20 });
+var pt = v.f3(alvo[k]); D.circ(pt[0], pt[1], 4, "MAD-FINA"); D.linha(pt[0] + 3, pt[1] - 3, pt[0] + 14, pt[1] - 16, "MAD-FINA"); escs.push(v.esc);
+}
+}
+var L3 = (res.ligacoesT3 && res.ligacoesT3.ligacoes) || {}, folg = res.aparo && res.aparo.resumo ? res.aparo.resumo : { n: 0, minimo_mm: 0 };
+if (ind === 0) {
+var xq = a.x + 2 + 4 * (larg + 3) + 3, wq = a.x + a.w - xq - 2, linhas = [];
+["espigaoCumeeira", "espigaoCanto", "cintaCanto", "meiaTesoura", "pontaMI", "tercaEspigao", "rincaoApice", "rincaoCanto"].forEach(function (kk) { var l = L3[kk]; if (!l) return; linhas.push([NOME_LIG[kk], l.pinos && l.pinos.n ? l.pinos.n + " pinos Ø" + Math.round((l.pinos.d || 0) * 1000) : (l.porApoio ? l.porApoio + " parafusos WT-T" : "-"), br(l.eta, 3), l.ok === false ? "NÃO ATENDE" : "ok"]); });
+if (wq > 60) { D.tabela(xq, a.y + 2, [{ t: "LIGAÇÃO" }, { t: "FIXADORES" }, { t: "η" }, { t: "SITUAÇÃO" }], linhas, { fs: T.tabela * 0.8 }); D.textos(xq, a.y + 2 + 6 * (linhas.length + 2), ["FOLGA CONSTRUTIVA >= 10 mm: " + folg.n + " pontas aparadas; mínima medida " + br(folg.minimo_mm, 1) + " mm. A carga passa SÓ pelas chapas de aço internas (t = 8 mm), selas/estribos e pinos inox. Quadro completo de ligações: folha E07."], T.nota * 0.85, { wmax: wq - 2 }); }
+}
+var y0 = ind === 0 ? a.y + h + 6 : a.y + 2, cw = (a.w - 4 - 2 * 3) / 3, ch = ind === 0 ? (a.h - h - 6 - 2 - 6) / 3 : (a.h - 4 - 2 - 6) / 3;
+cels.forEach(function (o, i) { escs = escs.concat(celulaNo(c, a.x + 2 + (i % 3) * (cw + 3), y0 + Math.floor(i / 3) * (ch + 3), cw, ch, o)); });
+var u = []; escs.sort(function (p, q) { return p - q; }).forEach(function (e) { if (u.indexOf(e) < 0) u.push(e); });
+return { escala: u.length ? u.map(function (e) { return "1:" + e; }).join(" e ") : "INDICADA" };
+}
+function folhaE06(c) { var cs = nosDe(c); c.d.nos = cs; return folhaNos(c, cs.slice(0, 9), 0); }
+function folhaE06b(c) { return folhaNos(c, (c.d.nos || nosDe(c)).slice(9), 1); }
+function folhaE07(c) {
+var D = c.D, a = c.geo.area, T = D.E.T, res = c.res, L3 = (res.ligacoesT3 && res.ligacoesT3.ligacoes) || {}, linhas = [];
+Object.keys(NOME_LIG).forEach(function (k) {
+var l = L3[k]; if (!l) return;
+var fx = l.pinos && l.pinos.n ? l.pinos.n + " pinos Ø" + Math.round((l.pinos.d || 0) * 1000) + (l.banzo && l.banzo.BI ? " + " + l.banzo.BI.pinos.n + " no BI" : "") + (l.chapa && l.chapa.t_mm ? "; chapa t = " + l.chapa.t_mm + " mm" : "") : (l.porApoio ? l.porApoio + " parafusos WT-T 8,2 × 300 por apoio" : (l.chapa && l.chapa.t_mm ? "chapa t = " + l.chapa.t_mm + " mm" : "-"));
+linhas.push([NOME_LIG[k], fx, isFinite(l.eta) ? br(l.eta, 3) : "-", l.ok === false ? "NÃO ATENDE" : "ok"]);
+});
+var hT = I.tituloVista(D, a.x + 4, a.y + 2, "QUADRO DE LIGAÇÕES - FIXADORES, η E SITUAÇÃO (CÁLCULO DETALHADO DOS NÓS)", "SEM ESCALA") + 2;
+var tb = D.tabela(a.x + 4, a.y + 2 + hT, [{ t: "LIGAÇÃO" }, { t: "FIXADORES" }, { t: "η" }, { t: "SITUAÇÃO" }], linhas, { fs: T.tabela * 0.9, hl: 4.6 });
+var xr = a.x + a.w * 0.58, folg = res.aparo && res.aparo.resumo ? res.aparo.resumo : { n: 0, minimo_mm: 0 }, y = a.y + 2;
+var wmax = a.x + a.w - xr - 3, tx = [], nv = arr(res.naoVerificado), pe = arr(res.pendenciasRT);
+var hF = I.tituloVista(D, xr, y, "FOLGAS CONSTRUTIVAS (APARO)", "SEM ESCALA") + 2;
+y += hF + D.textos(xr, y + hF, ["Folga construtiva >= 10 mm em " + folg.n + " pontas aparadas (espigão x cumeeira, frechal nos 2 lados de cada canto, terças em bisel, " + (res.t3.info.tesouraTipo === "howe" ? "diagonais Howe, " : "") + "rincão): mínima medida " + br(folg.minimo_mm, 1) + " mm. Auditor de encontros: " + (res.auditoria && res.auditoria.ok ? "sem achado" : arr(res.auditoria && res.auditoria.achados).length + " achado(s) (peças em vermelho)") + "."], T.nota * 0.9, { wmax: wmax }) + 4;
+var hN = I.tituloVista(D, xr, y, "NÃO VERIFICADO - ESTRUTURA PRELIMINAR ATÉ O RT CONFERIR", null) + 2;
+y += hN + D.textos(xr, y + hN, nv.length ? nv : ["Nada declarado como não verificado."], T.nota * 0.9, { wmax: wmax, cor: VERMELHO }) + 4;
+var hP = I.tituloVista(D, xr, y, "PENDÊNCIAS AO RT - CANTOS CÔNCAVOS (VENTO)", null) + 2;
+y += hP + D.textos(xr, y + hP, pe.length ? pe.map(function (q) { return q.texto || String(q); }) : ["Sem canto côncavo com pendência."], T.nota * 0.9, { wmax: wmax }) + 4;
+D.textos(xr, y, ["Pinos inox A4, chapas t = 8 mm (NBR 8800: seção bruta, líquida fu/1,35 e esmagamento) e parafusos de rosca total (SFS WT-T 8,2 × 300, ETA-12/0063) dimensionados com os esforços do próprio modelo 3D. Mínimos: " + Q.FONTE_MIN + "; conferir o ETA do fabricante.", SX().EXIGENCIA], T.nota * 0.85, { wmax: wmax });
+if (a.y + 2 + hT + tb.h > a.y + a.h) c.avisos.push("Folha " + c.rotulo + ": o quadro de ligações passa do pé da folha.");
+return { escala: "SEM ESCALA" };
+}
+function folhaE10(c) { return Q.folhaE10(c); }
+function gerar(res, opcoes) {
+opcoes = opcoes || {}; var avisos = [];
+if (!EP || !Q || !I) return { ok: false, folhas: [], avisos: ["js/madengpranchas.js não carregou."] };
+if (!PL() || !SX()) return { ok: false, folhas: [], avisos: ["js/madt3lpranchas.js / js/madt3lsaidas.js não carregaram (desenhistas do nó)."] };
+var P = Q.PR(); if (!P || !P.carimboRA) return { ok: false, folhas: [], avisos: ["Motor de pranchas (js/prancha.js) não carregado."] };
+if (!res || res.tipologia !== "T3TU" || !res.t3 || !arr(res.t3.membros).length || !res.fonte || !arr(res.fonte.pecas).length || !res.ligacoes || !res.secoes || !res.ligacoesT3 || !res.ligacoesT3.ligacoes) return { ok: false, folhas: [], avisos: ["Resultado do cálculo da T3TU sem membros/ligações detalhadas: não há pranchas."] };
+var SAp = dep("MadEngSaidas", "./madengsaidas.js"), preliminar = opcoes.preliminar != null ? !!opcoes.preliminar : !!(SAp && SAp.preliminar(res).preliminar);
+var E = I.estilo(opcoes.padrao);
+Object.keys(Q.PADRAO_ENG.base).forEach(function (k) { var b = E.camadas[Q.PADRAO_ENG.base[k]]; E.camadas[k] = { mm: b.mm, dash: b.dash, cor: b.cor }; });
+var formato = P.FORMATOS[opcoes.formato] ? opcoes.formato : "A1", geo = P.geometria(formato, "paisagem", "RA"), codigo = Q.txt(opcoes.codigo).trim() || "EST-MAD-T3TU", rev = (Q.txt(opcoes.revisao).trim() || "R00").toUpperCase(), data = Q.txt(opcoes.data).trim() || Q.hoje();
+var classe = Q.txt(opcoes.classe) || Q.classeDe((arr(res.fonte.pecas).filter(function (x) { return /MLC/.test(x.material || ""); })[0] || {}).material || "MLC GL24h");
+var ctx0 = { res: res, E: E, geo: geo, op: opcoes, rev: rev, avisos: avisos, classe: classe, pc: [], cels: [] }; ctx0.d = PL().contexto(res); ctx0.pend = ctx0.d.pend;
+var volOrcG = {}; arr(res.fonte.pecas).forEach(function (x) { if (/MLC/.test(x.material || "") && x.volume_m3) volOrcG[x.marca] = (volOrcG[x.marca] || 0) + x.volume_m3; });
+var volSolG = {}, volSolTot = 0, volNomTot = 0; arr(ctx0.d.pcs).forEach(function (pc) { pc.volSolido = pc.vol; volSolG[pc.g] = (volSolG[pc.g] || 0) + pc.vol; volSolTot += pc.vol; });
+arr(ctx0.d.pcs).forEach(function (pc) { if (volOrcG[pc.g] > 0 && volSolG[pc.g] > 0) pc.vol = pc.vol * volOrcG[pc.g] / volSolG[pc.g]; volNomTot += pc.vol; });
+var pcPorId = {}; arr(ctx0.d.pcs).forEach(function (pc) { pcPorId[pc.id] = pc; });
+arr(ctx0.d.marcas && ctx0.d.marcas.tab).forEach(function (m) { var vt = 0; arr(m.ids).forEach(function (id) { if (pcPorId[id]) vt += pcPorId[id].vol; }); m.volTot = vt; m.volUnit = m.qtd ? vt / m.qtd : 0; });
+if (!arr(ctx0.d.pcs).length) return { ok: false, folhas: [], avisos: ["Nenhuma peça desenhável nos membros do resultado: não há pranchas."] };
+var nNos = nosDe(Object.assign({}, ctx0, { d: ctx0.d })).length;
+var ORDEM = [["E01", "cobertura", folhaE01, null, "PLANTA DE COBERTURA - ESPIGÕES, RINCÕES, CUMEEIRAS, TERÇAS, TESOURAS (EIXOS E COTAS)"], ["E02", "planta-tesouras", folhaE02, null, "PLANTA DE TESOURAS, TERÇAS E FRECHAL"], ["E03", "elevacoes", folhaE03, null, "ELEVAÇÕES FRONTAL E LATERAL"], ["E04", "cortes", folhaE04, null, "CORTES LONGITUDINAIS POR ASA"], ["E05", "tesouras", folhaE05, null, "TESOURAS TIPO E MEIAS-TESOURAS POR ASA"], ["E06", "nos", folhaE06, null, "DETALHES DOS NÓS - ESPIGÃO, RINCÃO, CANTO CÔNCAVO, MEIA-TESOURA, TERÇA, CINTA"]];
+if (nNos > 9) ORDEM.push(["E06b", "nos-2", folhaE06b, null, "DETALHES DOS NÓS (CONTINUAÇÃO) - ESPIGÃO INTERNO E CAIBRO DE MEIO"]);
+ORDEM.push(["E07", "ligacoes", folhaE07, null, "QUADRO DE LIGAÇÕES, FOLGAS, NÃO VERIFICADO E PENDÊNCIAS AO RT"], ["E10", "pecas", folhaE10, null, "LISTA DE PEÇAS POR POSIÇÃO"]);
+var EPr = dep("MadEncaixePranchas", "./madencaixepranchas.js"); if (EPr && opcoes.fichasCorte !== false) { try { ORDEM = ORDEM.concat(EPr.defs(res, ORDEM.length + 1)); } catch (e) { avisos.push("Fichas de corte: " + e.message); } }
+var feitas = [];
+ORDEM.forEach(function (def, i) {
+var D = new I.Desenho(E, opcoes.depurar ? [] : null), c = {}, resF = {}; Object.keys(ctx0).forEach(function (k) { c[k] = ctx0[k]; }); c.D = D; c.rotulo = (i + 1 < 10 ? "0" : "") + (i + 1);
+try { resF = def[2](c) || {}; } catch (e) { avisos.push("Folha " + def[0] + ": " + (e && e.message ? e.message : String(e)) + (e && e.stack ? " @ " + String(e.stack).split("\n")[1] : "")); D.texto(geo.area.x + 10, geo.area.y + 20, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: VERMELHO }); }
+feitas.push({ def: def, D: D, escala: resF.escala || "INDICADA", rotulo: c.rotulo, titulo: def[4] });
+});
+var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00", inf = res.t3.info;
+var pr = P.normalizar({ id: "madt3tupranchas", nome: "Estrutura de madeira engenharada (T3TU, 4 águas em " + inf.planta + " com rincão por canto côncavo) - projeto executivo", formato: formato, orientacao: "paisagem", origem: "madeira",
+carimbo: { modelo: "RA", empresa: empObj ? "" : Q.txt(emp), responsavel: Q.txt(opcoes.responsavel), registro: Q.txt(opcoes.registro), titulo: Q.txt(opcoes.tituloProfissional), obra: Q.txt((preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + (opcoes.obra || "")), proprietario: Q.txt(opcoes.proprietario),
+contratante: Q.txt(opcoes.contratante), local: Q.txt(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, Q.txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
+folhas: feitas.map(function (f, i) { return { id: f.def[1], n: i + 1, conteudo: f.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
+var notas = [{ t: "Telhado de 4 águas em " + inf.planta + " (T3TU). Cotas e seções de madeira em centímetros; ferragem e chapa em milímetros; níveis em metros. Não medir no desenho." }, { t: "Marca da peça: {marca} - MLC " + classe + " - {b}x{h} x {L} (cm), igual em todas as folhas, na tabela e no IFC." }, { t: "Pontas aparadas com folga >= 10 mm: a carga passa só por chapa de aço interna (t = 8 mm), sela/estribo e pinos inox. Tratamento NBR 16143 conforme a tabela E10." }, { t: "Vento em 4 águas em " + inf.planta + ": premissa da Tabela 5 da NBR 6123 (duas águas) por asa, a confirmar pelo RT; sobrepressão local na reentrância de cada canto côncavo e sombreamento entre as asas: PENDENTES (folha E07)." }, { t: SX().EXIGENCIA }, { t: "NÃO VERIFICADO (folha E07): chapa do canto côncavo e, no T, ligações do travamento da boca — estrutura PRELIMINAR até o RT conferir." }, { t: "VERMELHO = o que a auditoria apontou." }];
+notas.push({ t: "Volume do quadro de peças = volume nominal (seção x comprimento entre eixos) = volume do orçamento: " + I.br(volNomTot, 3) + " m3. O sólido 3D cortado (aparo das pontas, encaixes, rebaixo do frechal) soma " + I.br(volSolTot, 3) + " m3; a diferença de " + I.br(volNomTot - volSolTot, 3) + " m3 é madeira de compra, não perda de serviço." });
+var blocos = [{ titulo: "NOTAS GERAIS", itens: notas }];
+var camadas = {}; Object.keys(Q.MP.PADRAO_MAD.camadas).forEach(function (k) { camadas[k] = Q.MP.PADRAO_MAD.camadas[k]; }); Object.keys(Q.PADRAO_ENG.layers).forEach(function (k) { camadas[k] = Q.PADRAO_ENG.layers[k]; });
+var folhas = feitas.map(function (f, i) {
+var D = f.D, fl = pr.folhas[i], W = geo.papel.w, H = geo.papel.h, M = geo.moldura, Fd = new I.Desenho(E, opcoes.depurar ? [] : null);
+Fd.ret(M.x, M.y, M.w, M.h, "MAD-MOLDURA");
+try { I.colunaNotas(Fd, geo, blocos); } catch (e) { avisos.push("Notas: " + e.message); }
+var rotuloFolha = f.rotulo + "/" + (feitas.length < 10 ? "0" : "") + feitas.length; I.carimbo(Fd, pr, fl, geo, empObj, opcoes.logo || null, rotuloFolha);
+var numero = codigo + "-E" + f.rotulo;
+var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + I.n(W) + 'mm" height="' + I.n(H) + 'mm" viewBox="0 0 ' + I.n(W) + " " + I.n(H) + '" font-family="' + I.FONTE + '" data-folha="' + f.def[1] + '" data-numero="' + I.esc(numero) + '">' +
+"<title>" + I.esc(numero + " - " + f.titulo + " - " + rev) + "</title>" + '<rect x="0" y="0" width="' + I.n(W) + '" height="' + I.n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + '<text x="' + I.n(W / 2) + '" y="7" font-size="3" text-anchor="middle" fill="#c00000" data-faixa="1">' + I.esc(((preliminar ? "PRELIMINAR — NÃO ATENDE — " : "") + SX().FAIXA)) + "</text></svg>";
+var o = { id: f.def[1], rotulo: f.rotulo, numero: numero, titulo: f.titulo, formato: formato, escala: f.escala, svg: svg, rotuloCarimbo: rotuloFolha };
+if (opcoes.depurar) o.caixasTexto = (D.caixas || []).concat(Fd.caixas || []);
+o.dxf = { familia: "madeira", pr: pr, folha: fl, geo: geo, empresa: empObj, rotulo: rotuloFolha, logo: !!opcoes.logo, padrao: opcoes.padrao || null, camadas: camadas, tituloH: E.T.titulo, codigo: codigo };
+return o;
+});
+folhas.forEach(function (f) { if (/NaN|undefined/.test(f.svg)) avisos.push("Folha " + f.numero + ": há valor inválido (NaN/undefined) no desenho."); });
+return { ok: true, folhas: folhas, avisos: avisos, celulas: ctx0.cels, tabela: ctx0.d.marcas.tab, marcas: ctx0.d.marcas.porId, desenhaveis: ctx0.d.pcs };
+}
+var MadEngT3TU = { gerar: gerar, nosDe: nosDe, eixosXY: eixosXY, NOME_LIG: NOME_LIG };
+global.MadEngT3TU = MadEngT3TU;
+if (typeof module !== "undefined" && module.exports) module.exports = MadEngT3TU;
+})(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/madt5.js ==== */
 try {
@@ -175876,7 +176147,9 @@ var kx = Math.round(q.s * 1000); if (!seen[kx] && Object.keys(seen).length < 2) 
 });
 isoPonta(D, Sj, P, e, xd + wd - 18, yd + 16, 30);
 var ty = yP + bb / 2 + 5 + 3.2 * Math.min(3, Object.keys(seen).length);
-pe.planos.forEach(function (a, k) { D.texto(xd, ty + k * 3.9, (a.tipo === "folga" ? "folga " + br(a.folga_mm, 0) : "contato") + " " + (a.contra || "-") + ": pl " + br(Math.abs(a.planta), 1) + " el " + br(Math.abs(a.elevacao), 1) + " bis " + br(a.bisel, 1), fs); });
+var nl2 = Math.max(1, pe.planos.length), tyMax = y + h - 7.2 - (nl2 - 1) * 3.0, passo = 3.9;
+if (!(c && c.res && c.res.tipologia === "T3TU")) { } else if (ty > tyMax) { ty = tyMax; passo = 3.0; } else if (ty + (nl2 - 1) * 3.9 > y + h - 7.2) passo = Math.max(3.0, (y + h - 7.2 - ty) / Math.max(1, nl2 - 1));
+pe.planos.forEach(function (a, k) { D.texto(xd, ty + k * passo, (a.tipo === "folga" ? "folga " + br(a.folga_mm, 0) : "contato") + " " + (a.contra || "-") + ": pl " + br(Math.abs(a.planta), 1) + " el " + br(Math.abs(a.elevacao), 1) + " bis " + br(a.bisel, 1), fs); });
 if (!pe.planos.length) D.texto(xd, ty, "esquadro (90 graus) ou ponta livre", fs);
 });
 var nfx = arr(P.fixa).reduce(function (q, z) { return q + z.n; }, 0);
@@ -178153,7 +178426,7 @@ h += '<div class="meg-2col">' + sec({ titulo: "Casa de duas águas (T2)", corpoH
 }
 if (e.tip === "T3") {
 var in3 = '<div class="meg-grade">' +
-campo("Planta do telhado", "t3.planta", { tipo: "sel", opcoes: [["retangular", "Retangular ou quadrada (4 águas)"], ["L", "Em L (6 águas, com rincão)"]] }) + campo(est().t3.planta === "L" ? "Vão da asa A, a larga (largura entre eixos dos pilares)" : "Vão (largura entre eixos dos pilares)", "t3.vao", { un: "m", dica: "Mínimo 3 m" }) + campo(est().t3.planta === "L" ? "Comprimento da asa A (direção X)" : "Comprimento (direção da cumeeira)", "t3.comp", { un: "m", dica: est().t3.planta === "L" ? "L canônico: asa A ao longo de X (a larga) e asa B ao longo de Z, com o canto externo na origem; comprimento A ≥ comprimento total da asa B." : "Comprimento ≥ vão. Comprimento = vão: planta quadrada (pirâmide, sem cumeeira). Entre 0 e 0,5 m a mais que o vão não é aceito." }) + (est().t3.planta === "L" ? campo("Largura da asa B (menor ou igual à da asa A)", "t3.vaoB", { un: "m", dica: "Larguras iguais: as duas cumeeiras se encontram. Diferença entre 0 e 0,5 m não é aceita." }) + campo("Comprimento total da asa B (direção Z)", "t3.compB", { un: "m", dica: "Exige comprimento B ≥ vão A + metade da largura B e comprimento A ≥ comprimento B." }) : "") + campo("Pé-direito (piso ao respaldo dos pilares)", "t3.peDireito", { un: "m" }) +
+campo("Planta do telhado", "t3.planta", { tipo: "sel", opcoes: [["retangular", "Retangular ou quadrada (4 águas)"], ["L", "Em L (6 águas, com rincão)"], ["TU", "Em T ou U (barra + 1 ou 2 pernas, rincão em cada canto côncavo)"]] }) + campo(est().t3.planta === "TU" ? "Vão da barra, a larga (largura entre eixos dos pilares)" : (est().t3.planta === "L" ? "Vão da asa A, a larga (largura entre eixos dos pilares)" : "Vão (largura entre eixos dos pilares)"), "t3.vao", { un: "m", dica: "Mínimo 3 m" }) + campo(est().t3.planta === "TU" ? "Comprimento da barra (direção X)" : (est().t3.planta === "L" ? "Comprimento da asa A (direção X)" : "Comprimento (direção da cumeeira)"), "t3.comp", { un: "m", dica: est().t3.planta === "L" ? "L canônico: asa A ao longo de X (a larga) e asa B ao longo de Z, com o canto externo na origem; comprimento A ≥ comprimento total da asa B." : "Comprimento ≥ vão. Comprimento = vão: planta quadrada (pirâmide, sem cumeeira). Entre 0 e 0,5 m a mais que o vão não é aceito." }) + (est().t3.planta === "L" ? campo("Largura da asa B (menor ou igual à da asa A)", "t3.vaoB", { un: "m", dica: "Larguras iguais: as duas cumeeiras se encontram. Diferença entre 0 e 0,5 m não é aceita." }) + campo("Comprimento total da asa B (direção Z)", "t3.compB", { un: "m", dica: "Exige comprimento B ≥ vão A + metade da largura B e comprimento A ≥ comprimento B." }) : "") + (est().t3.planta === "TU" ? campo("Perna 1: início ao longo da barra (x)", "t3.l1x0", { un: "m", dica: "T: perna solta (x > 0 e perna dentro da barra). U: perna 1 encostada na ponta esquerda (x = 0) e perna 2 na direita." }) + campo("Perna 1: largura (menor ou igual ao vão da barra)", "t3.l1w", { un: "m", dica: "Mínimo 3 m. Diferença para o vão da barra entre 0 e 0,5 m não é aceita." }) + campo("Perna 1: comprimento total (direção Z, a partir da face da barra)", "t3.l1c", { un: "m", dica: "Exige comprimento >= vão da barra + assento + metade da largura da perna." }) + campo("Perna 2 (só no U): início ao longo da barra (x)", "t3.l2x0", { un: "m", dica: "U: a perna 2 termina na ponta direita da barra (x + largura = comprimento da barra). Largura 0 = sem perna 2 (planta em T ou L)." }) + campo("Perna 2: largura (0 = sem perna 2)", "t3.l2w", { un: "m" }) + campo("Perna 2: comprimento total (direção Z)", "t3.l2c", { un: "m" }) : "") + campo("Pé-direito (piso ao respaldo dos pilares)", "t3.peDireito", { un: "m" }) +
 campo("Inclinação das 4 águas", "t3.incl", { un: "%", dica: "Mínimo 5 % para telha" }) + campo("Cota do piso (base dos pilares)", "t3.cotaPiso", { un: "m" }) + campo("Beiral (igual nos 4 lados)", "t3.beiral", { un: "m", dica: "O espigão a 45° exige o mesmo beiral nos 4 lados" }) +
 campo("Tipo da tesoura", "t3.tesoura", { tipo: "sel", opcoes: [["pratt", "Pratt (diagonais tracionadas)"], ["howe", "Howe (diagonais comprimidas, ponta com folga de 10 mm)"]] }) + campo("Espaçamento das tesouras principais", "t3.sTes", { un: "m", dica: "Entre as tesouras da cumeeira (a primeira e a última ficam nas pontas da cumeeira)" }) +
 campo("Espaçamento máximo das terças", "t3.sTercaMax", { un: "m" }) + campo("Vão máximo entre pilares", "t3.vMaxPilar", { un: "m" }) + campo("Peso da telha com ripas", "t3.telhaPeso", { un: "kN/m²", dica: "Cerâmica ≈ 0,55; a telha da obra manda" }) + "</div>" +
@@ -178219,6 +178492,7 @@ return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho es
 }
 function desenhoT3Html() {
 if (est().t3.planta === "L") return desenhoT3LHtml();
+if (est().t3.planta === "TU") return desenhoT3TUHtml();
 var u = est().t3, a = Math.max(num(u.comp, 12), 1), b = Math.max(num(u.vao, 8), 1), be = Math.max(num(u.beiral, 0), 0), W = 360, s = Math.min((W - 40) / (a + 2 * be), 200 / (b + 2 * be)), x0 = 20, y0 = 20, f = function (x, y) { return [x0 + (x + be) * s, y0 + (b + be - y) * s]; };
 var A = f(-be, b + be), B = f(a + be, -be), P0 = f(0, 0), P1 = f(a, b), r1 = f(Math.min(b / 2, a / 2), b / 2), r2 = f(Math.max(a - b / 2, a / 2), b / 2), k, svg = '<svg viewBox="0 0 ' + W + " " + (Math.round((b + 2 * be) * s) + 44) + '" class="meg-svg" role="img" aria-label="Planta do telhado de 4 águas: beiral, cumeeira, espigões e tesouras">';
 svg += '<text x="' + x0 + '" y="12" font-size="9" fill="currentColor">PLANTA DE COBERTURA — espigões a 45°</text><rect x="' + A[0] + '" y="' + A[1] + '" width="' + (B[0] - A[0]) + '" height="' + (B[1] - A[1]) + '" fill="none" stroke="currentColor" stroke-dasharray="3 2" stroke-width="0.8"/><rect x="' + P0[0] + '" y="' + P1[1] + '" width="' + (P1[0] - P0[0]) + '" height="' + (P0[1] - P1[1]) + '" fill="none" stroke="currentColor" stroke-width="1.6"/>';
@@ -178227,6 +178501,20 @@ svg += '<line x1="' + r1[0] + '" y1="' + r1[1] + '" x2="' + r2[0] + '" y2="' + r
 var pass = Math.max(0.5, num(u.sTes, 4)), nT = a - b < 0.05 ? 0 : Math.max(1, Math.ceil((a - b) / pass - 1e-9));
 for (k = 0; k <= nT; k++) { var xx = f(a - b < 0.05 ? a / 2 : b / 2 + (a - b) * k / nT, 0)[0]; svg += '<line x1="' + xx + '" y1="' + P1[1] + '" x2="' + xx + '" y2="' + P0[1] + '" stroke="currentColor" stroke-width="1.2"/>'; if (a - b < 0.05) break; }
 return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): linha grossa = espigões e cumeeira; linhas finas = tesouras principais (transversais) e meias-tesouras (cabeceiras); tracejado = beiral.</p></div>';
+}
+function desenhoT3TUHtml() {
+var u = est().t3, TM = global.MadT3TUMembros, a = Math.max(num(u.comp, 12), 1), b = Math.max(num(u.vao, 6), 1), be = Math.max(num(u.beiral, 0), 0), legs = [{ x0: num(u.l1x0, 0), w: num(u.l1w, 0), c: num(u.l1c, 0) }];
+if (num(u.l2w, 0) > 0) legs.push({ x0: num(u.l2x0, 0), w: num(u.l2w, 0), c: num(u.l2c, 0) });
+var c0 = 0, cnt = null; legs.forEach(function (L) { c0 = Math.max(c0, L.c); });
+try { cnt = TM ? TM.contornoDe({ a: a, b: b, legs: legs.map(function (L) { return { x0: L.x0, w: L.w, c: L.c }; }) }) : null; } catch (e) { cnt = null; }
+if (!cnt || !(c0 > 0)) return '<div class="meg-desenho"><p class="meg-nota">Informe a barra e as pernas para ver a planta em T/U.</p></div>';
+var W = 360, s = Math.min((W - 40) / (a + 2 * be), 220 / (c0 + 2 * be)), x0 = 20, y0 = 20, f = function (x, y) { return [x0 + (x + be) * s, y0 + (c0 + be - y) * s]; };
+function ln(p, q, st, w) { return '<line x1="' + p[0] + '" y1="' + p[1] + '" x2="' + q[0] + '" y2="' + q[1] + '" stroke="currentColor" stroke-width="' + w + '"' + (st ? ' stroke-dasharray="' + st + '"' : "") + "/>"; }
+var svg = '<svg viewBox="0 0 ' + W + " " + (Math.round((c0 + 2 * be) * s) + 44) + '" class="meg-svg" role="img" aria-label="Planta do telhado em T ou U: contorno, cumeeiras e pernas">';
+svg += '<text x="' + x0 + '" y="12" font-size="9" fill="currentColor">PLANTA EM ' + (legs.length > 1 ? "U" : "T") + " — contorno e cumeeiras</text>" + '<polygon points="' + cnt.map(function (q) { return f(q[0], q[1]).join(","); }).join(" ") + '" fill="none" stroke="currentColor" stroke-width="1.6"/>';
+svg += ln(f(b / 2, b / 2), f(a - b / 2, b / 2), null, 2.6);
+legs.forEach(function (L) { svg += ln(f(L.x0 + L.w / 2, b - L.w / 2), f(L.x0 + L.w / 2, L.c - L.w / 2), null, 2.6); });
+return '<div class="meg-desenho">' + svg + '</svg><p class="meg-nota">Desenho esquemático ao vivo (sem escala exata): linha fina = contorno das paredes; linha grossa = cumeeiras da barra e das pernas.</p></div>';
 }
 function desenhoT3LHtml() {
 var u = est().t3, a = Math.max(num(u.comp, 12), 1), b = Math.max(num(u.vao, 8), 1), c = Math.max(num(u.compB, 11), 1), bb = Math.max(num(u.vaoB, 5), 1), be = Math.max(num(u.beiral, 0), 0), W = 360, s = Math.min((W - 40) / (a + 2 * be), 220 / (c + 2 * be)), x0 = 20, y0 = 20, f = function (x, y) { return [x0 + (x + be) * s, y0 + (c + be - y) * s]; };
@@ -178617,7 +178905,7 @@ UIE.saidas[soLista ? "lista" : "xlsx"] = true; toast(soLista ? "Lista de peças 
 function saidaIfc() {
 if (!lic("exportar o IFC") || semResultado()) return false;
 var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O IFC")) return false;
-var r = resAtiva(), x = (r.tipologia === "T5" && global.MadT5Saidas) ? global.MadT5Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Pergolado") }) : (r.tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (r.tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em L") }) : (r.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
+var r = resAtiva(), x = (r.tipologia === "T5" && global.MadT5Saidas) ? global.MadT5Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Pergolado") }) : (r.tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (r.tipologia === "T3TU" && global.MadT3TUSaidas) ? global.MadT3TUSaidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em T/U") }) : (r.tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em L") }) : (r.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (r.tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.ifc(r, { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : SA().gerarIfc(r.fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira"), opcao: r.opcao });
 if (!x.ok) { toast("IFC: " + x.erro, "erro", 8000); return false; }
 baixar(base() + marcaArq(pre) + ".ifc", x.texto, "application/x-step"); UIE.saidas.ifc = true; UIE.ifcN = x.n; toast("IFC4 com " + x.n + " peças baixado.", "ok", 6000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
 }
@@ -178625,7 +178913,7 @@ function enviarBim(quieto) {
 if (!lic("levar o modelo ao BIM") || semResultado()) return false;
 var pre = preliminarAtiva(); if (!quieto && !confirmarPreliminar(pre, "O modelo no BIM")) return false;
 var B = global.BIM; if (!B || !B.editarLote) { toast("Abra o BIM primeiro: o modelo vai para o modelador.", "aviso", 6000); return false; }
-var rb = resAtiva(), pcsB = (rb.tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.pecasModelo(rb) : (rb.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.pecasModelo(rb) : rb.fonte.pecas;
+var rb = resAtiva(), pcsB = (rb.tipologia === "T3TU" && global.MadT3TUSaidas) ? global.MadT3TUSaidas.pecasModelo(rb) : (rb.tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.pecasModelo(rb) : (rb.tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.pecasModelo(rb) : rb.fonte.pecas;
 var ops = SA().opsBim(pcsB);
 var ok = B.editarLote({ op: "lote", id: "madeng-" + est().ativa + marcaArq(pre), ops: ops });
 if (!ok) { toast("O BIM não aceitou o lote de peças.", "erro", 7000); return false; }
@@ -178684,7 +178972,7 @@ return { obra: o.nome || "", local: o.cidade || o.local || "", proprietario: o.c
 function saidaPranchas() {
 if (!lic("baixar as pranchas") || semResultado()) return false;
 var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "As pranchas")) return false;
-var rA = resAtiva(); if (rA.tipologia === "T5" && !global.MadEngT5) { toast("O gerador de pranchas do pergolado não carregou.", "erro"); return false; } var MPE = (rA.tipologia === "T5" && global.MadEngT5) ? global.MadEngT5 : (rA.tipologia === "T4" && global.MadEngT4) ? global.MadEngT4 : (rA.tipologia === "T3L" && global.MadEngT3L) ? global.MadEngT3L : (rA.tipologia === "T3" && global.MadEngT3) ? global.MadEngT3 : (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
+var rA = resAtiva(); if (rA.tipologia === "T5" && !global.MadEngT5) { toast("O gerador de pranchas do pergolado não carregou.", "erro"); return false; } var MPE = (rA.tipologia === "T5" && global.MadEngT5) ? global.MadEngT5 : (rA.tipologia === "T4" && global.MadEngT4) ? global.MadEngT4 : (rA.tipologia === "T3TU" && global.MadEngT3TU) ? global.MadEngT3TU : (rA.tipologia === "T3L" && global.MadEngT3L) ? global.MadEngT3L : (rA.tipologia === "T3" && global.MadEngT3) ? global.MadEngT3 : (rA.tipologia === "T2" && global.MadEngT2) ? global.MadEngT2 : (rA.soDeck && global.MadEngDeck ? global.MadEngDeck : global.MadEngPranchas), PDF = global.SvgPdf; if (!MPE || !PDF) { toast("O gerador de pranchas ou de PDF não carregou.", "erro"); return false; }
 var x = MPE.gerar(rA, opcoesDoc()); if (!x.ok) { toast("Pranchas: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
 if (!rA.soDeck && rA.deck && global.MadEngDeck) { var xd = global.MadEngDeck.gerar(rA, opcoesDoc()); if (xd.ok) { x.folhas = x.folhas.concat(xd.folhas); x.avisos = x.avisos.concat(xd.avisos); } else x.avisos.push("Caderno do deck: " + (xd.avisos[0] || "não gerado")); }
 baixar(base() + marcaArq(pre) + "-pranchas-madeira-engenharada.pdf", PDF.pdf(x.folhas.map(function (f) { return f.svg; }), { titulo: marcaNome(pre) + "Pranchas — estrutura de madeira engenharada" }), "application/pdf");
@@ -178697,7 +178985,7 @@ baixar(nome, html, "text/html"); return "arquivo";
 }
 function saidaMemorial() {
 if (!lic("gerar o memorial") || semResultado()) return false;
-var MEM = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? { gerar: global.MadT5Saidas.memorial } : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.memorial } : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? { gerar: global.MadT3LSaidas.memorial } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.memorial } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
+var MEM = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? { gerar: global.MadT5Saidas.memorial } : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.memorial } : (resAtiva().tipologia === "T3TU" && global.MadT3TUSaidas) ? { gerar: global.MadT3TUSaidas.memorial } : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? { gerar: global.MadT3LSaidas.memorial } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.memorial } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.memorial } : global.MadEngMemorial; if (!MEM) { toast("O gerador do memorial não carregou.", "erro"); return false; }
 var o = opcoesDoc(), x = MEM.gerar(resAtiva(), { obra: { nome: o.obra, cidade: o.local }, documento: { numero: o.codigo + "-MEM", revisao: "R00", data: new Date().toISOString().slice(0, 10) }, responsavel: {}, nomeOpcao: o.nomeOpcao });
 if (!x.ok) { toast("Memorial: " + (x.motivo || "falhou"), "erro", 9000); return false; }
 var onde = abrirHtmlImprimir(x.html, base() + "-memorial-madeira-engenharada.html"); UIE.saidas.memorial = x.secoes.length;
@@ -178706,7 +178994,7 @@ toast(onde === "aba" ? "Memorial aberto: salve em PDF na janela de impressão." 
 function saidaManual() {
 if (!lic("gerar o manual de montagem") || semResultado()) return false;
 var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O manual de montagem")) return false;
-var MAN = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? { gerar: global.MadT5Saidas.manual } : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.manual } : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? { gerar: global.MadT3LSaidas.manual } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.manual } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
+var MAN = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? { gerar: global.MadT5Saidas.manual } : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? { gerar: global.MadT4Saidas.manual } : (resAtiva().tipologia === "T3TU" && global.MadT3TUSaidas) ? { gerar: global.MadT3TUSaidas.manual } : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? { gerar: global.MadT3LSaidas.manual } : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? { gerar: global.MadT3Saidas.manual } : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? { gerar: global.MadEngT2Doc.manual } : global.MadEngManual; if (!MAN) { toast("O gerador do manual não carregou.", "erro"); return false; }
 var o = opcoesDoc(), x = MAN.gerar(resAtiva(), { obra: { nome: o.obra }, documento: { revisao: "R00" }, preliminar: pre.preliminar });
 if (!x.ok) { toast("Manual: " + (x.avisos[0] || "falhou"), "erro", 9000); return false; }
 var onde = abrirHtmlImprimir(x.html, base() + marcaArq(pre) + "-manual-montagem-madeira.html"); UIE.saidas.manual = x.paginas;
@@ -178716,7 +179004,7 @@ function saidaSkp() {
 if (!lic("exportar para o SketchUp") || semResultado()) return false;
 var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O modelo SketchUp")) return false;
 var X = global.MadEngExport; if (!X) { toast("O exportador não carregou.", "erro"); return false; }
-var x = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? global.MadT5Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Pergolado") }) : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em L") }) : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
+var x = (resAtiva().tipologia === "T5" && global.MadT5Saidas) ? global.MadT5Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Pergolado") }) : (resAtiva().tipologia === "T4" && global.MadT4Saidas) ? global.MadT4Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado poligonal") }) : (resAtiva().tipologia === "T3TU" && global.MadT3TUSaidas) ? global.MadT3TUSaidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em T/U") }) : (resAtiva().tipologia === "T3L" && global.MadT3LSaidas) ? global.MadT3LSaidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas em L") }) : (resAtiva().tipologia === "T3" && global.MadT3Saidas) ? global.MadT3Saidas.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Telhado de 4 águas") }) : (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.dae(resAtiva(), { projeto: marcaNome(pre) + (est().obra.nome || "Casa de duas águas") }) : X.gerarDae(resAtiva().fonte.pecas, { projeto: marcaNome(pre) + (est().obra.nome || "Estrutura de madeira") }); if (!x.ok) { toast("SketchUp: " + x.erro, "erro", 8000); return false; }
 baixar(base() + marcaArq(pre) + "-sketchup.dae", x.texto, "model/vnd.collada+xml"); UIE.saidas.skp = x.grupos; toast("Modelo COLLADA com " + x.grupos + " grupos baixado: no SketchUp, Arquivo → Importar.", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
 }
 function saidaCype() {
@@ -178725,7 +179013,7 @@ var pre = preliminarAtiva(); if (!confirmarPreliminar(pre, "O pacote do CYPE 3D"
 var X = global.MadEngExport; if (!X || !global.BimBcf || !BimBcf.zipEscrever) { toast("O exportador ou o gerador de .zip não carregou.", "erro"); return false; }
 if (resAtiva().tipologia === "T5") { toast("CYPE 3D da T5: não gerado, use o IFC.", "aviso", 8000); return false; }
 if (resAtiva().tipologia === "T4") { toast("O pacote do CYPE 3D ainda não existe para o telhado sextavado/oitavado (pendência declarada); use o IFC.", "aviso", 8000); return false; }
-if (resAtiva().tipologia === "T3" || resAtiva().tipologia === "T3L") { toast("O pacote do CYPE 3D ainda não existe para o telhado de 4 águas (pendência declarada); use o IFC.", "aviso", 8000); return false; }
+if (resAtiva().tipologia === "T3" || resAtiva().tipologia === "T3L" || resAtiva().tipologia === "T3TU") { toast("O pacote do CYPE 3D ainda não existe para o telhado de 4 águas (pendência declarada); use o IFC.", "aviso", 8000); return false; }
 var x = (resAtiva().tipologia === "T2" && global.MadEngT2Doc) ? global.MadEngT2Doc.cype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }) : X.pacoteCype(resAtiva(), { obra: { nome: marcaNome(pre) + est().obra.nome } }); if (!x.ok) { toast("CYPE: " + x.erro, "erro", 8000); return false; }
 var arq = {}; Object.keys(x.arquivos).forEach(function (k) { var a = x.arquivos[k]; if (a.latin1) { var b = new Uint8Array(a.texto.length); for (var i = 0; i < a.texto.length; i++) b[i] = a.texto.charCodeAt(i) & 255; arq[k] = b; } else arq[k] = a.texto; });
 baixar(base() + marcaArq(pre) + "-cype3d-madeira.zip", BimBcf.zipEscrever(arq), "application/zip"); UIE.saidas.cype = Object.keys(arq).length; toast("Pacote para o CYPE 3D baixado (" + Object.keys(arq).length + " arquivos).", "ok", 8000); if (raiz()) { UIE.manterRolagem = true; render(); } return true;
@@ -179571,7 +179859,7 @@ function motivosMotor(prep, res, sm, comMotor) {
 var m = [];
 if (prep.lido.tipo === "T3L") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas em planta em L — campo de 2 águas (Tabela 5) calculado por asa (cada asa com a sua cumeeira) adotado como premissa; confirmar com o RT");
 if (prep.lido.tipo === "T3TU") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas em planta em " + prep.lido.planta + " — campo de 2 águas (Tabela 5) calculado por asa adotado como premissa; sobrepressão local na reentrância de cada rincão e sombreamento entre as asas pendentes ao RT");
-if (prep.lido.tipo === "T3TU") m.push("T/U: ligações detalhadas dos nós (pinos, chapas, selas e cintas), pranchas e manual de montagem entram na próxima versão (etapa 3b); o orçamento traz pinos e chapas por estimativa pelo critério do L (verificação detalhada das ligações na etapa 3b)");
+if (prep.lido.tipo === "T3TU") { var nvTU = arr(res && res.naoVerificado); if (nvTU.length) nvTU.forEach(function (t) { m.push("T/U: NÃO VERIFICADO — " + String(t).replace(/ — confirmar pelo RT\.?$/, "") + "; confirmar pelo RT"); }); else if (!(res && res.ligacoesT3)) m.push("T/U: ligações detalhadas dos nós NÃO verificadas (o cálculo não trouxe a verificação detalhada); o orçamento traz pinos e chapas por estimativa pelo critério do L"); }
 if (prep.lido.tipo === "T3") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas — campo de 2 águas (Tabela 5) adotado como premissa; confirmar com o RT");
 if (comMotor) m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): caibros e ripas — seguem o SINAPI/catálogo da telha; a estrutura de madeira (tesouras, terças, espigões, frechal, cumeeira) é a do motor, com os sólidos cortados");
 else m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): montante (sarrafos), caibros e ripas" + (sm.semPeca.length ? "; " + sm.semPeca.join("; ") : "") + " — seguem o SINAPI/catálogo; a geometria da tesoura do BIM é a do SINAPI, as seções são as do motor");
@@ -179597,7 +179885,7 @@ var a = mp(m.p0), c = mp(m.p1);
 if (r === "pilar" && arr(prep.apoio && prep.apoio.rets).some(function (w) { return naRet(w, a[0], a[2], 0.25); })) { pSobre++; return; }
 out.push({ r: r, b: r3(b), h: r3(h), x0: r3(a[0]), y0: r3(a[1]), z0: r3(a[2]), x1: r3(c[0]), y1: r3(c[1]), z1: r3(c[2]) });
 });
-if (!alinhado) { aviso = lido.tipo === "T3TU" ? "planta em " + lido.planta + ": frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira (o 3D da madeira em T/U vem na próxima versão)" : "retângulo fora dos eixos: frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira"; Object.keys(visto).forEach(function (g) { sem.push(g + " (" + ROLE_MOTOR[g] + ")"); }); }
+if (!alinhado) { aviso = lido.tipo === "T3TU" ? "planta em " + lido.planta + ": frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira" : "retângulo fora dos eixos: frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira"; Object.keys(visto).forEach(function (g) { sem.push(g + " (" + ROLE_MOTOR[g] + ")"); }); }
 if (pSobre) aviso = (aviso ? aviso + "; " : "") + pSobre + " pilar(es) do motor ficam SOBRE parede do modelo: o frechal assenta na parede e não se cria pilar";
 return { lista: out.slice(0, 90), semPeca: sem, aviso: aviso, truncado: out.length > 90, pilaresSobreParede: pSobre };
 }
@@ -179679,7 +179967,7 @@ naoVerificado: prep.quiosque ? ["ligação frechal × topo do pilar, base e cont
 if (prep.lido.tipo === "T3TU") {
 calc.cargasNasParedes = cargasParedesTU(prep, res);
 calc.planta = prep.lido.planta; calc.pendenciasRT = arr(res.pendenciasRT).map(function (p) { return String(p.texto || "").slice(0, 240); }).slice(0, 4);
-calc.pranchas = { ok: false, aviso: "Pranchas detalhadas do T/U: próxima versão" };
+calc.pranchas = { ok: true, aviso: "Pranchas detalhadas do T/U, manual de montagem e fichas de corte: no módulo Madeira (entrada desta cobertura) e em Saídas do telhado" }; calc.naoVerificado = arr(calc.naoVerificado).concat(arr(res.naoVerificado).map(function (t) { return String(t).slice(0, 260); }));
 if (res.reacoesParedes && res.reacoesParedes.soma) calc.equilibrioReacoes = { ok: !!res.reacoesParedes.ok, erro: res.reacoesParedes.erro, soma: res.reacoesParedes.soma, cargas: res.reacoesParedes.cargas };
 }
 var MDp = dep("MadTelhadoDes", "./madtelhadodesenhado.js"); if (MDp && MDp.payload) { var pl = MDp.payload(prep, res); if (pl) { calc.motor = pl; delete calc.pecasMotor; } }
@@ -179980,12 +180268,12 @@ return o;
 }
 function payload(prep, res) {
 if (!prep || !prep.lido || !res || !res.secoes || !prep.sol || !prep.sol.proj || !prep.sol.proj.params) return null;
-var tip = prep.lido.tipo; if (tip !== "T2" && tip !== "T3" && tip !== "T3L" && tip !== "T4") return null;
+var tip = prep.lido.tipo; if (tip !== "T2" && tip !== "T3" && tip !== "T3L" && tip !== "T3TU" && tip !== "T4") return null;
 var campos = prep.estadoMad && prep.estadoMad[tip === "T2" ? "t2" : (tip === "T4" ? "t4" : "t3")];
 return { v: VERSAO, tip: tip, variante: prep.tesoura || null, origem: "calculado", apoio: prep.apoio ? prep.apoio.tipo : null, sTes: prep.sTes, params: arred(clone(prep.sol.proj.params)), sec: arred(clone(res.secoes)), entrada: campos ? arred(clone(campos)) : null };
 }
 function payloadValido(m) {
-return !!m && typeof m === "object" && m.v === VERSAO && (m.tip === "T2" || m.tip === "T3" || m.tip === "T3L" || m.tip === "T4") && !!m.params && typeof m.params === "object" && !!m.sec && typeof m.sec === "object" && (m.tip === "T4" ? fin(Number(m.params.R)) : (fin(Number(m.params.a)) && fin(Number(m.params.b)) && (m.tip !== "T3L" || (fin(Number(m.params.c)) && fin(Number(m.params.bb))))));
+return !!m && typeof m === "object" && m.v === VERSAO && (m.tip === "T2" || m.tip === "T3" || m.tip === "T3L" || m.tip === "T3TU" || m.tip === "T4") && !!m.params && typeof m.params === "object" && !!m.sec && typeof m.sec === "object" && (m.tip === "T4" ? fin(Number(m.params.R)) : (fin(Number(m.params.a)) && fin(Number(m.params.b)) && (m.tip !== "T3L" || (fin(Number(m.params.c)) && fin(Number(m.params.bb)))) && (m.tip !== "T3TU" || (Array.isArray(m.params.legs) && m.params.legs.length >= 1 && m.params.legs.every(function (L) { return fin(Number(L.x0)) && fin(Number(L.w)) && fin(Number(L.c)); })))));
 }
 var CACHE_R = [], CACHE_M = [];
 function chaveMotor(m) { try { return JSON.stringify([m.tip, m.params, m.sec]); } catch (e) { return null; } }
@@ -179994,8 +180282,8 @@ var r;
 if (m.tip === "T4") r = resolverT4(m);
 else {
 var TPp = TP(), Mt = MT(), T3p = T3(); if (!TPp || !Mt || !T3p) throw new Error("os motores de madeira (madencaixetip/madtipologias/madt3) não carregaram");
-var TLp = T3L(); if (m.tip === "T3L" && !TLp) throw new Error("o motor da planta em L (madt3l) não carregou");
-var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : (m.tip === "T3L" ? TLp.geometria(clone(m.params)) : T3p.geometria(clone(m.params)));
+var TLp = T3L(), TUp = dep("MadT3TUMembros", "./madt3tumembros.js"); if (m.tip === "T3L" && !TLp) throw new Error("o motor da planta em L (madt3l) não carregou"); if (m.tip === "T3TU" && !TUp) throw new Error("o motor da planta em T/U (madt3tumembros) não carregou");
+var G = m.tip === "T2" ? Mt.T2.geometria(clone(m.params)) : (m.tip === "T3L" ? TLp.geometria(clone(m.params)) : (m.tip === "T3TU" ? TUp.geometriaMembros(clone(m.params)) : T3p.geometria(clone(m.params))));
 r = TPp.resolverT3(G, clone(m.sec)); delete r.cfg;
 }
 return r;
@@ -180127,6 +180415,7 @@ var P4 = lido.contorno, dx = P4[1][0] - P4[0][0], dz = P4[1][1] - P4[0][1], Lq =
 if ((lido.centro[0] - P4[0][0]) * v4[0] + (lido.centro[1] - P4[0][1]) * v4[1] < 0) v4 = [-v4[0], -v4[1]];
 return { O: [lido.centro[0] - lido.R * u4[0] - lido.R * v4[0], lido.centro[1] - lido.R * u4[1] - lido.R * v4[1]], u: u4, v: v4, det: -(u4[0] * v4[1] - u4[1] * v4[0]) };
 }
+if (lido.tipo === "T3TU") { var qU = lido.quadroTU; return { O: qU.O, u: qU.u, v: qU.v, det: -(qU.u[0] * qU.v[1] - qU.u[1] * qU.v[0]) }; }
 if (lido.tipo === "T3L") { var qL = lido.quadroL; return { O: qL.O, u: qL.u, v: qL.v, det: -(qL.u[0] * qL.v[1] - qL.u[1] * qL.v[0]) }; }
 var P = lido.contorno, kA = lido.kA, k1 = (kA + 1) % 4, k2 = (kA + 2) % 4, d = lido.eixoD || [0, 0, 0, 0];
 function un(a, b) { var dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz) || 1; return [dx / L, dz / L]; }
@@ -180151,9 +180440,9 @@ if (lido.tipo !== motor.tip) return { ok: false, motivo: "o telhado agora é " +
 var p = motor.params, be = lido.beiral, dif = [];
 function cmp(nome, a, b, tol) { if (!(Math.abs(num(a, 0) - num(b, 0)) <= tol)) dif.push(nome + " " + virg(a) + " → " + virg(b)); }
 if (motor.tip === "T4") { cmp("raio", p.R, lido.R, 0.011); cmp("lados", p.n, lido.n, 0.1); cmp("beiral", p.beiral, be, 0.006); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); }
-else { cmp("comprimento", p.a, lido.a, 0.011); cmp("vão", p.b, lido.b, 0.011); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); if (motor.tip === "T3L") { cmp("largura da asa B", p.bb, lido.bb, 0.011); cmp("comprimento da asa B", p.c, lido.c, 0.011); } }
+else { cmp("comprimento", p.a, lido.a, 0.011); cmp("vão", p.b, lido.b, 0.011); cmp("inclinação", num(p.incl, 0) * 100, lido.incl, 0.05); if (motor.tip === "T3L") { cmp("largura da asa B", p.bb, lido.bb, 0.011); cmp("comprimento da asa B", p.c, lido.c, 0.011); } if (motor.tip === "T3TU") { var lgM = arr(p.legs), lgL = arr(lido.legs); if (lgM.length !== lgL.length) dif.push("pernas " + lgM.length + " → " + lgL.length); else lgM.forEach(function (Lg, j) { cmp("perna " + (j + 1) + ": posição", Lg.x0, lgL[j].x0, 0.011); cmp("perna " + (j + 1) + ": largura", Lg.w, lgL[j].w, 0.011); cmp("perna " + (j + 1) + ": comprimento", Lg.c, lgL[j].c, 0.011); }); } }
 if (motor.tip === "T4") { }
-else if (motor.tip === "T3" || motor.tip === "T3L") cmp("beiral", p.beiral, be, 0.006);
+else if (motor.tip === "T3" || motor.tip === "T3L" || motor.tip === "T3TU") cmp("beiral", p.beiral, be, 0.006);
 else { cmp("beiral frente", p.beiral && p.beiral.frente, be.eave[0], 0.006); cmp("beiral fundo", p.beiral && p.beiral.fundo, be.eave[1], 0.006); cmp("beiral esquerdo", p.beiral && p.beiral.esq, be.gable[0], 0.006); cmp("beiral direito", p.beiral && p.beiral.dir, be.gable[1], 0.006); }
 cmp("pé-direito", p.peDireito, Math.max(lido.peDireito, 1.2), 0.011);
 if (dif.length) return { ok: false, motivo: "o telhado mudou depois do cálculo (" + dif.join("; ") + "): recalcule a madeira", desatualizado: true };
@@ -180318,7 +180607,7 @@ return { ops: out, avisos: avisos };
 }
 function estadoDoModulo(calc, obra) {
 var EN = dep("MadEngEntrada", "./madengentrada.js"), m = calc && calc.motor; if (!EN || !payloadValido(m) || !m.entrada) return null;
-var e = EN.estadoPadrao(); e.tip = m.tip === "T3L" ? "T3" : m.tip; e.obra = ext3(e.obra, clone(obra || {})); e[m.tip === "T2" ? "t2" : (m.tip === "T4" ? "t4" : "t3")] = clone(m.entrada);
+var e = EN.estadoPadrao(); e.tip = (m.tip === "T3L" || m.tip === "T3TU") ? "T3" : m.tip; e.obra = ext3(e.obra, clone(obra || {})); e[m.tip === "T2" ? "t2" : (m.tip === "T4" ? "t4" : "t3")] = clone(m.entrada);
 return e;
 }
 function ext3(a, b) { var o = {}; Object.keys(a || {}).forEach(function (k) { o[k] = a[k]; }); Object.keys(b || {}).forEach(function (k) { o[k] = b[k]; }); return o; }
@@ -180330,8 +180619,8 @@ return { sol: W.solicitacao(e, "A"), estado: e };
 }
 function saidas(res, opc) {
 opc = opc || {}; var o = opc.obra || {}, tip = res && res.tipologia, out = { tipologia: tip };
-var MEM = tip === "T4" ? dep("MadT4Saidas", "./madt4saidas.js") : (tip === "T3L" ? dep("MadT3LSaidas", "./madt3lsaidas.js") : (tip === "T3" ? dep("MadT3Saidas", "./madt3saidas.js") : dep("MadEngT2Doc", "./madengt2doc.js")));
-var PR = tip === "T4" ? dep("MadEngT4", "./madt4pranchas.js") : (tip === "T3L" ? dep("MadEngT3L", "./madt3lpranchas.js") : (tip === "T3" ? dep("MadEngT3", "./madt3pranchas.js") : dep("MadEngT2", "./madengt2pranchas.js")));
+var MEM = tip === "T4" ? dep("MadT4Saidas", "./madt4saidas.js") : (tip === "T3TU" ? dep("MadT3TUSaidas", "./madt3tusaidas.js") : (tip === "T3L" ? dep("MadT3LSaidas", "./madt3lsaidas.js") : (tip === "T3" ? dep("MadT3Saidas", "./madt3saidas.js") : dep("MadEngT2Doc", "./madengt2doc.js"))));
+var PR = tip === "T4" ? dep("MadEngT4", "./madt4pranchas.js") : (tip === "T3TU" ? dep("MadEngT3TU", "./madt3tupranchas.js") : (tip === "T3L" ? dep("MadEngT3L", "./madt3lpranchas.js") : (tip === "T3" ? dep("MadEngT3", "./madt3pranchas.js") : dep("MadEngT2", "./madengt2pranchas.js"))));
 if (!MEM) return { ok: false, motivo: "o gerador de saídas da " + tip + " não carregou" };
 out.memorial = MEM.memorial(res, { obra: { nome: o.nome, cidade: o.cidade }, documento: { numero: (opc.codigo || "COB") + "-MEM", revisao: "R00", data: opc.data || "2026-01-01" }, responsavel: {}, nomeOpcao: res.nomeOpcao });
 out.manual = MEM.manual(res, { obra: { nome: o.nome }, documento: { revisao: "R00" }, preliminar: !!opc.preliminar });
@@ -180514,7 +180803,6 @@ try { var b = new global.Blob([conteudo], { type: tipo }), a = global.document.c
 }
 function gerarSaidas(tid) {
 var st = estado(), t = telhados(st).filter(function (x) { return String(x.id) === String(tid); })[0], MDx = global.MadTelhadoDes;
-if (t && t.calcMadeira && t.calcMadeira.tipo === "T3TU") { status("Planta em T/U: as pranchas detalhadas (e o manual de montagem) entram na próxima versão. O cálculo, as reações nas paredes e o memorial do módulo Madeira já valem."); return false; }
 if (!t || !t.calcMadeira || !t.calcMadeira.motor || !MDx) { status("Calcule a madeira do telhado " + tid + " antes (Madeira calculada › Calcular)."); return false; }
 if (UI_ESTADO.rodando) { status("Já tem um cálculo de madeira rodando: espere terminar."); return false; }
 var obra = lerObra(), sl = MDx.solicitar(t.calcMadeira, obra);
@@ -180572,7 +180860,7 @@ if (vdc.premissa) h += "<p style=\"margin:0 0 4px;font-size:11px;opacity:.8\">" 
 if (c.tipo === "T3TU") {
 if (arr(c.cargasNasParedes).length) h += "<p style=\"margin:8px 0 0;font-size:12px\"><b>Cargas nas paredes</b> (reação de cálculo, soma dos pilares de cada parede): " + c.cargasNasParedes.map(function (q) { return esc(q.apoio) + " " + virg(q.kN, 1) + " kN"; }).join(" · ") + (c.equilibrioReacoes ? "; equilíbrio vertical " + (c.equilibrioReacoes.ok ? "fecha (±1 %)" : "NÃO fecha") : "") + ". Confirmar a resistência da parede com o RT.</p>";
 if (arr(c.pendenciasRT).length) h += "<p style=\"margin:6px 0 0;font-size:12px\"><b>Pendências ao RT (cantos côncavos):</b> " + c.pendenciasRT.map(esc).join(" ") + "</p>";
-h += "<p style=\"margin:6px 0 0;font-size:12px\"><b>Pranchas detalhadas do T/U: próxima versão.</b> Pinos e chapas dos nós: estimativa pelo critério do L (verificação detalhada das ligações na etapa 3b).</p>";
+h += "<p style=\"margin:6px 0 0;font-size:12px\"><b>Pranchas, manual de montagem e fichas de corte do T/U:</b> botão de saídas do telhado (as mesmas do L); pinos, chapas e folgas verificados nó a nó." + (arr(c.naoVerificado).length ? " <b>NÃO verificado (RT):</b> " + c.naoVerificado.map(function (t) { return esc(String(t).replace(/ — confirmar pelo RT\.?$/, "")); }).join(" · ") : "") + "</p>";
 }
 if (c.cargasNaLaje && c.cargasNaLaje.n) h += "<p style=\"margin:8px 0 0;font-size:12px\"><b>Cargas na laje:</b> " + c.cargasNaLaje.n + " pontaletes × " + virg(c.cargasNaLaje.porPonto_kN, 2) + " kN (total " + virg(c.cargasNaLaje.total_kN, 1) + " kN). " + esc(c.cargasNaLaje.aviso) + ".</p>";
 if (c.aparente) h += "<p style=\"margin:8px 0 0;font-size:12px\">Telhado aparente: peças com acabamento à vista" + (c.ligacaoOculta ? ", ligações ocultas" : "") + "; sem forro. Os cortes de encaixe vêm do módulo de encaixes (js/madencaixe.js) quando ele estiver no sistema.</p>";

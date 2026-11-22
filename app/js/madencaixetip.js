@@ -173,6 +173,7 @@
         if (P.g === "BS" && e === 0 && P.noCalc0 && P.noCalc0[2] < I.Hp - 1e-6) return "ponta do beiral (balanço livre)";
         if (P.g === "CB" && e === 0) return "ponta do beiral (balanço livre)";
         if (I.tipologia === "T3L" && P.g === "CM") { var qE = e === 0 ? P.noCalc0 : P.noCalc1; if (qE && Math.abs(qE[1] - I.b / 2) < 1e-3 && Math.abs(qE[0] - I.b / 2) < 1e-3) return "ponta no nó do cume (topo da cumeeira A): sem contato madeira–madeira, apoiada na chapa de nó do vértice (espigões E1 e E6, caibro de meio e cumeeira B) — carga só por chapa e pinos"; }
+        if (I.tipologia === "T3TU" && P.g === "CM") { var qT = e === 0 ? P.noCalc0 : P.noCalc1, nosT = [[I.b / 2, I.b / 2], [I.a - I.b / 2, I.b / 2]]; (I.pernas || []).forEach(function (Lg) { if (Lg.V) nosT.push([Lg.V[0], Lg.V[1]]); nosT.push([Lg.xc, Lg.zE]); }); if (qT && nosT.some(function (n) { return Math.abs(qT[0] - n[0]) < 1e-3 && Math.abs(qT[1] - n[1]) < 1e-3; })) return "ponta no nó do cume (topo da cumeeira da barra ou da perna): sem contato madeira–madeira, apoiada na chapa de nó do vértice (espigões, rincão, caibro de meio e cumeeira vizinha) — carga só por chapa e pinos"; }
         if (P.g === "MS" && e === 0) return "ponta do beiral (balanço livre)";
         if (G_T2 && (P.g === "T" || P.g === "CM" || P.g === "FR")) { var X = e === 0 ? P.p0[0] : P.p1[0]; if (X <= G_T2.x0 + 1e-3 || X >= G_T2.x1 - 1e-3) return "beiral de empena (balanço livre, testeira)"; }
         return null;

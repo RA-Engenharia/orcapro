@@ -815,7 +815,7 @@
     var m = [];
     if (prep.lido.tipo === "T3L") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas em planta em L — campo de 2 águas (Tabela 5) calculado por asa (cada asa com a sua cumeeira) adotado como premissa; confirmar com o RT");
     if (prep.lido.tipo === "T3TU") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas em planta em " + prep.lido.planta + " — campo de 2 águas (Tabela 5) calculado por asa adotado como premissa; sobrepressão local na reentrância de cada rincão e sombreamento entre as asas pendentes ao RT");
-    if (prep.lido.tipo === "T3TU") m.push("T/U: ligações detalhadas dos nós (pinos, chapas, selas e cintas), pranchas e manual de montagem entram na próxima versão (etapa 3b); o orçamento traz pinos e chapas por estimativa pelo critério do L (verificação detalhada das ligações na etapa 3b)");
+    if (prep.lido.tipo === "T3TU") { var nvTU = arr(res && res.naoVerificado); if (nvTU.length) nvTU.forEach(function (t) { m.push("T/U: NÃO VERIFICADO — " + String(t).replace(/ — confirmar pelo RT\.?$/, "") + "; confirmar pelo RT"); }); else if (!(res && res.ligacoesT3)) m.push("T/U: ligações detalhadas dos nós NÃO verificadas (o cálculo não trouxe a verificação detalhada); o orçamento traz pinos e chapas por estimativa pelo critério do L"); }
     if (prep.lido.tipo === "T3") m.push("vento: a NBR 6123 não traz coeficientes de cobertura para 4 águas — campo de 2 águas (Tabela 5) adotado como premissa; confirmar com o RT");
     if (comMotor) m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): caibros e ripas — seguem o SINAPI/catálogo da telha; a estrutura de madeira (tesouras, terças, espigões, frechal, cumeeira) é a do motor, com os sólidos cortados");
     else m.push("peças do modelo SEM grupo calculado pelo motor (marcadas calcNao): montante (sarrafos), caibros e ripas" + (sm.semPeca.length ? "; " + sm.semPeca.join("; ") : "") + " — seguem o SINAPI/catálogo; a geometria da tesoura do BIM é a do SINAPI, as seções são as do motor");
@@ -844,7 +844,7 @@
       if (r === "pilar" && arr(prep.apoio && prep.apoio.rets).some(function (w) { return naRet(w, a[0], a[2], 0.25); })) { pSobre++; return; }
       out.push({ r: r, b: r3(b), h: r3(h), x0: r3(a[0]), y0: r3(a[1]), z0: r3(a[2]), x1: r3(c[0]), y1: r3(c[1]), z1: r3(c[2]) });
     });
-    if (!alinhado) { aviso = lido.tipo === "T3TU" ? "planta em " + lido.planta + ": frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira (o 3D da madeira em T/U vem na próxima versão)" : "retângulo fora dos eixos: frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira"; Object.keys(visto).forEach(function (g) { sem.push(g + " (" + ROLE_MOTOR[g] + ")"); }); }
+    if (!alinhado) { aviso = lido.tipo === "T3TU" ? "planta em " + lido.planta + ": frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira" : "retângulo fora dos eixos: frechal, pilares e contraventamento do motor ficam só na lista de peças do módulo Madeira"; Object.keys(visto).forEach(function (g) { sem.push(g + " (" + ROLE_MOTOR[g] + ")"); }); }
     if (pSobre) aviso = (aviso ? aviso + "; " : "") + pSobre + " pilar(es) do motor ficam SOBRE parede do modelo: o frechal assenta na parede e não se cria pilar";
     return { lista: out.slice(0, 90), semPeca: sem, aviso: aviso, truncado: out.length > 90, pilaresSobreParede: pSobre };
   }
@@ -937,7 +937,7 @@
     if (prep.lido.tipo === "T3TU") {      /* T/U: reações nas paredes do modelo (mesmo formato do laço: apoio, kN, vigas), pendências ao RT por canto côncavo e o aviso de pranchas */
       calc.cargasNasParedes = cargasParedesTU(prep, res);
       calc.planta = prep.lido.planta; calc.pendenciasRT = arr(res.pendenciasRT).map(function (p) { return String(p.texto || "").slice(0, 240); }).slice(0, 4);
-      calc.pranchas = { ok: false, aviso: "Pranchas detalhadas do T/U: próxima versão" };
+      calc.pranchas = { ok: true, aviso: "Pranchas detalhadas do T/U, manual de montagem e fichas de corte: no módulo Madeira (entrada desta cobertura) e em Saídas do telhado" }; calc.naoVerificado = arr(calc.naoVerificado).concat(arr(res.naoVerificado).map(function (t) { return String(t).slice(0, 260); }));
       if (res.reacoesParedes && res.reacoesParedes.soma) calc.equilibrioReacoes = { ok: !!res.reacoesParedes.ok, erro: res.reacoesParedes.erro, soma: res.reacoesParedes.soma, cargas: res.reacoesParedes.cargas };
     }
     /* os grupos do motor viraram peças: a seção de cada um também vai no resultado (para a janela) */

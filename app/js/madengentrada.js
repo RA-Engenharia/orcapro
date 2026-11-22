@@ -76,7 +76,7 @@
         vAltVar: true, hPonta: 0.30, hPontaMax: null, lambri: 0.025, sTerca: 0.95, hParedeTopo: null, telhaPeso: 0.12, lambriPeso: 6.0 },
       t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
         telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
-      t3: { planta: "retangular", vaoB: 5, compB: 11, vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
+      t3: { planta: "retangular", l1x0: 4, l1w: 4, l1c: 11, l2x0: 0, l2w: 0, l2c: 11, vaoB: 5, compB: 11, vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, sTes: 4.0, sTercaMax: 1.4, vMaxPilar: 4.0, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", tesoura: "pratt" },
       t5: { vao: 3.6, comp: 6.0, peDireito: 2.8, balCaibro: 0.5, balViga: 0.5, sPilarMax: 3.0, sCaibro: 0.6, mfD: 0.7, plantas: 0, ripado: { ativo: false, s: 0.12, b: 0.03, h: 0.05 }, cobertura: { tipo: "nenhuma", peso: "", incl: 10 }, encostado: { ativo: false, lado: "alto" }, obstrucao: "", presaEm: "caibros", diafragma: "nao" },
       t4: { fechamento: "", n: "6", R: 4, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: 0.8, vMaxPilar: 4.0, sTercaMax: 1.4, telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", pilarCentral: "nao", caibroMeio: "auto" },
       t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
@@ -216,7 +216,7 @@
   /* ------------------------------------------------------------ T3 (telhado de 4 águas): o estado da tela → entrada de MadT3Lig.projetar */
   function t3Params(est) {
     var t = est.t3 || {}, tu = t.planta === "TU", planta = t.planta === "L" ? { planta: "L", c: num(t.compB, 11), bb: num(t.vaoB, 5) } : (tu ? { planta: "TU" } : {});
-    var legs = tu ? (Array.isArray(t.legs) ? t.legs : []).map(function (L) { return { x0: num(L.x0, 0), w: num(L.w, 0), c: num(L.c, 0) }; }) : undefined;      /* T/U (js/madt3tu*.js): barra a × b (ao longo de X) + até 2 pernas ao longo de Z */
+    var legs = tu ? (Array.isArray(t.legs) ? t.legs : [{ x0: t.l1x0, w: t.l1w, c: t.l1c }].concat(num(t.l2w, 0) > 0 ? [{ x0: t.l2x0, w: t.l2w, c: t.l2c }] : [])).map(function (L) { return { x0: num(L.x0, 0), w: num(L.w, 0), c: num(L.c, 0) }; }) : undefined;      /* T/U (js/madt3tu*.js): barra a × b (ao longo de X) + até 2 pernas ao longo de Z */
     var pr = { nome: est.obra.nome || "Telhado de 4 águas", planta: planta.planta, c: planta.c, bb: planta.bb, a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5), beiral: num(t.beiral, 0.8), vMaxPilar: num(t.vMaxPilar, 4),
       telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4), tipo: t.tesoura === "howe" ? "howe" : "pratt" } };
     if (tu) pr.legs = legs;
