@@ -347,6 +347,8 @@
     if (/^trelica|^tesoura/.test(t)) ks = ks.concat(["banzo", "diagonal", "montante", "escora"]);
     if (t === "tesoura-leve") ks = ks.concat(["banzoColuna", "travejamento", "escoraColuna"]).concat(p.maoFrancesa ? ["maoFrancesa"] : []);
     if (p.tercaBorda) ks.push("tercaBorda");
+    if (p.tercaCumeeira) ks.push("tercaCumeeira");
+    if (p.escoraColunaBorda) ks.push("escoraColunaBorda");
     if (TIPOS[t].motor === "livre" && tercaTrelicadaLigada(p)) ks = ks.concat(["tercaTrelBanzo", "tercaTrelAlma", "tercaTrelTravamento"]).concat(p.tercaTrelBanzoInf ? ["tercaTrelBanzoInf"] : []);   /* qualquer tipologia (o gerador põe terça de borda com portão aberto suposto) */
     if (p.fechamento === "fechado") ks.push("tapamento");
     if (p.correntes > 0) ks.push("barraCorrente");
@@ -887,7 +889,14 @@
          do banzo (o U trabalhava no eixo fraco com razão ~30 na NBR 14762 9.8.4). Fora de um nó da alma, entra um nó NOVO da
          treliça em x = bc, com montante e diagonais (o painel do apoio fica dividido em dois) */
       var ins = null;
-      if (kS >= 1 && kS < n && Math.abs(kS * dx - bc) < tolLeitor(p.banzo, p.banzoColuna) + 0.02) topI = nomD(ld[0], kS);
+      /* 22/11/2026 (Pedido Gabriel, peso): o encaixe NÃO depende mais da profundidade do U da coluna. Antes a regra era "o nó da
+         alma a menos de meia seção (tolLeitor do banzo + U)": com o U 300 o banzo de dentro caía no nó da alma e com o U 200 entrava
+         um nó no meio do painel — trocar o U mudava a treliça (o banzo de baixo reprovava a 1,33 e o otimizador não podia descer o U).
+         Agora a regra é só GEOMÉTRICA: o nó da alma serve se o nó novo deixaria um subpainel curto demais (< 35 % do painel: diagonal
+         em pé, fora da faixa 35°–60°) e se ele não deixa a coluna abaixo de H/15; a tolerância do leitor fica só como trava de
+         segurança (dois nós que o leitor juntaria viram um só) */
+      var dS = Math.abs(kS * dx - bc), noAlma = kS >= 1 && kS < n, noAlmaOk = noAlma && kS * dx >= num(p.larguraColunaMin, 0) - 1e-9;
+      if ((noAlmaOk && dS < 0.35 * dx) || (noAlma && dS < tolLeitor(p.banzo, p.banzoColuna) + 0.02)) topI = nomD(ld[0], kS);
       else { topI = pt("DI" + ld[0], xi, yB(xi)); pt("TI" + ld[0] + "x", xi, yT(xi)); ins = { k0: Math.floor(bc / dx + 1e-9), nT: "TI" + ld[0] + "x", nD: "DI" + ld[0] }; }
       var xiR = pend[topI][0];
       var Hc = yB(ld[1]), nPc = Math.max(2, Math.round(Hc / p.painelColuna)), h = Hc / nPc, nmO = "D" + ld[0] + "0", lado = ld[0] === "L" ? "esquerda" : "direita";
@@ -1069,8 +1078,14 @@
            o menor — a MESMA regra do js/acovento.js) ao longo dos beirais e dos oitões levam perfil próprio; as internas, o seu */
         var cT = p.terca, yF = Math.min(p.peDireito, 0.15 * p.vao), ehBorda = !!p.tercaBorda && (tl.x < yF - 1e-6 || tl.x > p.vao - yF + 1e-6 || zs[k] < yF - 1e-6 || zs[k + 1] > zs[nP - 1] - yF + 1e-6);
         if (ehBorda) cT = p.tercaBorda;
+        /* 22/11/2026 (auditoria do vento local, docs/alumetal/VENTO-SECUNDARIAS.md): a terça da CUMEEIRA (a das duas águas) é a
+           ESCORA longitudinal do contraventamento da cobertura — leva o N da análise global (−44 kN no Pedido Gabriel PD 8 com
+           solar) junto com a sucção do cpe médio da cumeeira e governava o grupo inteiro das terças (razão 0,991 contra 0,33–0,65
+           das outras). Com p.tercaCumeeira ela leva perfil próprio e as outras descem; sem ele, nada muda. */
+        var ehCum = !!p.tercaCumeeira && tl.aguas && tl.aguas.length === 2;
+        if (ehCum) cT = p.tercaCumeeira;
         if (tTrel) { var ot = tercaTrelicada(k, j, tl, z, zs[k + 1], a, b); (tl.aguas || [tl.agua]).forEach(function (ag) { (tercasPorAgua[ag] = tercasPorAgua[ag] || []).push(ot.id); }); return; }
-        var o = barra({ a: a, b: b, ferr: "terca", cat: cT, just: "base", giro: tl.giro, papel: ehBorda ? "Terça de borda" : "Terça", grupo: "terca", aco: acoDe(p, cT), nome: (ehBorda ? "Terça de borda " : "Terça ") + (j + 1) + " — vão " + (k + 1), calc: {} });
+        var o = barra({ a: a, b: b, ferr: "terca", cat: cT, just: "base", giro: tl.giro, papel: ehCum ? "Terça da cumeeira" : ehBorda ? "Terça de borda" : "Terça", grupo: "terca", aco: acoDe(p, cT), nome: (ehCum ? "Terça da cumeeira " : ehBorda ? "Terça de borda " : "Terça ") + (j + 1) + " — vão " + (k + 1), calc: {} });
         (tl.aguas || [tl.agua]).forEach(function (ag) { (tercasPorAgua[ag] = tercasPorAgua[ag] || []).push(o.id); });
       });
     });
@@ -1137,7 +1152,11 @@
     });
     if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água e ANCORADAS por corrente diagonal até a terça da cumeeira no pórtico (" + nAncC + " diagonais) — travam as terças no eixo fraco" + (catsAnc.length ? " — diagonal de ancoragem " + catsAnc.join(", ") + " (A ≥ A da corrente/(n·cos β): leva a força da linha / cos β)" : "") + (p.correntesAuto ? "; " + p.correntes + " linha(s) pela regra do cálculo: o trecho do eixo fraco entre correntes ancoradas até " + String(LIMITE_LZ_CORRENTE).replace(".", ",") + " m (vão " + String(esp).replace(".", ",") + " m / " + (p.correntes + 1) + ")" : " (escolha do engenheiro)") + ".");
     /* escoras do banzo de baixo (treliças) */
-    zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { var cE = es.coluna && p.escoraColuna ? p.escoraColuna : p.escora; barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + (es.ptB || es.pt), ferr: "viga", cat: cE, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, cE), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
+    zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { var cE = es.coluna && p.escoraColuna ? p.escoraColuna : p.escora;
+      /* 22/11/2026: a escora da coluna NA LINHA DA PAREDE lateral (banzo de fora) segura a telha da parede — no VÃO EXTREMO ela cai
+         na faixa de borda do cpe médio (NBR 6123:2023 6.1.1 e Tabela 6 nota 4: 0,2·b ou h, o menor) e a flecha L/120 do vento
+         característico (NBR 8800:2008 Tabela C.1) governa; com p.escoraColunaBorda as dos vãos extremos levam perfil próprio */
+      if (es.coluna && p.escoraColunaBorda && (k === 0 || k + 2 === nP)) cE = p.escoraColunaBorda; barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + (es.ptB || es.pt), ferr: "viga", cat: cE, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, cE), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
     /* MÃOS-FRANCESAS (tesoura leve): de cada nó do banzo de baixo sob uma terça até a terça, a ±a ao longo do comprimento
        (a = a distância vertical: 45°), em par — barra redonda só de tração: quando o banzo de baixo comprimido (sucção) tenta
        sair do plano, a mão-francesa do outro lado traciona e o segura na terça */
@@ -1602,14 +1621,16 @@
          chapa de nó de 8 mm entre as abas; travejamento da coluna em L 2" × 3/16" soldada na aba do U (5.3.4.4). Nas 4 variantes,
          sem otimizador (ele estourou a memória do Node): TODAS as barras e TODOS os nós com chapa passam; desde 21/11 as ligações e as placas de base são
          DIMENSIONADAS (js/metalligdim.js, fck 25) e as 4 variantes saem "aprovado". Escora da coluna TQ 110×5 → 140×5:
-         a flecha L/120 do vento local (85 mm > 50 mm) reprovava. Banzo 2L 76,2×6 (A36): a escora do banzo de baixo no nó de cada coluna de tapamento tirou o My ≈ 9,9 kN·m do oitão (era 2L 88,9×7,94). Jogo do OTIMIZADOR (21/11, PD 8 m com solar, 19.607 kg), o mesmo nas 4 variantes, com duas exceções conferidas: coluna U 300×100×4,25 (o U mais raso muda o encaixe do banzo de dentro da coluna na tesoura — entra um nó no meio do painel e o banzo de baixo reprova a 1,33) e travejamento L 50,8×4,76 (a L 45×5 reprova a 1,13 no PD 6 m). 0 falhas e 0 nós reprovados nas 4. O jogo de tubo (que reprova: nó T 4,61) fica em sistemas.tubo. */
+         a flecha L/120 do vento local (85 mm > 50 mm) reprovava. Banzo 2L 76,2×6 (A36): a escora do banzo de baixo no nó de cada coluna de tapamento tirou o My ≈ 9,9 kN·m do oitão (era 2L 88,9×7,94). Jogo do OTIMIZADOR (21/11, PD 8 m com solar, 19.607 kg), o mesmo nas 4 variantes, com duas exceções conferidas: coluna U 300×100×4,25 (o U mais raso muda o encaixe do banzo de dentro da coluna na tesoura — entra um nó no meio do painel e o banzo de baixo reprova a 1,33) e travejamento L 50,8×4,76 (a L 45×5 reprova a 1,13 no PD 6 m). 0 falhas e 0 nós reprovados nas 4. O jogo de tubo (que reprova: nó T 4,61) fica em sistemas.tubo.
+         22/11/2026 (peso): com o nó da coluna desacoplado da profundidade do U, o otimizador desceu a coluna a U 250×100×4,75 e o tapamento a TR 180×130×6,4 — as 4 aprovadas com ligações dimensionadas (32,9 / 32,9 / 30,7 / 30,7 kg/m²). A L 50×4 do travejamento reprova a 1,08 no PD 6 com solar: fica a L 50,8×4,76. Altura vão/10 e vão/12 e coluna H/15 testadas: mais pesadas ou reprovadas (docs/alumetal/COMPARATIVO.md §14).
+         22/11/2026 (vento local, docs/alumetal/VENTO-SECUNDARIAS.md): a terça da cumeeira (escora do contraventamento, N global + cpe médio) governava TODAS as terças; com perfil próprio (tercaCumeeira) e a escora da coluna dos vãos extremos à parte (escoraColunaBorda, flecha L/120 na faixa de borda da parede), o otimizador desceu as terças internas a Ue 300×1,90, as de borda a Ue 300×2,66 e a escora da coluna interna a TQ 80×4,5 (COMPARATIVO §15). */
       base: { vao: 20, comprimento: 30, definirPor: "numero", nPorticos: 6, espacamento: 6, inclinacao: 10, alturaTrelica: 1.35, subPaineis: 2, larguraColuna: 0.6, painelColuna: 0.6,
               sistemaTrelica: "cantoneira", chapaNo: 8, fckFundacao: 25,   /* fck da fundação: decisão do Rogério (21/11/2026) — placas de base e ancoragem (js/metalligdim.js) */
              
               banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",   /* 21/11 (ângulo 35°–60°): a alma passou a 1 painel por terça (41°, era 2 a 62°) e a diagonal de 2,04 m em 2L 50,8×4,5 reprovava a 1,02 no PD 8 com solar */
               montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
-              travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 2,66", tercaBorda: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 300 x 100 x 4,25",
-              escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 130 x 130 x 5 VMB", tapamento: "TR 200 x 120 x 6,4 VMB",
+              travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
+              escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 80 x 80 x 4,5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",
               barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "L 63,5 x 4,76 (serie pol) ArcelorMittal", ligMaoFrancesa: "parafusada",   /* 21/11: L 63,5×4,5 reprovava a 1,009 nos oitões do PD 8 com solar com a alma de 1 painel por terça */
              
               vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },

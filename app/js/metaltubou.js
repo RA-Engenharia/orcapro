@@ -246,6 +246,7 @@
       var res = ponta(o);
       reg.theta = Math.round(th * 10) / 10; reg.N = Math.round(o.N * 100) / 100; reg.NcU = Math.round(o.NcU * 10) / 10; reg.ok = res.ok; reg.adotada = res.ok ? res.adotada : null; reg.razao = res.razao; reg.governante = res.governante;
       reg.direta = res.direta; reg.razaoDireta = res.razaoDireta; reg.peso = res.peso; reg.troca = res.troca; reg.solda = res.solda; reg.gusset = res.gusset; reg.enrijecedores = res.enrijecedores ? { t: res.enrijecedores.t, h: res.enrijecedores.h, comprimento: res.enrijecedores.comprimento, Lg: res.enrijecedores.Lg } : null;
+      if (!res.ok) Object.defineProperty(reg, "_o", { value: o, enumerable: false });   /* a entrada da ponta reprovada: a troca do U (abaixo) refaz a conta com o U maior */
       out.pontas.push(reg); out.n++;
       if (!res.ok) out.reprovados++; else if (res.direta) out.diretas++; else out.corrigidas++;
       if (res.ok) { out.porSolucao[res.adotada] = (out.porSolucao[res.adotada] || 0) + 1; out.pesoChapas += res.peso; }
@@ -278,6 +279,47 @@
     out.pontas.forEach(function (p) { if (p.naoVerificado || (p.ok && p.direta)) return; var x = porBarra[p.barra] || (porBarra[p.barra] = { peso: 0, troca: null, pontas: 0, reprovada: false }); x.peso += num(p.peso, 0) / Math.max(1, nNo[p.no + "|" + p.U] || 1);   /* chapa/enrijecedor dividido no nó: a parte desta ponta */ x.pontas++; if (!p.ok) x.reprovada = true; if (p.troca && (!x.troca || p.troca.t > x.troca.t)) x.troca = p.troca; });
     Object.keys(porBarra).forEach(function (id) { var x = porBarra[id]; if (x.troca && (x.reprovada || x.troca.dPesoBarra < x.peso - 1e-9)) out.trocas[id] = { perfil: x.troca.perfil, obrigatoria: x.reprovada, dPesoBarra: Math.round(x.troca.dPesoBarra * 100) / 100, pesoChapasEvitado: Math.round(x.peso * 100) / 100 }; });
     out.pontas.forEach(function (p) { if (!p.ok && !p.naoVerificado && out.trocas[p.barra]) { p.correcao = "trocar a parede: " + out.trocas[p.barra].perfil; out.resolviveisPorTroca = (out.resolviveisPorTroca || 0) + 1; } });
+    /* E: SUBIR O U DA COLUNA (22/11/2026) — a ponta reprova porque a ALMA DO U é mais fina que o filete mínimo ou não resiste (a troca de
+       parede do tubo não resolve: o lado fino é o U). Candidatas: a MESMA família do catálogo (série do U, NBR 6650 CF), U simples com
+       alma e aba ≥ às de agora e área maior, da mais leve para a mais pesada; adota, por membro U, a primeira em que TODAS as pontas
+       reprovadas dele passam (com a parede trocada do tubo, se houver). Muda a barra: sai como troca (out.trocasU) e o auto-corrige
+       aplica, fixa e recalcula; sem candidata que passe → out.semTrocaU (o cartão explica). */
+    out.trocasU = {}; out.semTrocaU = [];
+    var porU = {};
+    out.pontas.forEach(function (p) { if (p.ok || p.naoVerificado || !p._o || !p.U) return; (porU[p.U] || (porU[p.U] = [])).push(p); });
+    Object.keys(porU).forEach(function (uid) {
+      var ps = porU[uid], o0 = ps[0]._o, cands = candidatasU(o0.U.nome), adot = null;
+      /* com o U q: cada ponta passa com o tubo de agora (ou a parede já trocada) ou, se o tubo também for fino, com a menor parede
+         maior do tubo (a troca combinada tubo + U) → { ok, tubos: { barra: perfil } } */
+      function passaCom(q) {
+        var tubos = {};
+        var ok = ps.every(function (p) {
+          var tr = out.trocas[p.barra], lst = [null].concat(arr(p._o.alternativas));
+          if (tr) { var tt = (arr(p._o.alternativas).filter(function (b) { return b.nome === tr.perfil; })[0] || { t: 0 }).t; lst = arr(p._o.alternativas).filter(function (b) { return b.t >= tt - 1e-9; }); }
+          for (var j = 0; j < lst.length; j++) {
+            var alt = lst[j], o2 = {}; Object.keys(p._o).forEach(function (k) { o2[k] = p._o[k]; });
+            o2.U = { bw: q.bw, bf: q.bf, t: q.t, A: q.A, fy: p._o.U.fy, nome: q.nome }; o2.alternativas = [];
+            if (alt) o2.tubo = { forma: alt.forma, h: alt.h, b: alt.b, d: alt.d, t: alt.t, A: alt.A, fy: p._o.tubo.fy, fu: p._o.tubo.fu, nome: alt.nome };
+            if (ponta(o2).ok) { if (alt && (!tr || alt.nome !== tr.perfil)) tubos[p.barra] = alt; return true; }
+          }
+          return false;
+        });
+        return { ok: ok, tubos: tubos };
+      }
+      var tubosU = null;
+      for (var i = 0; i < cands.length; i++) { var pc = passaCom(cands[i]); if (pc.ok) { adot = cands[i]; tubosU = pc.tubos; break; } }
+      /* a troca combinada: a parede do tubo que o U novo pede entra como troca OBRIGATÓRIA da barra */
+      if (adot) Object.keys(tubosU).forEach(function (bid) { var a = tubosU[bid], p0 = ps.filter(function (p) { return p.barra === bid; })[0];
+        out.trocas[bid] = { perfil: a.nome, obrigatoria: true, dPesoBarra: Math.round((a.A - num(p0._o.tubo.A, 0)) * num(p0._o.L, 0) * 1000 * ACO_KG * 100) / 100, pesoChapasEvitado: 0, comU: adot.nome }; });
+      var tFino = ps.every(function (p) { return num(p._o.tubo.t, 0) < dwMin(Math.min(num(p._o.tubo.t, 0), num(p._o.U.t, 0))) - 1e-9 && !arr(p._o.alternativas).length; });
+      var gv = ps[0].governante;
+      if (adot) { out.trocasU[uid] = { perfil: adot.nome, de: o0.U.nome, pontas: ps.length, motivo: "alma do " + o0.U.nome + " (" + br(o0.U.t, 2) + " mm) reprova " + ps.length + " ponta(s) de tubo: " + String(gv || "").split(" (")[0] };
+        ps.forEach(function (p) { if (!out.trocas[p.barra] || !p.correcao) p.correcao = (p.correcao ? p.correcao + "; " : "") + "subir o U da coluna: " + adot.nome; }); }
+      else out.semTrocaU.push({ U: uid, perfil: o0.U.nome, pontas: ps.length, governante: gv, candidatas: cands.length,
+        motivo: tFino ? "a parede do tubo " + ps[0].perfil + " (" + br(ps[0]._o.tubo.t, 2) + " mm) também é mais fina que o filete mínimo e não há parede maior dele no catálogo — subir o U não resolve; use um tubo de outra medida" : cands.length ? "nenhum U da família (" + cands.length + " testado(s), até " + cands[cands.length - 1].nome + ") faz as " + ps.length + " ponta(s) passarem" : "não há U maior na família do catálogo de " + o0.U.nome });
+    });
+    var nU = Object.keys(out.trocasU).length;
+    if (nU) out.pendencias.push(nU + " trecho(s) de U da coluna sobem para a alma receber os tubos: " + Object.keys(out.trocasU).slice(0, 3).map(function (k) { return out.trocasU[k].de + " → " + out.trocasU[k].perfil; }).join("; ") + " — aplicar no modelo e recalcular (MetalTuboU.trocasDeU)");
     var kT = Object.keys(out.trocas), nT = kT.length, nOb = kT.filter(function (k) { return out.trocas[k].obrigatoria; }).length, dKg = kT.reduce(function (a, k) { return a + out.trocas[k].dPesoBarra; }, 0), evit = kT.reduce(function (a, k) { return a + out.trocas[k].pesoChapasEvitado; }, 0);
     out.pesoTrocas = Math.round(dKg * 10) / 10; out.pesoChapasEvitado = Math.round(evit * 10) / 10;
     if (nOb) out.pendencias.push(nOb + " barra(s) de tubo REPROVADAS na ponta do U só passam trocando a parede (mesma medida externa): " + kT.filter(function (k) { return out.trocas[k].obrigatoria; }).slice(0, 3).map(function (k) { return k + " → " + out.trocas[k].perfil; }).join("; ") + (nOb > 3 ? "…" : "") + " — aplicar no modelo e recalcular (MetalTuboU.trocasDeParede)");
@@ -294,9 +336,20 @@
       "; chapas acrescentadas ≈ " + br(out.pesoChapas, 0) + " kg" + (nT ? "; " + nT + " barra(s) com alternativa de parede mais leve" : "");
     return out;
   }
+  /* candidatas para subir o U: mesma série do catálogo, U simples (sem enrijecedor), alma e aba ≥, área maior; da mais leve */
+  function candidatasU(nome) {
+    var C = Cat(); if (!C || !C.obter) return [];
+    var x = C.obter(nome); if (!x || !x.serie || !/^U /.test(String(x.nome || nome))) return [];
+    var bw0 = num(x.bw, num(x.h, 0)), bf0 = num(x.bf, num(x.b, 0)), A0 = num(x.A, 0);
+    return arr(C.listar(x.serie)).filter(function (n) { return /^U /.test(n) && n !== nome; }).map(function (n) { return C.obter(n); })
+      .filter(function (q) { return q && q.forma === x.forma && num(q.bw, num(q.h, 0)) >= bw0 - 1e-9 && num(q.bf, num(q.b, 0)) >= bf0 - 1e-9 && num(q.A, 0) > A0 + 1e-9; })
+      .map(function (q) { return { nome: q.nome, bw: num(q.bw, num(q.h, 0)), bf: num(q.bf, num(q.b, 0)), t: num(q.t, num(q.tw, 0)), A: num(q.A, 0) }; })
+      .sort(function (a, b) { return a.A - b.A || a.t - b.t; });
+  }
+  function trocasDeU(res) { var o = {}; Object.keys((res && res.trocasU) || {}).forEach(function (k) { o[k] = res.trocasU[k].perfil; }); return o; }
   function trocasDeParede(res) { var o = {}; Object.keys((res && res.trocas) || {}).forEach(function (k) { o[k] = res.trocas[k].perfil; }); return o; }
 
-  var MetalTuboU = { verificar: verificar, ponta: ponta, direta: direta, solda: solda, almaTubo: almaTubo, gusset: gusset, alternativasDe: alternativasDe, detectar: detectar, trocasDeParede: trocasDeParede, ROT: ROT, T_GUSSET: T_GUSSET };
+  var MetalTuboU = { verificar: verificar, ponta: ponta, direta: direta, solda: solda, almaTubo: almaTubo, gusset: gusset, alternativasDe: alternativasDe, detectar: detectar, trocasDeParede: trocasDeParede, trocasDeU: trocasDeU, candidatasU: candidatasU, ROT: ROT, T_GUSSET: T_GUSSET };
   global.MetalTuboU = MetalTuboU;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalTuboU;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

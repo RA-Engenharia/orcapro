@@ -42093,6 +42093,8 @@ if (t === "alma-cheia-1" || t === "alma-cheia-2" || t === "misula" || t === "ati
 if (/^trelica|^tesoura/.test(t)) ks = ks.concat(["banzo", "diagonal", "montante", "escora"]);
 if (t === "tesoura-leve") ks = ks.concat(["banzoColuna", "travejamento", "escoraColuna"]).concat(p.maoFrancesa ? ["maoFrancesa"] : []);
 if (p.tercaBorda) ks.push("tercaBorda");
+if (p.tercaCumeeira) ks.push("tercaCumeeira");
+if (p.escoraColunaBorda) ks.push("escoraColunaBorda");
 if (TIPOS[t].motor === "livre" && tercaTrelicadaLigada(p)) ks = ks.concat(["tercaTrelBanzo", "tercaTrelAlma", "tercaTrelTravamento"]).concat(p.tercaTrelBanzoInf ? ["tercaTrelBanzoInf"] : []);
 if (p.fechamento === "fechado") ks.push("tapamento");
 if (p.correntes > 0) ks.push("barraCorrente");
@@ -42529,7 +42531,8 @@ var X = function (k) { return ld[1] + ld[2] * dx * k; };
 for (var k = 0; k <= n; k++) { if (k === n && ld[0] === "R") continue; pt(nomT(ld[0], k), X(k), yT(X(k))); pt(nomD(ld[0], k), X(k), yB(X(k))); }
 var xi = ld[1] + ld[2] * bc, kS = Math.round(bc / dx), topI;
 var ins = null;
-if (kS >= 1 && kS < n && Math.abs(kS * dx - bc) < tolLeitor(p.banzo, p.banzoColuna) + 0.02) topI = nomD(ld[0], kS);
+var dS = Math.abs(kS * dx - bc), noAlma = kS >= 1 && kS < n, noAlmaOk = noAlma && kS * dx >= num(p.larguraColunaMin, 0) - 1e-9;
+if ((noAlmaOk && dS < 0.35 * dx) || (noAlma && dS < tolLeitor(p.banzo, p.banzoColuna) + 0.02)) topI = nomD(ld[0], kS);
 else { topI = pt("DI" + ld[0], xi, yB(xi)); pt("TI" + ld[0] + "x", xi, yT(xi)); ins = { k0: Math.floor(bc / dx + 1e-9), nT: "TI" + ld[0] + "x", nD: "DI" + ld[0] }; }
 var xiR = pend[topI][0];
 var Hc = yB(ld[1]), nPc = Math.max(2, Math.round(Hc / p.painelColuna)), h = Hc / nPc, nmO = "D" + ld[0] + "0", lado = ld[0] === "L" ? "esquerda" : "direita";
@@ -42666,8 +42669,10 @@ Q.tel.forEach(function (tl, j) {
 var a = no("t" + k + ":" + j, tl.x, tl.y, z), b = no("t" + (k + 1) + ":" + j + "'", tl.x, tl.y, zs[k + 1]);
 var cT = p.terca, yF = Math.min(p.peDireito, 0.15 * p.vao), ehBorda = !!p.tercaBorda && (tl.x < yF - 1e-6 || tl.x > p.vao - yF + 1e-6 || zs[k] < yF - 1e-6 || zs[k + 1] > zs[nP - 1] - yF + 1e-6);
 if (ehBorda) cT = p.tercaBorda;
+var ehCum = !!p.tercaCumeeira && tl.aguas && tl.aguas.length === 2;
+if (ehCum) cT = p.tercaCumeeira;
 if (tTrel) { var ot = tercaTrelicada(k, j, tl, z, zs[k + 1], a, b); (tl.aguas || [tl.agua]).forEach(function (ag) { (tercasPorAgua[ag] = tercasPorAgua[ag] || []).push(ot.id); }); return; }
-var o = barra({ a: a, b: b, ferr: "terca", cat: cT, just: "base", giro: tl.giro, papel: ehBorda ? "Terça de borda" : "Terça", grupo: "terca", aco: acoDe(p, cT), nome: (ehBorda ? "Terça de borda " : "Terça ") + (j + 1) + " — vão " + (k + 1), calc: {} });
+var o = barra({ a: a, b: b, ferr: "terca", cat: cT, just: "base", giro: tl.giro, papel: ehCum ? "Terça da cumeeira" : ehBorda ? "Terça de borda" : "Terça", grupo: "terca", aco: acoDe(p, cT), nome: (ehCum ? "Terça da cumeeira " : ehBorda ? "Terça de borda " : "Terça ") + (j + 1) + " — vão " + (k + 1), calc: {} });
 (tl.aguas || [tl.agua]).forEach(function (ag) { (tercasPorAgua[ag] = tercasPorAgua[ag] || []).push(o.id); });
 });
 });
@@ -42722,7 +42727,8 @@ nAncC++;
 });
 });
 if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água e ANCORADAS por corrente diagonal até a terça da cumeeira no pórtico (" + nAncC + " diagonais) — travam as terças no eixo fraco" + (catsAnc.length ? " — diagonal de ancoragem " + catsAnc.join(", ") + " (A ≥ A da corrente/(n·cos β): leva a força da linha / cos β)" : "") + (p.correntesAuto ? "; " + p.correntes + " linha(s) pela regra do cálculo: o trecho do eixo fraco entre correntes ancoradas até " + String(LIMITE_LZ_CORRENTE).replace(".", ",") + " m (vão " + String(esp).replace(".", ",") + " m / " + (p.correntes + 1) + ")" : " (escolha do engenheiro)") + ".");
-zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { var cE = es.coluna && p.escoraColuna ? p.escoraColuna : p.escora; barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + (es.ptB || es.pt), ferr: "viga", cat: cE, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, cE), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });
+zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { var cE = es.coluna && p.escoraColuna ? p.escoraColuna : p.escora;
+if (es.coluna && p.escoraColunaBorda && (k === 0 || k + 2 === nP)) cE = p.escoraColunaBorda; barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + (es.ptB || es.pt), ferr: "viga", cat: cE, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, cE), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });
 var nMao = 0, qMao = perfilCat(p.maoFrancesa), ligMao = p.ligMaoFrancesa === "soldada" ? "soldada" : "parafusada";
 var calcMao = { compressao: true, ligacao: ligMao, umaAba: !!(qMao && qMao.forma === "L"), naoVerificado: false ? [{ tema: "Cantoneira simples ligada por uma aba", motivo: "mão-francesa em cantoneira simples ligada por uma aba (" + ligMao + "): o motor verifica a compressão com L/r mínimo (rz); a esbeltez equivalente da NBR 8800, 5.3.4.4, sai na conta da mão-francesa (js/acoligcalc.js, maoFrancesa)" }] : [] };
 if (Q.extra.maos && p.maoFrancesa) zs.forEach(function (z, k) {
@@ -43106,8 +43112,8 @@ base: { vao: 20, comprimento: 30, definirPor: "numero", nPorticos: 6, espacament
 sistemaTrelica: "cantoneira", chapaNo: 8, fckFundacao: 25,
 banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",
 montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
-travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 2,66", tercaBorda: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 300 x 100 x 4,25",
-escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 130 x 130 x 5 VMB", tapamento: "TR 200 x 120 x 6,4 VMB",
+travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
+escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 80 x 80 x 4,5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",
 barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "L 63,5 x 4,76 (serie pol) ArcelorMittal", ligMaoFrancesa: "parafusada",
 vento: { lat: -1.30, lon: -47.92, categoria: "II", grupoS3: 2 } },
 sistemas: {
@@ -60074,6 +60080,7 @@ var gk = t2.nome + "|" + o.U.nome + "|" + Math.round(th / 5) * 5, alts = grupos[
 var res = ponta(o);
 reg.theta = Math.round(th * 10) / 10; reg.N = Math.round(o.N * 100) / 100; reg.NcU = Math.round(o.NcU * 10) / 10; reg.ok = res.ok; reg.adotada = res.ok ? res.adotada : null; reg.razao = res.razao; reg.governante = res.governante;
 reg.direta = res.direta; reg.razaoDireta = res.razaoDireta; reg.peso = res.peso; reg.troca = res.troca; reg.solda = res.solda; reg.gusset = res.gusset; reg.enrijecedores = res.enrijecedores ? { t: res.enrijecedores.t, h: res.enrijecedores.h, comprimento: res.enrijecedores.comprimento, Lg: res.enrijecedores.Lg } : null;
+if (!res.ok) Object.defineProperty(reg, "_o", { value: o, enumerable: false });
 out.pontas.push(reg); out.n++;
 if (!res.ok) out.reprovados++; else if (res.direta) out.diretas++; else out.corrigidas++;
 if (res.ok) { out.porSolucao[res.adotada] = (out.porSolucao[res.adotada] || 0) + 1; out.pesoChapas += res.peso; }
@@ -60101,6 +60108,39 @@ out.pontas.forEach(function (p) { if (p.ok && !p.direta) nNo[p.no + "|" + p.U] =
 out.pontas.forEach(function (p) { if (p.naoVerificado || (p.ok && p.direta)) return; var x = porBarra[p.barra] || (porBarra[p.barra] = { peso: 0, troca: null, pontas: 0, reprovada: false }); x.peso += num(p.peso, 0) / Math.max(1, nNo[p.no + "|" + p.U] || 1); x.pontas++; if (!p.ok) x.reprovada = true; if (p.troca && (!x.troca || p.troca.t > x.troca.t)) x.troca = p.troca; });
 Object.keys(porBarra).forEach(function (id) { var x = porBarra[id]; if (x.troca && (x.reprovada || x.troca.dPesoBarra < x.peso - 1e-9)) out.trocas[id] = { perfil: x.troca.perfil, obrigatoria: x.reprovada, dPesoBarra: Math.round(x.troca.dPesoBarra * 100) / 100, pesoChapasEvitado: Math.round(x.peso * 100) / 100 }; });
 out.pontas.forEach(function (p) { if (!p.ok && !p.naoVerificado && out.trocas[p.barra]) { p.correcao = "trocar a parede: " + out.trocas[p.barra].perfil; out.resolviveisPorTroca = (out.resolviveisPorTroca || 0) + 1; } });
+out.trocasU = {}; out.semTrocaU = [];
+var porU = {};
+out.pontas.forEach(function (p) { if (p.ok || p.naoVerificado || !p._o || !p.U) return; (porU[p.U] || (porU[p.U] = [])).push(p); });
+Object.keys(porU).forEach(function (uid) {
+var ps = porU[uid], o0 = ps[0]._o, cands = candidatasU(o0.U.nome), adot = null;
+function passaCom(q) {
+var tubos = {};
+var ok = ps.every(function (p) {
+var tr = out.trocas[p.barra], lst = [null].concat(arr(p._o.alternativas));
+if (tr) { var tt = (arr(p._o.alternativas).filter(function (b) { return b.nome === tr.perfil; })[0] || { t: 0 }).t; lst = arr(p._o.alternativas).filter(function (b) { return b.t >= tt - 1e-9; }); }
+for (var j = 0; j < lst.length; j++) {
+var alt = lst[j], o2 = {}; Object.keys(p._o).forEach(function (k) { o2[k] = p._o[k]; });
+o2.U = { bw: q.bw, bf: q.bf, t: q.t, A: q.A, fy: p._o.U.fy, nome: q.nome }; o2.alternativas = [];
+if (alt) o2.tubo = { forma: alt.forma, h: alt.h, b: alt.b, d: alt.d, t: alt.t, A: alt.A, fy: p._o.tubo.fy, fu: p._o.tubo.fu, nome: alt.nome };
+if (ponta(o2).ok) { if (alt && (!tr || alt.nome !== tr.perfil)) tubos[p.barra] = alt; return true; }
+}
+return false;
+});
+return { ok: ok, tubos: tubos };
+}
+var tubosU = null;
+for (var i = 0; i < cands.length; i++) { var pc = passaCom(cands[i]); if (pc.ok) { adot = cands[i]; tubosU = pc.tubos; break; } }
+if (adot) Object.keys(tubosU).forEach(function (bid) { var a = tubosU[bid], p0 = ps.filter(function (p) { return p.barra === bid; })[0];
+out.trocas[bid] = { perfil: a.nome, obrigatoria: true, dPesoBarra: Math.round((a.A - num(p0._o.tubo.A, 0)) * num(p0._o.L, 0) * 1000 * ACO_KG * 100) / 100, pesoChapasEvitado: 0, comU: adot.nome }; });
+var tFino = ps.every(function (p) { return num(p._o.tubo.t, 0) < dwMin(Math.min(num(p._o.tubo.t, 0), num(p._o.U.t, 0))) - 1e-9 && !arr(p._o.alternativas).length; });
+var gv = ps[0].governante;
+if (adot) { out.trocasU[uid] = { perfil: adot.nome, de: o0.U.nome, pontas: ps.length, motivo: "alma do " + o0.U.nome + " (" + br(o0.U.t, 2) + " mm) reprova " + ps.length + " ponta(s) de tubo: " + String(gv || "").split(" (")[0] };
+ps.forEach(function (p) { if (!out.trocas[p.barra] || !p.correcao) p.correcao = (p.correcao ? p.correcao + "; " : "") + "subir o U da coluna: " + adot.nome; }); }
+else out.semTrocaU.push({ U: uid, perfil: o0.U.nome, pontas: ps.length, governante: gv, candidatas: cands.length,
+motivo: tFino ? "a parede do tubo " + ps[0].perfil + " (" + br(ps[0]._o.tubo.t, 2) + " mm) também é mais fina que o filete mínimo e não há parede maior dele no catálogo — subir o U não resolve; use um tubo de outra medida" : cands.length ? "nenhum U da família (" + cands.length + " testado(s), até " + cands[cands.length - 1].nome + ") faz as " + ps.length + " ponta(s) passarem" : "não há U maior na família do catálogo de " + o0.U.nome });
+});
+var nU = Object.keys(out.trocasU).length;
+if (nU) out.pendencias.push(nU + " trecho(s) de U da coluna sobem para a alma receber os tubos: " + Object.keys(out.trocasU).slice(0, 3).map(function (k) { return out.trocasU[k].de + " → " + out.trocasU[k].perfil; }).join("; ") + " — aplicar no modelo e recalcular (MetalTuboU.trocasDeU)");
 var kT = Object.keys(out.trocas), nT = kT.length, nOb = kT.filter(function (k) { return out.trocas[k].obrigatoria; }).length, dKg = kT.reduce(function (a, k) { return a + out.trocas[k].dPesoBarra; }, 0), evit = kT.reduce(function (a, k) { return a + out.trocas[k].pesoChapasEvitado; }, 0);
 out.pesoTrocas = Math.round(dKg * 10) / 10; out.pesoChapasEvitado = Math.round(evit * 10) / 10;
 if (nOb) out.pendencias.push(nOb + " barra(s) de tubo REPROVADAS na ponta do U só passam trocando a parede (mesma medida externa): " + kT.filter(function (k) { return out.trocas[k].obrigatoria; }).slice(0, 3).map(function (k) { return k + " → " + out.trocas[k].perfil; }).join("; ") + (nOb > 3 ? "…" : "") + " — aplicar no modelo e recalcular (MetalTuboU.trocasDeParede)");
@@ -60115,8 +60155,18 @@ Object.keys(out.porSolucao).filter(function (k) { return k !== "A"; }).map(funct
 "; chapas acrescentadas ≈ " + br(out.pesoChapas, 0) + " kg" + (nT ? "; " + nT + " barra(s) com alternativa de parede mais leve" : "");
 return out;
 }
+function candidatasU(nome) {
+var C = Cat(); if (!C || !C.obter) return [];
+var x = C.obter(nome); if (!x || !x.serie || !/^U /.test(String(x.nome || nome))) return [];
+var bw0 = num(x.bw, num(x.h, 0)), bf0 = num(x.bf, num(x.b, 0)), A0 = num(x.A, 0);
+return arr(C.listar(x.serie)).filter(function (n) { return /^U /.test(n) && n !== nome; }).map(function (n) { return C.obter(n); })
+.filter(function (q) { return q && q.forma === x.forma && num(q.bw, num(q.h, 0)) >= bw0 - 1e-9 && num(q.bf, num(q.b, 0)) >= bf0 - 1e-9 && num(q.A, 0) > A0 + 1e-9; })
+.map(function (q) { return { nome: q.nome, bw: num(q.bw, num(q.h, 0)), bf: num(q.bf, num(q.b, 0)), t: num(q.t, num(q.tw, 0)), A: num(q.A, 0) }; })
+.sort(function (a, b) { return a.A - b.A || a.t - b.t; });
+}
+function trocasDeU(res) { var o = {}; Object.keys((res && res.trocasU) || {}).forEach(function (k) { o[k] = res.trocasU[k].perfil; }); return o; }
 function trocasDeParede(res) { var o = {}; Object.keys((res && res.trocas) || {}).forEach(function (k) { o[k] = res.trocas[k].perfil; }); return o; }
-var MetalTuboU = { verificar: verificar, ponta: ponta, direta: direta, solda: solda, almaTubo: almaTubo, gusset: gusset, alternativasDe: alternativasDe, detectar: detectar, trocasDeParede: trocasDeParede, ROT: ROT, T_GUSSET: T_GUSSET };
+var MetalTuboU = { verificar: verificar, ponta: ponta, direta: direta, solda: solda, almaTubo: almaTubo, gusset: gusset, alternativasDe: alternativasDe, detectar: detectar, trocasDeParede: trocasDeParede, trocasDeU: trocasDeU, candidatasU: candidatasU, ROT: ROT, T_GUSSET: T_GUSSET };
 global.MetalTuboU = MetalTuboU;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalTuboU;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -132516,7 +132566,7 @@ H2: "beiral alto, trecho central", L2: "beiral baixo, trecho central", "cpe méd
 function registroBorda(vento, regs, sucZona, suc, nome, rot, decisoes) {
 var lc = vento && vento.locais;
 if (!lc) return { aplicado: false, motivo: vento && vento.casos ? "o vento não trouxe as zonas de borda (cpe médio)" : "sem vento" };
-var fonte = "NBR 6123:2023, 6.1.2 e 6.1.3 — Tabela 4 (nota c: faixa 0,2·b ou h, o menor) e Tabelas 5/6 com as figuras (y = h ou 0,15·b, o menor)";
+var fonte = "NBR 6123:2023, 6.1.1 (cpe médio só nas zonas de borda, para vedações e seus elementos de apoio; S2 da classe A) — Tabela 6 (nota 4: faixa 0,2·b ou h, o menor) e Tabelas 7/8 com as figuras (y = h ou 0,15·b, o menor — conferir na figura)";
 var linhas = regs.map(function (r) {
 var zs = Object.keys(r.zonas).map(function (k) { return r.zonas[k]; }).sort(function (a, b) { return a.p - b.p; });
 if (!zs.length) return { barra: rot(r), borda: false, texto: nome + " " + rot(r) + ": fora das faixas de borda — cpe da zona (sucção " + fz(r.sucZona, 3) + " kN/m²)" };
@@ -137418,7 +137468,7 @@ return sInf != null ? sInf : p.L / 2;
 }
 var avisosPontual = [];
 var OPC_TRAV = { pendular: true };
-var OPC_COR = { correntes: true, sentido: true };
+var OPC_COR = { correntes: true, sentido: true, alturaTelhado: true };
 var OPC_EST = { semPar: true, fator: 100 };
 function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function montar(lido, op) {
@@ -138185,6 +138235,12 @@ return yo > y + 0.3;
 });
 }
 function sFace(face) { return face === "esquerda" || face === "direita" ? 2 : 0; }
+function naAlturaDoTelhado(m) {
+var xm = (m.a[0] + m.b[0]) / 2 - VL.x0, d;
+if (VL.cobertura === "duas-aguas") d = Math.max(0, Math.min(xm, VL.b - xm));
+else d = VL.ladoAlto === "esquerda" ? Math.max(0, VL.b - xm) : Math.max(0, xm);
+return Math.min(m.a[1], m.b[1]) >= yBeiral + tgR * d - 0.6;
+}
 function pZona(m, face) {
 var pz = 0;
 VL.casos.forEach(function (vc) {
@@ -138214,7 +138270,7 @@ var sa = sFace(face) === 2 ? za : xa, sb = sFace(face) === 2 ? zb : xb, pw = nul
 arr((lc.paredes || {})[face]).forEach(function (f) { if (isFinite(f.p) && sob(sa, sb, f.s0, f.s1) && (!pw || f.p < pw.p)) pw = { zona: "faixa de borda da parede " + face, cpe: f.cpe, p: f.p }; });
 if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p, dir: dirParede(face) });
 }
-if ((!face || noBeiral(m)) && !cobertoPorOutro(m)) {
+if ((!face || noBeiral(m)) && !cobertoPorOutro(m) && (OPC_COR.alturaTelhado === false || naAlturaDoTelhado(m))) {
 var pr = null, xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
 arr(lc.cobertura).forEach(function (r) {
 var toca = (xx1 - xx0 < 1e-6 ? xx0 >= r.x0 - 1e-6 && xx0 <= r.x1 + 1e-6 : sob(xx0, xx1, r.x0, r.x1)) && (zz1 - zz0 < 1e-6 ? zz0 >= r.z0 - 1e-6 && zz0 <= r.z1 + 1e-6 : sob(zz0, zz1, r.z0, r.z1));
@@ -138453,7 +138509,7 @@ motivo: t64 ? "F' = Cf·q·l1·(l2 − 4h) + Cf·q·2h·(l2 − 4h) — 6.4.2 e 
 }
 var bordaLivre = tercasNaBorda(G, VL);
 if (bordaLivre.length) {
-var txB = "Vento: " + bordaLivre.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.2; Tabela 4 nota c, Tabelas 5/6 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
+var txB = "Vento: " + bordaLivre.length + " terça(s)/travessa(s) desenhada(s) nas faixas de borda/canto da NBR 6123:2023 (6.1.1; Tabela 6 nota 4, Tabelas 7/8 e figuras) — o cpe MÉDIO dessas faixas vale para a estrutura secundária e NÃO foi aplicado a estas peças nesta estrutura (o vento delas está pelo cpe da zona): " +
 bordaLivre.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + fcp(q.cpe) + ", p = " + fcp(q.p, 3) + " kN/m²)"; }).join("; ") + ". Verifique estas peças à parte com essa pressão.";
 if (avisos.indexOf(txB) < 0) avisos.push(txB);
 resumo.vento.cpeMedioNaoAplicado = bordaLivre;
@@ -139654,6 +139710,19 @@ var p0 = MP.pecas[String(t.peca)], de = t.de || (p0 ? p0.cat : "");
 if (!C || !C.obter(t.para) || de === t.para || proib[sig({ tipo: "tubo-u", peca: String(t.peca), para: t.para })]) return;
 trocar("tubo-u", t.peca, de, t.para, "Ponta de tubo soldada no U: " + de + " → " + t.para + (t.motivo ? " (" + txt(t.motivo).slice(0, 90) + ")" : ""), true);
 });
+try {
+var mu = typeof TU.trocasDeU === "function" ? TU.trocasDeU(vtu) : {}, porPcU = {};
+Object.keys(mu).forEach(function (mid) {
+var mb = MP.membros[String(mid)], pc = mb ? String(mb.peca) : null; if (!pc) return;
+var q = C && C.obter(mu[mid]), j = porPcU[pc]; if (!q) return;
+if (!j || num(q.A, 0) > num(j.q.A, 0)) porPcU[pc] = { q: q, tr: vtu.trocasU[mid] };
+});
+Object.keys(porPcU).forEach(function (pc) {
+var p0 = MP.pecas[pc], de = p0 ? p0.cat : "", para = porPcU[pc].q.nome, tr = porPcU[pc].tr;
+if (de === para || proib[sig({ tipo: "u-coluna", peca: pc, para: para })]) return;
+trocar("u-coluna", pc, de, para, "U da coluna recebendo tubos: " + de + " → " + para + " (" + txt(tr && tr.motivo).slice(0, 110) + ")", true);
+});
+} catch (eU) { }
 }
 if (r.nosChapa && r.nosChapa.reprovados && C) {
 var folgas = {};
@@ -139743,7 +139812,8 @@ var tuR = r.nosTubo && r.nosTubo.tuboU;
 if (tuR && tuR.reprovados) {
 var pr = arr(tuR.pontas).filter(function (p) { return p.ok === false && !p.naoVerificado; }), gv = {};
 pr.forEach(function (p) { var k = txt(p.governante); gv[k] = (gv[k] || 0) + 1; });
-add({ gravidade: "erro", titulo: tuR.reprovados + " ponta(s) de tubo soldada(s) no U da coluna que não passa(m)", texto: "Nenhuma correção (solda maior, enrijecedores, chapa com parafusos ou parede maior do tubo) resolve: " + Object.keys(gv).slice(0, 3).map(function (k) { return gv[k] + "× " + k; }).join("; ") + (pr[0] ? " (ex.: " + pr[0].perfil + " no " + pr[0].UPerfil + ", nó " + pr[0].no + ")" : "") + ".", pecas: pecasDeMembros(r, pr.map(function (p) { return p.U; }).concat(pr.map(function (p) { return p.barra; }))), oque: "aumente a espessura do U da coluna ou use o sistema em cantoneira" });
+var sU = arr(tuR.semTrocaU), sUtx = sU.length ? " U da coluna: " + sU.slice(0, 2).map(function (q) { return q.perfil + " — " + q.motivo; }).join("; ") + "." : "";
+add({ gravidade: "erro", titulo: tuR.reprovados + " ponta(s) de tubo soldada(s) no U da coluna que não passa(m)", texto: "Nenhuma correção (solda maior, enrijecedores, chapa com parafusos, parede maior do tubo ou U maior da coluna) resolve: " + Object.keys(gv).slice(0, 3).map(function (k) { return gv[k] + "× " + k; }).join("; ") + (pr[0] ? " (ex.: " + pr[0].perfil + " no " + pr[0].UPerfil + ", nó " + pr[0].no + ")" : "") + "." + sUtx, pecas: pecasDeMembros(r, pr.map(function (p) { return p.U; }).concat(pr.map(function (p) { return p.barra; }))), oque: "aumente a espessura do U da coluna ou use o sistema em cantoneira" });
 }
 if (r.nosChapa && r.nosChapa.reprovados) conta += r.nosChapa.reprovados;
 if (r.ligDim && r.ligDim.reprovados) conta += r.ligDim.reprovados;
@@ -156470,7 +156540,7 @@ if (t === "tesoura-leve") {
 c.push(["sistemaTrelica", "Sistema da treliça", "sel", [["tubo", "Tubo (nós soldados tubo-tubo)"], ["cantoneira", "Cantoneira (2L costas com costas e chapa de nó)"]]], ["chapaNo", "Chapa de nó / folga da 2L (mm)", "num"]);
 c.push(["forma", "Tesoura", "sel", [["paralelos", "Banzos paralelos (duas águas)"], ["trapezoidal", "Trapezoidal (banzo de baixo reto)"]]], ["padrao", "Alma", "sel", [["howe", "Montante em todo nó, diagonais descendo para o meio"], ["warren", "Warren (montante só nas terças: banzo de cima com painel dobrado)"]]],
 ["alturaTrelica", "Altura da tesoura (m, entre eixos; 0 = vão/15)", "num"], ["subPaineis", "Painéis de alma por painel de terça (0 = automático)", "int"],
-["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_2L.concat(S_LEVE_U, S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["montante", "Perfil dos montantes (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
+["banzo", "Perfil dos banzos da tesoura", "cat", S_LEVE_2L.concat(S_LEVE_U, S_LEVE_TUBO)], ["diagonal", "Perfil das diagonais (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["montante", "Perfil dos montantes (2L, cantoneira ou tubo)", "cat", S_LEVE_2L.concat(S_LEVE_L, S_LEVE_TUBO)], ["escora", "Escora do banzo de baixo", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColuna", "Escora da coluna (no plano da parede)", "cat", S_LEVE_TUBO.concat(S_TUBO)], ["escoraColunaBorda", "Escora da coluna nos vãos extremos (faixa de borda do vento; vazio = a mesma)", "cat", S_LEVE_TUBO.concat(S_TUBO)],
 ["secaoColuna", "Seção do pilar", "sel", [["plana", "Plana (2 banzos)"], ["espacial", "Espacial (4 montantes)"]]], ["profColuna", "Profundidade da coluna espacial (m, fora do plano; 0 = a largura)", "num"], ["montanteColuna", "Perfil dos montantes da coluna espacial (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO, S_TUBO)], ["larguraColuna", "Largura da coluna (m, entre eixos dos banzos)", "num"], ["painelColuna", "Altura do painel do travejamento (m)", "num"], ["banzoColuna", "Perfil dos banzos da coluna", "cat", S_LEVE_U.concat(S_PRINC)], ["travejamento", "Perfil do travejamento (cantoneira ou tubo)", "cat", S_LEVE_L.concat(S_LEVE_TUBO)]);
 }
 else if (/^trelica|^tesoura/.test(t)) {
@@ -156490,6 +156560,7 @@ if (t === "ponte") c.push(["cotaConsole", "Cota do topo do console (m; 0 = 70 % 
 if (t === "mezanino") c.push(["largura", "Largura do mezanino (m, da lateral esquerda)", "num"], ["cotaPiso", "Cota do piso — topo do aço (m)", "num"], ["espSec", "Espaçamento das secundárias (m)", "num"], ["vigaMez", "Viga do mezanino", "cat", S_PRINC], ["secMez", "Secundária do mezanino", "cat", S_PRINC], ["pilarMez", "Pilar do mezanino", "cat", S_PRINC.concat(S_TUBO)],
 ["uso", "Uso do piso (NBR 6120, Tabela 10)", "sel", usos()], ["qInformado", "Sobrecarga informada (kN/m²; só se o uso pede)", "num"], ["gPiso", "Permanente do piso (kN/m²)", "num"]);
 if (t === "tesoura-leve") c.push(["tercaBorda", "Terça das faixas de borda (vento local, NBR 6123)", "cat", S_TERCA.concat(["TUPER-TR"])]);
+if (t === "tesoura-leve") c.push(["tercaCumeeira", "Terça da cumeeira (escora do contraventamento; vazio = a mesma)", "cat", S_TERCA.concat(["TUPER-TR"])]);
 c.push(["terca", t === "tesoura-leve" ? "Perfil das terças internas" : "Perfil das terças", "cat", t === "tesoura-leve" ? ["TUPER-TR"].concat(S_TERCA) : S_TERCA], ["espTercas", "Espaçamento máx. das terças (m)", "num"], ["correntes", "Linhas de corrente por vão (0 a 3)", "int"]);
 if (t !== "alma-cheia-1" && t !== "alma-cheia-2") c.push(["tipoTerca", "Tipo de terça", "sel", [["auto", "Automática (treliçada acima de 9 m entre pórticos)"], ["perfil", "Perfil (Ue / tubo)"], ["trelicada", "Treliçada (banzos + alma em barra redonda)"]]],
 ["tercaTrelBanzo", "Terça treliçada: banzos", "cat", S_LEVE_TUBO.concat(S_LEVE_L, S_TUBO)], ["tercaTrelAlma", "Terça treliçada: alma (barra redonda)", "cat", S_BARRA], ["alturaTercaTrel", "Terça treliçada: altura (m; 0 = vão/20)", "num"]);

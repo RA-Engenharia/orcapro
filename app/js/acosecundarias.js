@@ -73,7 +73,7 @@
     return o;
   }
 
-  /* cpe MÉDIO das zonas de borda e de canto (NBR 6123:2023, 6.1.2 e 6.1.3; Tabela 4, nota c — paredes: faixa 0,2·b ou h,
+  /* cpe MÉDIO das zonas de borda e de canto (NBR 6123:2023, 6.1.1; Tabela 6, nota 4 [na 1988: 6.1.2/6.1.3 e Tabela 4, nota c] — paredes: faixa 0,2·b ou h,
    * o menor, nas pontas de cada face; Tabelas 5 e 6 com as figuras — cobertura: y = h ou 0,15·b, o menor, junto ao oitão,
    * aos beirais e à cumeeira). Vale para a ESTRUTURA SECUNDÁRIA: o memorial já dizia isso, mas as terças e as travessas
    * só liam o cpe da zona (achado do revisor, 15/10/2026). As zonas, o cpe médio e p = q(classe A)·(cpe médio − cpi mais
@@ -112,7 +112,7 @@
   function registroBorda(vento, regs, sucZona, suc, nome, rot, decisoes) {
     var lc = vento && vento.locais;
     if (!lc) return { aplicado: false, motivo: vento && vento.casos ? "o vento não trouxe as zonas de borda (cpe médio)" : "sem vento" };
-    var fonte = "NBR 6123:2023, 6.1.2 e 6.1.3 — Tabela 4 (nota c: faixa 0,2·b ou h, o menor) e Tabelas 5/6 com as figuras (y = h ou 0,15·b, o menor)";
+    var fonte = "NBR 6123:2023, 6.1.1 (cpe médio só nas zonas de borda, para vedações e seus elementos de apoio; S2 da classe A) — Tabela 6 (nota 4: faixa 0,2·b ou h, o menor) e Tabelas 7/8 com as figuras (y = h ou 0,15·b, o menor — conferir na figura)";
     var linhas = regs.map(function (r) {
       var zs = Object.keys(r.zonas).map(function (k) { return r.zonas[k]; }).sort(function (a, b) { return a.p - b.p; });
       if (!zs.length) return { barra: rot(r), borda: false, texto: nome + " " + rot(r) + ": fora das faixas de borda — cpe da zona (sucção " + fz(r.sucZona, 3) + " kN/m²)" };

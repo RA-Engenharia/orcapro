@@ -257,6 +257,22 @@
         if (!C || !C.obter(t.para) || de === t.para || proib[sig({ tipo: "tubo-u", peca: String(t.peca), para: t.para })]) return;
         trocar("tubo-u", t.peca, de, t.para, "Ponta de tubo soldada no U: " + de + " → " + t.para + (t.motivo ? " (" + txt(t.motivo).slice(0, 90) + ")" : ""), true);
       });
+      /* 22/11/2026: a ALMA DO U da coluna é o lado fino (filete mínimo maior que a alma, ou a alma não resiste): o U sobe na mesma
+         família do catálogo (MetalTuboU.trocasDeU — o mais leve em que todas as pontas reprovadas passam), fica fixo e recalcula;
+         o que piorar é desfeito como as outras correções. Membros do mesmo U (uma peça) → o maior pedido. */
+      try {
+        var mu = typeof TU.trocasDeU === "function" ? TU.trocasDeU(vtu) : {}, porPcU = {};
+        Object.keys(mu).forEach(function (mid) {
+          var mb = MP.membros[String(mid)], pc = mb ? String(mb.peca) : null; if (!pc) return;
+          var q = C && C.obter(mu[mid]), j = porPcU[pc]; if (!q) return;
+          if (!j || num(q.A, 0) > num(j.q.A, 0)) porPcU[pc] = { q: q, tr: vtu.trocasU[mid] };
+        });
+        Object.keys(porPcU).forEach(function (pc) {
+          var p0 = MP.pecas[pc], de = p0 ? p0.cat : "", para = porPcU[pc].q.nome, tr = porPcU[pc].tr;
+          if (de === para || proib[sig({ tipo: "u-coluna", peca: pc, para: para })]) return;
+          trocar("u-coluna", pc, de, para, "U da coluna recebendo tubos: " + de + " → " + para + " (" + txt(tr && tr.motivo).slice(0, 110) + ")", true);
+        });
+      } catch (eU) { }
     }
     /* NÓ COM CHAPA: a folga da 2L (chapa de nó) sobe uma espessura em todas as 2L com a mesma folga */
     if (r.nosChapa && r.nosChapa.reprovados && C) {
@@ -362,7 +378,8 @@
     if (tuR && tuR.reprovados) {
       var pr = arr(tuR.pontas).filter(function (p) { return p.ok === false && !p.naoVerificado; }), gv = {};
       pr.forEach(function (p) { var k = txt(p.governante); gv[k] = (gv[k] || 0) + 1; });
-      add({ gravidade: "erro", titulo: tuR.reprovados + " ponta(s) de tubo soldada(s) no U da coluna que não passa(m)", texto: "Nenhuma correção (solda maior, enrijecedores, chapa com parafusos ou parede maior do tubo) resolve: " + Object.keys(gv).slice(0, 3).map(function (k) { return gv[k] + "× " + k; }).join("; ") + (pr[0] ? " (ex.: " + pr[0].perfil + " no " + pr[0].UPerfil + ", nó " + pr[0].no + ")" : "") + ".", pecas: pecasDeMembros(r, pr.map(function (p) { return p.U; }).concat(pr.map(function (p) { return p.barra; }))), oque: "aumente a espessura do U da coluna ou use o sistema em cantoneira" });
+      var sU = arr(tuR.semTrocaU), sUtx = sU.length ? " U da coluna: " + sU.slice(0, 2).map(function (q) { return q.perfil + " — " + q.motivo; }).join("; ") + "." : "";
+      add({ gravidade: "erro", titulo: tuR.reprovados + " ponta(s) de tubo soldada(s) no U da coluna que não passa(m)", texto: "Nenhuma correção (solda maior, enrijecedores, chapa com parafusos, parede maior do tubo ou U maior da coluna) resolve: " + Object.keys(gv).slice(0, 3).map(function (k) { return gv[k] + "× " + k; }).join("; ") + (pr[0] ? " (ex.: " + pr[0].perfil + " no " + pr[0].UPerfil + ", nó " + pr[0].no + ")" : "") + "." + sUtx, pecas: pecasDeMembros(r, pr.map(function (p) { return p.U; }).concat(pr.map(function (p) { return p.barra; }))), oque: "aumente a espessura do U da coluna ou use o sistema em cantoneira" });
     }
     if (r.nosChapa && r.nosChapa.reprovados) conta += r.nosChapa.reprovados;
     if (r.ligDim && r.ligDim.reprovados) conta += r.ligDim.reprovados;
