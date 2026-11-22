@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.431",
+versao: "1.2.432",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -13124,7 +13124,8 @@ var MODOS = [
 { id: "arred2aux", rotulo: "Arredondar em 2 casas decimais incluindo as composições auxiliares", selo: "" },
 { id: "arred2truncpu", rotulo: "Arredondar em 2 casas decimais e truncar os preços unitários", selo: "" },
 { id: "truncar2", rotulo: "Truncar tudo em 2 casas decimais", selo: "Padrão do TCU" },
-{ id: "nenhum", rotulo: "Não arredondar", selo: "" }
+{ id: "nenhum", rotulo: "Não arredondar", selo: "" },
+{ id: "arred2puexato", rotulo: "Arredondar o total do item com o preço unitário exato (sem arredondar o unitário com BDI)", selo: "" }
 ];
 var PADRAO = "truncar2";
 var Arred = {
@@ -13173,8 +13174,15 @@ var cu = cru(custoUnitario), pct = cru(bdiPct);
 if (this.normalizarIncidencia(incidencia) === "final") return this.unitario(cu, modo);
 return this.unitario(cu * (1 + pct / 100), modo);
 },
+puExato: function (custoUnitario, bdiPct, modo, incidencia) {
+if (this.normalizar(modo) !== "arred2puexato") return this.puComBdi(custoUnitario, bdiPct, modo, incidencia);
+var cu = cru(custoUnitario), pct = cru(bdiPct);
+if (this.normalizarIncidencia(incidencia) === "final") return cu;
+return cu * (1 + pct / 100);
+},
 totalItem: function (quantidade, custoUnitario, bdiPct, modo, incidencia) {
 var q = cru(quantidade);
+if (this.normalizar(modo) === "arred2puexato") return this.valor(q * this.puExato(custoUnitario, bdiPct, modo, incidencia), modo);
 var pu = this.puComBdi(custoUnitario, bdiPct, modo, incidencia);
 return this.valor(q * pu, modo);
 },
@@ -13774,6 +13782,7 @@ PADRAO: "truncar2", INCIDENCIA_PADRAO: "unitario",
 normalizar: function () { return "truncar2"; },
 normalizarIncidencia: function (i) { return i === "final" ? "final" : "unitario"; },
 valor: tr, unitario: tr, auxiliar: tr,
+puExato: function (cu, pct, m, inc) { return this.puComBdi(cu, pct, m, inc); },
 puComBdi: function (cu, pct, m, inc) { return inc === "final" ? tr(cu) : tr(Number(cu || 0) * (1 + Number(pct || 0) / 100)); },
 totalItem: function (q, cu, pct, m, inc) { return tr(Number(q || 0) * this.puComBdi(cu, pct, m, inc)); },
 custoItem: function (q, cu) { return tr(Number(q || 0) * tr(cu)); }
@@ -14535,7 +14544,7 @@ var q = Util.num(it.quantidade);
 var cu = A0.unitario(it.custoUnitario, modo);
 var ct = A0.valor(q * cu, modo);
 var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
-var pt = A0.valor(q * pu, modo);
+var pt = A0.valor(q * (bdiNoPU && modo === "arred2puexato" ? cu * (1 + pct / 100) : pu), modo);
 custoDireto += ct; somaVenda += pt;
 custoPorEtapa[ei] += ct; vendaPorEtapa[ei] += pt;
 if (it.modoCusto !== "matEq") mo += q * Util.num(it.custoMO);
@@ -19080,6 +19089,7 @@ return '<button class="conta-item' + (alerta ? " alerta" : "") + '" data-acao="l
 (!admin && usuario.editaGestao === true ? '<button class="conta-item" data-acao="gestao-empresa"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>Planejamento e gestão</button>' : '') +
 '<button class="conta-item" data-acao="tabelas"><span>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</span>Tabelas de preço</button>' +
 (admin ? '<button class="conta-item" data-acao="nuvem"><span>' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</span>Nuvem — sincronizar aparelhos</button>' : '') +
+(admin && typeof LicitacaoFilaUi !== 'undefined' ? '<button class="conta-item" data-acao="fila-certamepro"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</span>Fila do CertamePRO</button>' : '') +
 (admin ? '<button class="conta-item" data-acao="celular"><span>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</span>Usar no celular ou tablet</button>' : '') +
 (admin ? '<button class="conta-item" data-acao="backup"><span>' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + '</span>Backup dos dados</button>' : '') +
 '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Meu perfil — nome e foto</button>' +
@@ -19502,6 +19512,7 @@ f("instagram", "Instagram (@usuario)", emp.instagram) +
 '<div class="row">' + f("inscricaoMunicipal", "Inscrição municipal", emp.inscricaoMunicipal) + f("banco", "Banco (código e nome)", emp.banco) + '</div>' +
 '<div class="row">' + f("agencia", "Agência", emp.agencia) + f("conta", "Conta corrente", emp.conta) + '</div>' +
 '<div class="row">' + f("socioNome", "Sócio administrador (nome)", emp.socioNome) + f("socioCargo", "Cargo do sócio", emp.socioCargo) + '</div>' +
+'<div class="row">' + f("socioRg", "Identidade do sócio (RG e órgão expedidor)", emp.socioRg) + f("socioCpf", "CPF do sócio", emp.socioCpf) + '</div>' +
 '<div class="row">' + f("rtNome", "Responsável técnico (nome na proposta)", emp.rtNome) + f("rtCrea", "CREA do responsável técnico", emp.rtCrea) + '</div>' +
 '<div class="row">' +
 '<div class="field"><label>Timbrado: imagem do topo (logo)</label><input type="file" id="emp-timbradoTopo-arq" accept="image/png,image/jpeg,image/webp">' +
@@ -22503,7 +22514,7 @@ row.getCell(6).value = qt;
 row.getCell(7).value = cu;
 row.getCell(8).value = { formula: fV('F' + r + '*' + fU('G' + r)), result: ct };
 row.getCell(9).value = { formula: bdiNoPU ? fU('G' + r + '*(1+' + BDI_CELL + '/100)') : fU('G' + r), result: pu };
-row.getCell(10).value = { formula: fV('F' + r + '*I' + r), result: pt };
+row.getCell(10).value = { formula: (bdiNoPU && modoArr === 'arred2puexato') ? fV('F' + r + '*G' + r + '*(1+' + BDI_CELL + '/100)') : fV('F' + r + '*I' + r), result: pt };
 row.getCell(11).value = etKey;
 if (_memNoExcel && it.memoriaCalculo) {
 row.getCell(12).value = String(it.memoriaCalculo);
@@ -70298,7 +70309,7 @@ if (i && typeof i === "object" && i.custoTotal != null) i.custoTotal = Math.roun
 return out;
 }
 var CAMPOS_LICITANTE = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
-"socioNome", "socioCargo", "rtNome", "rtCrea"];
+"socioNome", "socioCargo", "rtNome", "rtCrea", "cidade", "socioRg", "socioCpf"];
 var TIMBRADO_MAX_CHARS = 560000, TIMBRADO_MAX_CNPJS = 6;
 var TIMBRADO_MAX_TOTAL = 2000000;
 function _timbTotal(o) {
@@ -70509,6 +70520,8 @@ lic.ativo = true;
 lic.certamepro = true;
 lic.certame = s(bloco.certame);
 lic.pncp = s(bloco.numero_controle_pncp);
+if (s(bloco.numero_edital) && !s(lic.numero_edital)) lic.numero_edital = s(bloco.numero_edital);
+if (bloco.processo !== undefined && lic.processo_adm === undefined) lic.processo_adm = s(bloco.processo);
 var org = (bloco.orgao && typeof bloco.orgao === "object") ? bloco.orgao : {};
 lic.orgao = { nome: s(org.nome), cnpj: s(org.cnpj) };
 lic.criterio = s(bloco.criterio_julgamento);
@@ -71437,7 +71450,8 @@ return {
 orgao: orgao,
 cnpj: (c.orgao && c.orgao.cnpj) || (orc.cliente && orc.cliente.doc) || "",
 processo: s(c.processo),
-edital: s(c.pncp) || s(c.certame),
+edital: s(c.pncp) || s(c.certame) || s(c.numero_edital),
+numeroEdital: s(c.numero_edital),
 sessao: dt(c.abertura),
 modalidade: s(c.tipo),
 criterio: s(c.criterio),
@@ -72662,6 +72676,12 @@ d = (d instanceof Date) ? d : new Date(d || Date.now());
 if (isNaN(d.getTime())) d = new Date();
 return (d.getDate() + " de " + MESES[d.getMonth()] + " de " + d.getFullYear()).toUpperCase();
 }
+function dataCurta(d) {
+d = (d instanceof Date) ? d : new Date(d || Date.now());
+if (isNaN(d.getTime())) d = new Date();
+var z = function (n) { return (n < 10 ? "0" : "") + n; };
+return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear();
+}
 function prazoExt(txt) {
 var t = s(txt), m = t.match(/^(\d{1,3})\s*(mes|meses|mês|dia|dias|semana|semanas|ano|anos)\b(.*)$/i);
 if (!m && /^\d{1,3}$/.test(t)) m = [t, t, "dias", ""];
@@ -72936,6 +72956,9 @@ agencia: pega("agencia", "agência"),
 conta: pega("conta", "conta corrente"),
 socioNome: pega("socioNome", "nome do sócio administrador"),
 socioCargo: pega("socioCargo", "cargo do sócio", ""),
+cidade: pega("cidade", "cidade da empresa (local da carta)"),
+socioRg: pega("socioRg", "identidade e órgão expedidor do sócio administrador"),
+socioCpf: pega("socioCpf", "CPF do sócio administrador"),
 rtNome: pega("rtNome", "nome do responsável técnico", emp.responsavel),
 rtCrea: pega("rtCrea", "CREA do responsável técnico", emp.crea),
 timbradoTopo: s(emp.timbradoTopo) || s(emp.logo),
@@ -72948,7 +72971,7 @@ faltando: faltando
 return r;
 }
 var CAMPOS_EMP = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
-"socioNome", "socioCargo", "rtNome", "rtCrea"];
+"socioNome", "socioCargo", "rtNome", "rtCrea", "cidade", "socioRg", "socioCpf"];
 function temLicitante(lic) { var Lc = L(); return !!(Lc && Lc.temLicitante && Lc.temLicitante(lic)); }
 function empresaDoCertame(lic, empConta) {
 if (!temLicitante(lic)) return empConta || {};
@@ -73237,16 +73260,27 @@ var difCats = arr(tot.semBdi - somaCats, 2);
 if (descSemBase.length) pend.dados.push("Descrição lida difere da base e foi mantida como lida: " + descSemBase.slice(0, 6).join("; ") + (descSemBase.length > 6 ? " e mais " + (descSemBase.length - 6) : "") + ".");
 var emp = empresaResolvida(empresa);
 var tipoLic = s(lic.tipo), proc = s(lic.processo) || s(lic.certame);
-var edital = (opcoes.edital ? s(opcoes.edital) : (tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO") + (proc ? " Nº " + proc : ""));
+var nEdital = s(lic.numero_edital), modTxt = tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO";
+var edital;
+if (opcoes.edital) edital = s(opcoes.edital);
+else if (nEdital) {
+var procAdm = lic.processo_adm !== undefined ? s(lic.processo_adm) : (s(lic.processo) !== nEdital ? s(lic.processo) : "");
+edital = modTxt + " Nº " + nEdital + (procAdm ? " · Processo nº " + procAdm : "");
+}
+else edital = modTxt + (proc ? " Nº " + proc : "");
 var objInfo = objetoDaCarta(orc, lic, opcoes);
 try { if (Orc.migrarValidadeCertame) Orc.migrarValidadeCertame(orc); } catch (eMig) {}
 var vEd = (lic.validadeDiasEdital > 0) ? Math.floor(lic.validadeDiasEdital) : 0;
 var vCom = parseInt(orc.comercial && orc.comercial.validadeDias, 10);
 if (!(vCom > 0)) vCom = 0;
 var vTxt = s(opcoes.validade);
+var abertura = "", mAb = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(lic.abertura));
+if (mAb) abertura = mAb[3] + "/" + mAb[2] + "/" + mAb[1];
+else { mAb = /^(\d{2}\/\d{2}\/\d{4})/.exec(s(lic.abertura)); if (mAb) abertura = mAb[1]; }
 var cab = {
+refCab: nEdital || edital, abertura: abertura,
 edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),
-data: dataExtensoUpper(opcoes.data), prazo: "",
+data: dataExtensoUpper(opcoes.data), dataCurta: dataCurta(opcoes.data), prazo: "",
 validade: vEd ? validadeExt(vEd) : (vTxt || validadeExt(vCom)),
 validadeInicio: contagemValidade(lic.validadeInicio),
 prazoInicio: s(opcoes.prazoInicio)
@@ -73262,6 +73296,7 @@ prazoDiverge = true;
 pend.dados.push("Prazo de execução: " + rotCarta + " usa " + cab.prazo + " (lido do edital), e o prazo do orçamento diz \"" + txtPrazo + "\"" + (diasTxt != null ? " (" + diasTxt + " dias)" : " (não consegui converter em dias)") + ". Conferir qual vale.");
 }
 } else cab.prazo = prazoExt(txtPrazo);
+if (!abertura) pend.preencher.push("data de abertura da sessão (cabeçalho de toda página; o pacote do certame não trouxe)");
 if (!cab.prazo && !cartaEd) pend.preencher.push("prazo de execução (comercial do orçamento)");
 if (!cab.validade && !cartaEd) pend.preencher.push("validade da proposta (o pacote não trouxe a validade do edital e o orçamento não tem validade em dias)");
 if (vEd) {
@@ -73497,6 +73532,11 @@ if (dl.auxSemComposicao && dl.auxSemComposicao.length) pend.dados.push("Desconto
 if (dl.auxDivergentes && dl.auxDivergentes.length) pend.dados.push("Desconto só " + rotInc + ": a composição da base não explica o preço usado no item para " + dl.auxDivergentes.join(", ") + " (outra tabela?); essa(s) auxiliar(es) ficaram sem desconto.");
 if (dl.auxCiclo && dl.auxCiclo.length) pend.dados.push("Desconto só " + rotInc + ": a base traz " + dl.auxCiclo.join(", ") + " dentro de si mesma; a repetição interna ficou sem desconto. Conferir a composição.");
 }
+var fontesTxt = (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).map(function (b) {
+var f = s(b && b.fonte); if (!f) return "";
+return f + (s(b.uf) ? " " + s(b.uf) : "") + (s(b.competencia) ? " " + s(b.competencia) : "") + (s(b.regime) ? " (" + s(b.regime) + ")" : "");
+}).filter(Boolean).join(", ");
+if (!fontesTxt) { var fs_ = {}; itens.forEach(function (I) { if (s(I.fonte)) fs_[s(I.fonte)] = true; }); fontesTxt = Object.keys(fs_).join(", "); }
 var dados = {
 valor: valor, valorExtenso: extenso, cab: cab, emp: emp, bdiPct: bdiPct, tabelaRef: tabelaRef,
 base: baseOk ? { tabela: baseOk.tabela, mes: baseOk.mes, uf: baseOk.uf, desonerado: baseOk.desonerado, fonte: baseOk.fonte } : null,
@@ -73506,7 +73546,8 @@ consumoNoAnalitico: !!(leitura && leitura.composicoes_orgao && itens.length && i
 aux: aux, quant: qLista, curva: curva, crono: crono, bdi: bdi, enc: enc, prazoDias: prazoDias, cronoSemPrazo: cronoSemPrazo, valorMaximo: num0(lic.valorEstimado),
 objetoInfo: objInfo, validadeDias: vEd || vCom || 0, validadeEdital: !!vEd,
 pend: pend, descTrocadas: descTrocadas, prazoTexto: txtPrazo, prazoDiverge: prazoDiverge, prazoDiasTexto: diasTxt,
-desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd
+desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd,
+fontesTxt: fontesTxt, dataBase: s(lic.dataBase)
 };
 var ruins = [];
 itens.forEach(function (x) {
@@ -73667,8 +73708,7 @@ var CSS = [
 ".ld-wm-bg{background-repeat:no-repeat;background-size:contain;background-position:center}",
 ".ld-hd.big{top:6mm;height:38mm;justify-content:center}.ld-hd.big .ld-logo{max-height:36mm;max-width:70mm}",
 ".ld-corpo{position:absolute;left:12mm;right:12mm;top:var(--ld-corpo-top,36mm);bottom:38mm;overflow:hidden;z-index:2}",
-".ld-pg[data-t=cartaA] .ld-corpo{top:46mm;bottom:22mm}",
-".ld-pg[data-t=cartaB] .ld-corpo{top:14mm;bottom:22mm}",
+".ld-pg[data-t=cartaA] .ld-corpo,.ld-pg[data-t=cartaB] .ld-corpo{bottom:22mm}",
 ".ld-ass{position:absolute;left:12mm;right:12mm;bottom:15mm;height:22mm;display:flex;gap:14mm;align-items:flex-end;justify-content:center;z-index:2;font-size:7.4pt;text-align:center}",
 ".ld-ass div{flex:1;border-top:.7pt solid #222;padding-top:1mm}",
 ".ld-ass b{display:block}",
@@ -73677,7 +73717,7 @@ var CSS = [
 ".ld-tp .ld-hd{right:auto;width:var(--ld-id-w,186mm);display:block}",
 ".ld-tp .ld-id{max-width:none;width:100%}",
 ".ld-tp .ld-corpo{bottom:calc(var(--tp-base,27mm) + 31mm)}",
-".ld-tp .ld-pg[data-t=cartaA] .ld-corpo,.ld-tp .ld-pg[data-t=cartaB] .ld-corpo{top:calc(var(--tp-top,36mm) + 4mm);bottom:calc(var(--tp-base,27mm) + 9mm)}",
+".ld-tp .ld-pg[data-t=cartaA] .ld-corpo,.ld-tp .ld-pg[data-t=cartaB] .ld-corpo{bottom:calc(var(--tp-base,27mm) + 9mm)}",
 ".ld-tp .ld-ass{bottom:calc(var(--tp-base,27mm) + 7mm);height:22mm}",
 ".ld-tp .ld-rod{bottom:calc(var(--tp-base,27mm) + 1.5mm);height:5mm;border-top:0;padding-top:0;justify-content:flex-end}",
 ".ld-rod{position:absolute;left:12mm;right:12mm;bottom:5mm;height:9mm;display:flex;justify-content:space-between;align-items:flex-end;font-size:6.4pt;line-height:1.3;z-index:2;border-top:.5pt solid #bbb;padding-top:1mm}",
@@ -73731,11 +73771,14 @@ valorExtenso: esc(d.valorExtenso), prazo: cb.prazo ? esc(cb.prazo) : '<span clas
 validade: cb.validade ? esc(cb.validade) : '<span class="ld-p0">[PREENCHER: validade da proposta]</span>',
 inicio: esc(cb.prazoInicio)
 };
+h += '<div class="ld-tit">Proposta de Preços</div>';
+h += '<p class="ld-p">' + campo(e.cidade, "cidade da empresa") + ', ' + esc(cb.dataCurta) + '.</p>';
 h += '<p class="ld-p" style="margin-bottom:1mm"><b>À<br>Comissão Permanente de Licitação<br>' + vars.cidade + '<br>REF.: ' + vars.edital + '<br>Objeto: ' + vars.objeto + '</b></p>';
 h += '<p class="ld-p">Prezados Senhores,</p>';
 h += '<p class="ld-p">' + subst('Apresentamos a V. Sas. Nossa proposta para execução dos serviços objeto do Edital do certame em epígrafe, pelo valor global de {valor}, com prazo de execução de {prazo}, contados a partir da emissão da Ordem de Serviço pela CONTRATANTE.', vars) + '</p>';
 h += '<p class="ld-p">Concordamos integralmente e sem qualquer restrição com as condições desta licitação em referência, bem assim com as condições de contratação, estabelecidas na minuta do contrato que nos foi fornecida com o edital, e que nos submetemos às disposições regulamentares e legais sobre esta licitação, especialmente a Lei Federal nº 14.133 de 2021 e suas posteriores alterações.</p>';
 h += '<p class="ld-p">Comprometemo-nos a nos manifestarmos acerca da concordância da prorrogação e revalidação da proposta, caso seja necessário, antes de 10 (dez) dias do vencimento da mesma, por igual e sucessivo período, cientes que a falta de manifestação nos libera, excluindo-nos deste certame licitatório.</p>';
+h += '<p class="ld-p">Caso nos seja adjudicado o objeto da presente licitação, nos comprometemos a assinar o Contrato no prazo determinado no documento de convocação, indicando para esse fim o(a) Sr.(a) ' + campo(e.socioNome, "nome do sócio administrador") + ', portador(a) da Carteira de Identidade nº ' + campo(e.socioRg, "identidade e órgão expedidor do sócio") + ' e CPF nº ' + campo(e.socioCpf, "CPF do sócio") + ', como representante legal desta empresa.</p>';
 h += '<p class="ld-p">' + subst('Informamos que o prazo de validade da nossa proposta é de {validade}, {contagem}.', vars) + '</p>';
 h += '<p class="ld-p">Declaramos que:</p>';
 var decl = [
@@ -73764,6 +73807,16 @@ h += '<div style="display:flex;gap:14mm;margin-top:9mm;text-align:center;font-si
 '<div style="flex:1;border-top:.7pt solid #222;padding-top:1mm"><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b><br>Responsável Técnico<br>' + rtRegistro(e) + '</div></div>';
 return '<section class="ld-sec" data-tipo="carta" data-titulo="Carta proposta">' + h + '</section>';
 }
+function linhasTotais(d) {
+return '<p class="ld-p" style="margin:3mm 0 0;text-align:right">VALOR BDI TOTAL: <b>' + esc(R(d.tot.comBdi - d.tot.semBdi)) + '</b></p>' +
+'<p class="ld-p" style="margin:0;text-align:right">VALOR ORÇAMENTO: <b>' + esc(R(d.tot.semBdi)) + '</b></p>';
+}
+function notaFontes(d) {
+var f = d.fontesTxt, t = "";
+if (f) t += 'Fontes utilizadas para composições e cotação de preços: ' + esc(f) + '. ';
+if (d.dataBase) t += 'Data-base: ' + esc(d.dataBase) + '. ';
+return t + 'BDI: ' + esc(P(d.bdiPct)) + '.';
+}
 function secResumo(d) {
 var h = '<div class="ld-tit">Resumo do Orçamento</div>';
 var t = '<table class="ld-t ld-split"><colgroup><col style="width:7mm"><col style="width:36mm"><col style="width:21mm"><col style="width:21mm"><col style="width:22mm"><col style="width:16mm"><col style="width:23mm"><col style="width:12mm"></colgroup>' +
@@ -73774,7 +73827,7 @@ t += '<tr>' + tdC(esc(E.codigo)) + td(esc(E.nome)) + tdN(R(E.cat.MO)) + tdN(R(E.
 tdN(P(d.tot.comBdi > 0 ? E.comBdi / d.tot.comBdi * 100 : 0)) + '</tr>';
 });
 t += '<tr class="tt"><td></td><td>TOTAL:</td>' + tdN(R(d.tot.cat.MO)) + tdN(R(d.tot.cat.MAT)) + tdN(R(d.tot.cat.EQ)) + tdN(R(d.tot.cat.OUTROS)) + tdN(R(d.tot.comBdi)) + tdN("100,00%") + '</tr></tbody></table>';
-h += t;
+h += t + linhasTotais(d);
 h += '<p class="ld-p" style="margin-top:3mm;text-align:right"><b>VALOR TOTAL: ' + esc(R(d.valor)) + '</b></p>';
 h += '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
 var ciR = d.custoItens || {}, nPropR = ciR.porProporcao || 0, nDifR = (ciR.compDif && ciR.compDif.n) || 0;
@@ -73797,7 +73850,8 @@ tdN(R(I.cu)) + tdN(R(I.pu)) + tdN(R(I.ct)) + tdN(R(I.pt)) + '</tr>';
 });
 });
 t += '<tr class="tt"><td colspan="8">VALOR TOTAL:</td>' + tdN(R(d.tot.semBdi)) + tdN(R(d.tot.comBdi)) + '</tr></tbody></table>';
-h += t + '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
+h += t + linhasTotais(d) + '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
+h += '<p class="ld-nota">' + notaFontes(d) + '</p>';
 return '<section class="ld-sec" data-tipo="corpo" data-titulo="Planilha orçamentária">' + h + '</section>';
 }
 function secCustosItem(d) {
@@ -73852,7 +73906,7 @@ if (nota) h += '<div class="ld-nota">' + esc(nota) + '</div>';
 return h + '</div>';
 }
 function secAnalitico(d) {
-var h = '<div class="ld-tit">Relatório Analítico - Composições de Custos</div>';
+var h = '<div class="ld-tit">Composições de Preços Unitários</div>';
 var n = 0;
 d.itens.forEach(function (I) {
 n++;
@@ -73881,7 +73935,7 @@ function secAuxiliares(d) {
 var ref = d.base ? (s(d.base.tabela) + " " + s(d.base.mes) + (d.base.uf ? "/" + d.base.uf : "") + (d.base.desonerado === true ? " (desonerada)" : (d.base.desonerado === false ? " (não desonerada)" : ""))) : d.tabelaRef;
 var abertas = d.aux.filter(function (a) { return a.insumos; });
 if (!abertas.length && !d.baseExigida) return '';
-var h = '<div class="ld-tit">Relatório Analítico - Composições Auxiliares</div>';
+var h = '<div class="ld-tit">Composições Auxiliares</div>';
 var dl = d.desconto, comDesc = abertas.some(function (a) { return a.descontada; });
 var rotInc = dl && dl.incidencia === "MO" ? "de mão de obra" : (dl && dl.incidencia === "EQ" ? "de equipamento" : "de material");
 h += '<p class="ld-sub">Composições auxiliares citadas nas composições dos serviços, abertas conforme a tabela de referência ' + esc(ref || "do projeto") + '. ' +
@@ -74047,15 +74101,15 @@ var e = d.emp, cb = d.cab;
 var logo = !e.timbradoTopo ? '<span class="ld-p0">[PREENCHER: timbrado (logo)]</span>'
 : (urlCss(e.timbradoTopo) ? '<div class="ld-logo ld-logo-bg ld-bg-topo"></div>' : '<img class="ld-logo" src="' + esc(e.timbradoTopo) + '" alt="">');
 var wm = !e.timbradoFundo ? '' : (urlCss(e.timbradoFundo) ? '<div class="ld-wm ld-wm-bg ld-bg-fundo"></div>' : '<img class="ld-wm" src="' + esc(e.timbradoFundo) + '" alt="">');
-var id = '<div class="ld-id"><b>OBRA:</b> ' + campo(cb.objeto, "objeto") + '<br><b>REF:</b> ' + esc(cb.edital) + '.<br><b>CIDADE:</b> ' + esc(cb.cidade) + '<br><b>DATA:</b> ' + esc(cb.data) + '</div>';
+var id = '<div class="ld-id"><b>REF.:</b> ' + esc(cb.refCab) + '<br><b>CIDADE:</b> ' + esc(cb.cidade) + '<br><b>Data de Abertura:</b> ' + campo(cb.abertura, "data de abertura da sessão") + '<br><b>OBJETO:</b> ' + campo(cb.objeto, "objeto") + '</div>';
 var ass = '<div><b>' + campo(e.nome, "razão social") + '</b>' + campo(e.socioNome, "nome do sócio administrador") + '<br>' + campo(e.socioCargo, "cargo do sócio") + '</div>' +
 '<div><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b>Responsável Técnico<br>' + rtRegistro(e) + '</div>';
-var rod = '<div>' + campo(e.nome, "razão social") + ' CNPJ ' + campo(e.cnpj, "CNPJ") + '<br>' + campo(e.endereco, "endereço") + '<br>Fone: ' + campo(e.telefone, "telefone") + ' / E-mail: ' + campo(e.email, "e-mail") + '</div><div class="pag">Página: {{pag}}</div>';
+var rod = '<div>' + campo(e.nome, "razão social") + ' CNPJ ' + campo(e.cnpj, "CNPJ") + '<br>' + campo(e.endereco, "endereço") + '<br>Fone: ' + campo(e.telefone, "telefone") + ' / E-mail: ' + campo(e.email, "e-mail") + '</div><div class="pag">Página {{pag}} de {{tot}}</div>';
 if (modoPagina(d)) {
 return '<template class="ld-tpl" data-n="tpbg"><div class="ld-tpbg ld-bg-pagina"></div></template>' +
 '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + '</div></template>' +
 '<template class="ld-tpl" data-n="ass"><div class="ld-ass">' + ass + '</div></template>' +
-'<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página: {{pag}}</div></div></template>';
+'<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página {{pag}} de {{tot}}</div></div></template>';
 }
 return '<template class="ld-tpl" data-n="hd-big"><div class="ld-hd big">' + logo + '</div></template>' +
 '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + logo + '</div></template>' +
@@ -74065,10 +74119,19 @@ return '<template class="ld-tpl" data-n="hd-big"><div class="ld-hd big">' + logo
 }
 function html(d, secoes) {
 var lig = function (id) { return !(secoes && secoes[id] === false); };
-var corpo = (d.cartaDoEdital || !lig("carta") ? "" : secCarta(d)) + (lig("resumoEtapas") ? secResumo(d) : "") + (lig("sintetico") ? secSintetico(d) : "") +
-(lig("custosItem") ? secCustosItem(d) : "") + (lig("analitico") ? secAnalitico(d) : "") + (lig("composicoesProprias") ? secProprias(d) : "") +
-(lig("auxiliares") ? secAuxiliares(d) : "") + (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "") +
-(lig("cronograma") ? secCronograma(d) : "") + (lig("bdi") ? secBdi(d) : "") + (lig("encargos") ? secEncargos(d) : "");
+var nSec = 0;
+var numera = function (h) { nSec++; return h.replace('<div class="ld-tit">', '<div class="ld-tit">' + nSec + '. '); };
+var corpo = (d.cartaDoEdital || !lig("carta") ? "" : secCarta(d));
+if (lig("sintetico")) corpo += numera(secSintetico(d));
+if (lig("resumoEtapas")) corpo += numera(secResumo(d));
+if (lig("custosItem")) corpo += secCustosItem(d);
+if (lig("analitico")) corpo += numera(secAnalitico(d));
+if (lig("composicoesProprias")) corpo += secProprias(d);
+if (lig("auxiliares")) corpo += numera(secAuxiliares(d));
+if (lig("cronograma")) corpo += numera(secCronograma(d));
+if (lig("bdi")) corpo += numera(secBdi(d));
+if (lig("encargos")) corpo += numera(secEncargos(d));
+corpo += (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "");
 var tpAttr = '';
 if (modoPagina(d)) {
 var mmDe = function (cm) { return String(+(Number(cm) * 10).toFixed(2)); };
@@ -74122,7 +74185,7 @@ n++;
 var pg = doc.createElement("div");
 var t = tipo === "carta" ? (idx === 0 ? "cartaA" : "cartaB") : "corpo";
 pg.className = "ld-pg"; pg.setAttribute("data-t", t);
-var cab = (t === "cartaA") ? (tp ? "" : tpl["hd-big"]) : (t === "cartaB" ? "" : tpl["hd-std"]);
+var cab = tpl["hd-std"];
 pg.innerHTML = (tp ? (tpl.tpbg || "") : (tpl.wm || "")) + (cab || "") + '<div class="ld-corpo"></div>' + (tpl.ass || "") + (tpl.rod || "").replace("{{pag}}", String(n));
 saida.appendChild(pg);
 return { pg: pg, corpo: pg.querySelector(".ld-corpo") };
@@ -74276,6 +74339,7 @@ erros.push("um bloco (" + String(b.textContent || "").replace(/\s+/g, " ").trim(
 });
 raiz.removeChild(fonte);
 [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { t.parentNode.removeChild(t); });
+[].slice.call(saida.querySelectorAll(".pag")).forEach(function (el) { el.innerHTML = el.innerHTML.replace("{{tot}}", String(n)); });
 [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
 if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
 });
@@ -76305,6 +76369,392 @@ return !!(lic && lic.orcamentoAutomatico === true);
 };
 global.LicitacaoAuto = LicitacaoAuto;
 if (typeof module !== "undefined" && module.exports) module.exports = LicitacaoAuto;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/licitacaofila.js ==== */
+try {
+(function (global) {
+"use strict";
+var HOST_OFICIAL = "app.certamepro.com.br";
+var BASE_OFICIAL = "https://" + HOST_OFICIAL;
+var ROTA = "/api/integracao/orcapro";
+var MAX_TENTATIVAS = 3;
+var INTERVALO_PADRAO_S = 60;
+var INTERVALO_MIN_S = 30;
+var INTERVALO_MAX_S = 1800;
+var TETO_RESERVA_MS = 2 * 60 * 60 * 1000;
+var PREFIXO = "orcapro:fila-certamepro:";
+function s(x) { return x === null || x === undefined ? "" : String(x); }
+function num(x) { var n = Number(x); return isFinite(n) ? n : 0; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function mascarar(t, token) { var r = s(t); return token ? r.split(token).join("***") : r; }
+function texto(x, max) { var t = s(x).replace(/\s+/g, " ").replace(/^\s+|\s+$/g, ""); return t.length > max ? t.slice(0, max) : t; }
+function destinoBase(url) {
+var u = s(url).replace(/\/+$/, "");
+var erro = "A fila do CertamePRO só conversa com " + BASE_OFICIAL + " (https).";
+if (!u) return { ok: false, erro: erro };
+var p = null;
+if (typeof URL === "function") { try { p = new URL(u); } catch (e) { return { ok: false, erro: erro }; } }
+if (p) {
+if (p.protocol !== "https:" || p.username || p.password || p.port || String(p.hostname).toLowerCase() !== HOST_OFICIAL || (p.pathname && p.pathname !== "/") || p.search || p.hash) return { ok: false, erro: erro };
+return { ok: true, url: BASE_OFICIAL, host: HOST_OFICIAL };
+}
+if (u.toLowerCase() === BASE_OFICIAL) return { ok: true, url: BASE_OFICIAL, host: HOST_OFICIAL };
+return { ok: false, erro: erro };
+}
+var RE_CHAVE = /(^|[#&])parear_certamepro=([^&]*)/;
+function lerFragmento(hash) {
+var m = RE_CHAVE.exec(s(hash));
+if (!m) return "";
+var c = /^([A-Za-z0-9]{5})-?([A-Za-z0-9]{5})$/.exec(decodeURIComponent_(m[2]));
+return c ? (c[1] + "-" + c[2]).toUpperCase() : "";
+}
+function decodeURIComponent_(t) { try { return decodeURIComponent(t); } catch (e) { return ""; } }
+function hashSemCodigo(hash) {
+var h = s(hash).replace(/^#/, "");
+var partes = h.split("&").filter(function (p) { return p && p.indexOf("parear_certamepro=") !== 0; });
+return partes.length ? "#" + partes.join("&") : "";
+}
+function consumirFragmento(loc, hist) {
+var hash = loc && loc.hash ? s(loc.hash) : "";
+if (!RE_CHAVE.test(hash)) return { presente: false, codigo: "" };
+var codigo = lerFragmento(hash);
+try { if (hist && hist.replaceState) hist.replaceState(null, "", s(loc.pathname) + s(loc.search) + hashSemCodigo(hash)); } catch (e) {}
+return { presente: true, codigo: codigo };
+}
+function segundos(retryAfter, padrao) {
+var t = s(retryAfter);
+if (/^\d+$/.test(t)) { var n = parseInt(t, 10); return Math.max(1, Math.min(3600, n)); }
+return padrao;
+}
+function decidir(status, corpo, retryAfter, ctx) {
+status = num(status);
+ctx = s(ctx);
+var porCertame = ctx === "reservar" || ctx === "pacote" || ctx === "devolver" || ctx === "nao-orcei";
+var pareando = ctx === "previa" || ctx === "parear";
+if (status >= 200 && status < 300) return { acao: "ok" };
+if (status === 0) return { acao: "rede", semContar: true, aviso: "Sem conexão com o CertamePRO." };
+if (status === 401 && !pareando) return { acao: "reparear", limparToken: true, aviso: "A conexão com o CertamePRO foi revogada ou venceu. Gere um novo código no CertamePRO (Meu perfil > Conectar o OrçaPRO) para voltar a receber a fila." };
+if (status === 403) return { acao: "senha", semContar: true, aviso: "O CertamePRO pede a troca de senha antes de liberar a fila. Entre nele e troque a senha." };
+if (status === 404) {
+if (pareando) return { acao: "indisponivel", aviso: "A fila do OrçaPRO não está ligada neste servidor do CertamePRO ou o código não existe." };
+if (porCertame) return { acao: "pular", quieto: true };
+return { acao: "quieto", quieto: true };
+}
+if (status === 409) return { acao: ctx === "devolver" ? "recusado" : "pular" };
+if (status === 429) return { acao: "espera", semContar: true, espera_s: segundos(retryAfter, INTERVALO_PADRAO_S) };
+if (status === 503) return { acao: "depois", semContar: true };
+return { acao: "erro", aviso: "O CertamePRO respondeu com erro " + status + "." };
+}
+function proximaEspera(p) {
+p = p || {};
+var base = Math.max(INTERVALO_MIN_S, Math.min(INTERVALO_MAX_S, num(p.base_s) || INTERVALO_PADRAO_S));
+var d = p.decisao || {}, n = Math.max(0, Math.min(6, num(p.falhasSeguidas)));
+var r;
+if (d.acao === "espera") r = Math.max(base, num(d.espera_s));
+else if (d.acao === "quieto" || d.acao === "rede" || d.acao === "erro") r = base * Math.pow(2, n + 1);
+else if (d.acao === "senha" || d.acao === "reparear") r = INTERVALO_MAX_S;
+else r = base;
+return Math.max(INTERVALO_MIN_S, Math.min(INTERVALO_MAX_S, Math.round(r)));
+}
+function kPar(emp) { return PREFIXO + "par:" + s(emp || "default"); }
+function kCfg(emp) { return PREFIXO + "cfg:" + s(emp || "default"); }
+function kTent(emp) { return PREFIXO + "tent:" + s(emp || "default"); }
+var K_APARELHO = PREFIXO + "aparelho";
+function lerJson(st, k) { try { var o = JSON.parse(st.getItem(k) || "null"); return o && typeof o === "object" ? o : null; } catch (e) { return null; } }
+function gravarJson(st, k, o) { try { st.setItem(k, JSON.stringify(o)); return true; } catch (e) { return false; } }
+function lerPareamento(st, emp) {
+var o = st ? lerJson(st, kPar(emp)) : null;
+if (!o || typeof o.token !== "string" || o.token.length < 16) return null;
+return o;
+}
+function gravarPareamento(st, emp, o) { return st ? gravarJson(st, kPar(emp), o) : false; }
+function desligar(st, emp) { try { if (st) st.removeItem(kPar(emp)); return true; } catch (e) { return false; } }
+function estadoPublico(st, emp) {
+var o = lerPareamento(st, emp);
+if (!o) return { pareado: false };
+return { pareado: true, conta: s(o.conta), papel: s(o.papel), empresas: arr(o.empresas), nome: s(o.nome), pareadoEm: s(o.pareadoEm), consultarACadaS: num(o.consultar_a_cada_s) || INTERVALO_PADRAO_S };
+}
+function lerConfig(st, emp) {
+var o = st ? lerJson(st, kCfg(emp)) : null;
+return { ligado: !!(o && o.ligado === true) };
+}
+function gravarConfig(st, emp, cfg) { return st ? gravarJson(st, kCfg(emp), { ligado: !!(cfg && cfg.ligado === true) }) : false; }
+function aparelhoId(st) {
+var id = "";
+try { id = st ? s(st.getItem(K_APARELHO)) : ""; } catch (e) { id = ""; }
+if (/^[0-9a-f]{12}$/.test(id)) return id;
+var novo = "";
+try {
+if (global.crypto && global.crypto.getRandomValues) {
+var b = new Uint8Array(6); global.crypto.getRandomValues(b);
+for (var i = 0; i < b.length; i++) novo += ("0" + b[i].toString(16)).slice(-2);
+}
+} catch (e1) { novo = ""; }
+while (novo.length < 12) novo += Math.floor(Math.random() * 16).toString(16);
+novo = novo.slice(0, 12);
+try { if (st) st.setItem(K_APARELHO, novo); } catch (e2) {}
+return novo;
+}
+function nomeAparelho(st) { return "OrçaPRO - " + aparelhoId(st); }
+function lerTentativas(st, emp) { return (st && lerJson(st, kTent(emp))) || {}; }
+function tentativas(st, emp, assinatura) { return num(lerTentativas(st, emp)[s(assinatura)]) | 0; }
+function contarTentativa(st, emp, assinatura) {
+var m = lerTentativas(st, emp), k = s(assinatura);
+m[k] = (num(m[k]) | 0) + 1;
+var ks = Object.keys(m);
+if (ks.length > 100) ks.slice(0, ks.length - 100).forEach(function (x) { delete m[x]; });
+if (st) gravarJson(st, kTent(emp), m);
+return m[k];
+}
+function reembolsarTentativa(st, emp, assinatura) {
+var m = lerTentativas(st, emp), k = s(assinatura);
+if (num(m[k]) > 0) { m[k] = (m[k] | 0) - 1; if (m[k] <= 0) delete m[k]; if (st) gravarJson(st, kTent(emp), m); }
+}
+function limparTentativas(st, emp, assinatura) {
+var m = lerTentativas(st, emp), k = s(assinatura);
+if (k in m) { delete m[k]; if (st) gravarJson(st, kTent(emp), m); }
+}
+function decidirPareamento(estadoAtual, previa) {
+previa = previa || {};
+if (!estadoAtual || !estadoAtual.pareado) return { confirmar: true, perguntarTroca: false };
+var ids = function (l) { return arr(l).map(function (e) { return s(e && e.id); }).sort().join(","); };
+var igual = s(estadoAtual.conta) === s(previa.conta) && s(estadoAtual.papel) === s(previa.papel) && ids(estadoAtual.empresas) === ids(previa.empresas);
+return { confirmar: true, perguntarTroca: !igual, contaAtual: s(estadoAtual.conta) };
+}
+function prepararPacote(pacote, existente) {
+if (!pacote || typeof pacote !== "object") return { ok: false, erro: "pacote vazio" };
+if (!pacote.certamepro || typeof pacote.certamepro !== "object" || Array.isArray(pacote.certamepro)) return { ok: false, erro: "o pacote da fila não traz o bloco certamepro" };
+var orcs = arr(pacote.orcamentos);
+if (orcs.length !== 1 || !orcs[0] || !s(orcs[0].id)) return { ok: false, erro: "o pacote da fila deve trazer um orçamento só, com id" };
+var cert = s(pacote.certamepro.certame);
+if (!cert) return { ok: false, erro: "o pacote não trouxe o certame" };
+if (existente) {
+var lic = existente.config && existente.config.licitacao;
+if (!lic || lic.certamepro !== true || s(lic.certame) !== cert) return { ok: false, erro: "já existe um orçamento com este id que não é a licitação deste certame; não foi sobrescrito" };
+}
+var copia = {}; Object.keys(pacote).forEach(function (k) { if (k !== "gestao") copia[k] = pacote[k]; });
+return { ok: true, pacote: copia };
+}
+function marca(assinatura, certame) { return { assinatura: s(assinatura), certame: s(certame) }; }
+function criar(opts) {
+opts = opts || {};
+var d = destinoBase(opts.servico || BASE_OFICIAL);
+if (!d.ok) throw new Error(d.erro);
+var st = opts.storage || null, emp = opts.emp;
+var base = d.url + ROTA;
+function token() { var p = lerPareamento(st, emp); return p ? p.token : ""; }
+function semToken(t) { return mascarar(t, token()); }
+function log(ev) {
+if (typeof opts.log !== "function") return;
+var o = {}; Object.keys(ev).forEach(function (k) { o[k] = typeof ev[k] === "string" ? semToken(ev[k]) : ev[k]; });
+try { opts.log(o); } catch (e) {}
+}
+function lerCorpo(r) {
+return r.text().then(function (t) { try { return JSON.parse(t); } catch (e) { return null; } }, function () { return null; });
+}
+function chamar(metodo, rota, corpo, comToken, ctx) {
+var cab = { Accept: "application/json" }, tk = "";
+if (comToken) {
+tk = token();
+if (!tk) return Promise.resolve({ ok: false, status: 0, corpo: null, decisao: { acao: "reparear", limparToken: false, aviso: "Este OrçaPRO não está conectado ao CertamePRO." } });
+cab.Authorization = "Bearer " + tk;
+}
+var init = { method: metodo, headers: cab };
+if (metodo === "POST") { cab["Content-Type"] = "application/json"; cab["X-Licitacoes"] = "1"; init.body = JSON.stringify(corpo || {}); }
+return Promise.resolve().then(function () { return opts.fetch(base + rota, init); }).then(function (r) {
+return lerCorpo(r).then(function (j) {
+var ra = r.headers && r.headers.get ? r.headers.get("Retry-After") : null;
+var dec = decidir(r.status, j, ra, ctx);
+log({ metodo: metodo, rota: rota, status: r.status, acao: dec.acao });
+return { ok: r.status >= 200 && r.status < 300, status: r.status, corpo: j, decisao: dec };
+});
+}, function (e) {
+var dec = decidir(0, null, null, ctx);
+log({ metodo: metodo, rota: rota, status: 0, acao: dec.acao, erro: semToken(texto(e && e.message, 120)) });
+return { ok: false, status: 0, corpo: null, decisao: dec };
+});
+}
+function idOk(id) { return /^[A-Za-z0-9_-]{1,64}$/.test(s(id)) ? encodeURIComponent(s(id)) : ""; }
+function semId() { return Promise.resolve({ ok: false, status: 0, corpo: null, decisao: { acao: "erro", aviso: "Identificador de certame inválido." } }); }
+function codigoLimpo(c) { return s(c).replace(/\s/g, "").toUpperCase(); }
+return {
+base: base,
+previa: function (codigo) {
+var c = codigoLimpo(codigo);
+if (!/^[A-Z0-9]{5}-?[A-Z0-9]{5}$/.test(c)) return Promise.resolve({ ok: false, status: 0, decisao: { acao: "erro", aviso: "Código de pareamento inválido." } });
+return chamar("POST", "/parear/previa", { codigo: c }, false, "previa").then(function (r) {
+if (!r.ok) return r;
+var j = r.corpo || {};
+r.previa = { conta: texto(j.conta, 120), papel: texto(j.papel, 40), todasAsDoUsuario: j.todas_as_do_usuario === true,
+empresas: arr(j.empresas).map(function (e) { return { id: e && e.id, nome: texto(e && e.nome, 160) }; }) };
+return r;
+});
+},
+parear: function (codigo, previa) {
+var c = codigoLimpo(codigo);
+return chamar("POST", "/parear", { codigo: c, aparelho: nomeAparelho(st) }, false, "parear").then(function (r) {
+if (!r.ok) return r;
+var j = r.corpo || {};
+if (typeof j.token !== "string" || j.token.length < 16) {
+r.ok = false; r.decisao = { acao: "erro", aviso: "O CertamePRO devolveu uma conexão sem token. Nada foi guardado." }; return r;
+}
+var pv = previa || {};
+var gravou = gravarPareamento(st, emp, {
+token: j.token, aparelhoId: j.aparelho_id, nome: texto(j.nome, 80), usuario: texto(j.usuario, 120),
+conta: texto(pv.conta, 120), papel: texto(pv.papel, 40), empresas: arr(pv.empresas),
+consultar_a_cada_s: num(j.consultar_a_cada_s) || INTERVALO_PADRAO_S, pareadoEm: new Date().toISOString()
+});
+r.corpo = null;
+if (!gravou) { r.ok = false; r.decisao = { acao: "erro", aviso: "Não consegui guardar a conexão neste computador (armazenamento cheio ou bloqueado)." }; }
+return r;
+});
+},
+fila: function () {
+return chamar("GET", "/fila", null, true, "fila").then(function (r) {
+if (!r.ok) return r;
+var j = r.corpo || {};
+if (j.ligado === false) { r.ok = false; r.decisao = { acao: "quieto", quieto: true }; return r; }
+r.itens = arr(j.fila);
+r.consultarACadaS = num(j.consultar_a_cada_s) || 0;
+return r;
+});
+},
+reservar: function (id, assinatura) {
+var i = idOk(id); if (!i) return semId();
+var corpo = {}; if (s(assinatura)) corpo.assinatura = s(assinatura);
+return chamar("POST", "/certames/" + i + "/reservar", corpo, true, "reservar").then(function (r) {
+if (!r.ok) return r;
+var j = r.corpo || {};
+r.reserva = { assinatura: s(j.assinatura), assinaturaAtual: s(j.assinatura_atual), expiraTs: num(j.expira_ts), retomada: j.retomada === true, desatualizada: j.desatualizada === true };
+return r;
+});
+},
+pacote: function (id) {
+var i = idOk(id); if (!i) return semId();
+return chamar("GET", "/certames/" + i + "/pacote", null, true, "pacote").then(function (r) { if (r.ok) r.pacote = r.corpo; return r; });
+},
+naoOrcei: function (id, motivo) {
+var i = idOk(id); if (!i) return semId();
+return chamar("POST", "/certames/" + i + "/nao-orcei", { motivo: texto(motivo, 300) || "nao_orcei" }, true, "nao-orcei");
+},
+destinoDevolver: function (id) {
+var i = idOk(id), tk = token();
+if (!i || !tk) return null;
+return { ok: true, url: base + "/certames/" + i + "/devolver", host: HOST_OFICIAL, local: false, confiavel: true,
+cabecalhos: { Authorization: "Bearer " + tk, "X-Licitacoes": "1" } };
+}
+};
+}
+function executarCiclo(ctx) {
+var st = ctx.storage, emp = ctx.emp, cli = ctx.cliente, pulados = ctx.pulados || {};
+var agora = ctx.agora || function () { return Date.now(); };
+var par = lerPareamento(st, emp);
+var base_s = par ? (num(par.consultar_a_cada_s) || INTERVALO_PADRAO_S) : INTERVALO_PADRAO_S;
+var tokenCiclo = par ? par.token : "";
+var limpo = function (x) { return mascarar(x, tokenCiclo); };
+var log = function (o) {
+if (typeof ctx.log !== "function") return;
+var c = {}; Object.keys(o).forEach(function (k) { c[k] = typeof o[k] === "string" ? limpo(o[k]) : o[k]; });
+try { ctx.log(c); } catch (e) {}
+};
+var sai = function (acao, extra) {
+var r = extra || {}; r.acao = acao;
+return r;
+};
+var trata = function (r, ate) {
+var dec = r.decisao || {};
+if (dec.acao === "reparear") { if (dec.limparToken !== false) desligar(st, emp); return sai("reparear", { aviso: dec.aviso }); }
+return sai(dec.acao, { aviso: dec.aviso, espera_s: dec.espera_s, semContar: dec.semContar === true, quieto: dec.quieto === true });
+};
+if (!lerConfig(st, emp).ligado) return Promise.resolve(sai("desligado"));
+if (!par) return Promise.resolve(sai("sem-pareamento"));
+if (typeof ctx.pronto === "function" && !ctx.pronto()) return Promise.resolve(sai("ocupado"));
+return cli.fila().then(function (rf) {
+if (!rf.ok) return trata(rf);
+var base = rf.consultarACadaS || base_s;
+var itens = rf.itens.filter(function (it) {
+if (!it || it.certame_id == null) return false;
+var chave = s(it.certame_id) + "|" + s(it.assinatura);
+if (pulados[chave]) return false;
+if (tentativas(st, emp, it.assinatura) >= MAX_TENTATIVAS) return false;
+return true;
+});
+if (!itens.length) return sai("vazia", { base_s: base });
+var proximo = function (i, reservas) {
+if (i >= itens.length || reservas >= 4) return Promise.resolve(sai("vazia", { base_s: base }));
+var it = itens[i], chave = s(it.certame_id) + "|" + s(it.assinatura);
+var assFila = (it.reservado_por_mim === true || /^pncp:/i.test(s(it.assinatura))) ? "" : s(it.assinatura);
+return cli.reservar(it.certame_id, assFila).then(function (rr) {
+if (!rr.ok) {
+if (rr.decisao.acao === "pular") { pulados[chave] = true; return proximo(i + 1, reservas + 1); }
+return trata(rr);
+}
+return atender(it, chave, rr.reserva);
+});
+};
+var atender = function (it, chave, reserva) {
+var id = it.certame_id;
+var assinatura = reserva.assinatura || s(it.assinatura);
+if (tentativas(st, emp, assinatura) >= MAX_TENTATIVAS) {
+pulados[chave] = true;
+return cli.naoOrcei(id, "falhou_" + MAX_TENTATIVAS + "_vezes").then(function () { return sai("desistiu", { certame_id: id, assinatura: assinatura, base_s: base }); });
+}
+contarTentativa(st, emp, assinatura);
+var reembolsa = function () { reembolsarTentativa(st, emp, assinatura); };
+return cli.pacote(id).then(function (rp) {
+if (!rp.ok) {
+reembolsa();
+if (rp.decisao.acao === "pular") { pulados[chave] = true; return sai("vazia", { base_s: base }); }
+return trata(rp);
+}
+var info = { certame_id: id, codigo: s(it.codigo), assinatura: assinatura, assinaturaReserva: reserva.assinatura,
+marca: null, destinoDevolver: cli.destinoDevolver(id) };
+var pc = rp.pacote && rp.pacote.certamepro ? rp.pacote.certamepro : {};
+info.marca = marca(s(pc.assinatura) || reserva.assinatura || s(it.assinatura), s(pc.certame));
+return Promise.resolve().then(function () { return ctx.orcar(rp.pacote, info); }).then(function (o) { return o || { ok: false, erro: "sem resultado" }; }, function (e) {
+return { ok: false, erro: limpo(texto(e && e.message ? e.message : e, 200)) };
+}).then(function (o) {
+o.erro = limpo(o.erro);
+if (o.ok) { limparTentativas(st, emp, assinatura); return sai("devolvido", { certame_id: id, assinatura: assinatura, base_s: base }); }
+if (o.recusar) {
+reembolsa(); pulados[chave] = true;
+return cli.naoOrcei(id, o.recusar).then(function () { return sai("recusado", { certame_id: id, motivo: s(o.recusar), base_s: base }); });
+}
+var stt = num(o.status);
+if (stt === 409) {
+reembolsa(); pulados[chave] = true;
+return sai("nao-aplicado", { certame_id: id, assinatura: assinatura, motivo: texto(o.erro, 200), base_s: base });
+}
+if (stt === 401) { reembolsa(); desligar(st, emp); return sai("reparear", { aviso: decidir(401, null, null, "devolver").aviso }); }
+if (stt === 429 || stt === 503) { reembolsa(); return sai(stt === 429 ? "espera" : "depois", { semContar: true, espera_s: stt === 429 ? decidir(429, null, o.retryAfter, "devolver").espera_s : undefined }); }
+var n = tentativas(st, emp, assinatura);
+log({ evento: "falha", certame_id: id, tentativa: n, erro: texto(o.erro, 160) });
+if (n >= MAX_TENTATIVAS) {
+pulados[chave] = true;
+return cli.naoOrcei(id, "falhou_" + MAX_TENTATIVAS + "_vezes: " + limpo(texto(o.erro, 150))).then(function () { return sai("desistiu", { certame_id: id, assinatura: assinatura, base_s: base }); });
+}
+return sai("falhou", { certame_id: id, tentativa: n, erro: texto(o.erro, 200), base_s: base });
+});
+});
+};
+return proximo(0, 0);
+});
+}
+var LicitacaoFila = {
+HOST_OFICIAL: HOST_OFICIAL, BASE_OFICIAL: BASE_OFICIAL, MAX_TENTATIVAS: MAX_TENTATIVAS, TETO_RESERVA_MS: TETO_RESERVA_MS,
+INTERVALO_PADRAO_S: INTERVALO_PADRAO_S, INTERVALO_MIN_S: INTERVALO_MIN_S, INTERVALO_MAX_S: INTERVALO_MAX_S,
+destinoBase: destinoBase, lerFragmento: lerFragmento, consumirFragmento: consumirFragmento,
+decidir: decidir, proximaEspera: proximaEspera,
+lerPareamento: lerPareamento, estadoPublico: estadoPublico, desligar: desligar,
+lerConfig: lerConfig, gravarConfig: gravarConfig,
+aparelhoId: aparelhoId, nomeAparelho: nomeAparelho,
+tentativas: tentativas, contarTentativa: contarTentativa, limparTentativas: limparTentativas,
+decidirPareamento: decidirPareamento, marca: marca, prepararPacote: prepararPacote, mascarar: mascarar,
+criar: criar, executarCiclo: executarCiclo
+};
+global.LicitacaoFila = LicitacaoFila;
+if (typeof module !== "undefined" && module.exports) module.exports = LicitacaoFila;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/porobra.js ==== */

@@ -1,6 +1,6 @@
 {
  "gerador": "tools/construir-pacotes-js.js",
- "fonte": "d69cae35971856475dd9a4d7b5f66c94",
+ "fonte": "c823859484a2a73f2acd0d5f8dd9e960",
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
@@ -10,8 +10,8 @@
   "js/pacotes/hidro.js?v=3761a9af1d"
  ],
  "tamanhos": {
-  "js/pacotes/nucleo-1.js": 5653116,
-  "js/pacotes/nucleo-2.js": 5632160,
+  "js/pacotes/nucleo-1.js": 5678444,
+  "js/pacotes/nucleo-2.js": 5646218,
   "js/pacotes/bim.js?v=5f493655f4": 24676660,
   "js/bim-pacote.js?v=6ab9b10f2a": 1083693,
   "js/metalcalcvista-pacote.js?v=122abc30d5": 174083,

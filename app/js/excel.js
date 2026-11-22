@@ -512,7 +512,7 @@
         row.getCell(7).value = cu;
         row.getCell(8).value  = { formula: fV('F' + r + '*' + fU('G' + r)), result: ct };
         row.getCell(9).value  = { formula: bdiNoPU ? fU('G' + r + '*(1+' + BDI_CELL + '/100)') : fU('G' + r), result: pu };
-        row.getCell(10).value = { formula: fV('F' + r + '*I' + r), result: pt };
+        row.getCell(10).value = { formula: (bdiNoPU && modoArr === 'arred2puexato') ? fV('F' + r + '*G' + r + '*(1+' + BDI_CELL + '/100)') : fV('F' + r + '*I' + r), result: pt };
         row.getCell(11).value = etKey; // âncora SUMIFS (coluna oculta; vazia em banner/subtotal)
         if (_memNoExcel && it.memoriaCalculo) {
           row.getCell(12).value = String(it.memoriaCalculo);

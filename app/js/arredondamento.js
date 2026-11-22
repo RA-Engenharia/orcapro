@@ -6,12 +6,14 @@
  * centavo a mais no preço unitário já rendeu impugnação. Por isso o modo
  * padrão do OrçaPRO é "truncar2" (Padrão do TCU).
  *
- * 5 modos (espelham o que o mercado usa):
+ * 6 modos (espelham o que o mercado usa):
  *   arred2        — Arredondar tudo em 2 casas decimais
  *   arred2aux     — Arredondar em 2 casas INCLUINDO as composições auxiliares
  *   arred2truncpu — Arredondar em 2 casas e TRUNCAR os preços unitários
  *   truncar2      — Truncar tudo em 2 casas decimais  [PADRÃO DO TCU] ← default
  *   nenhum        — Não arredondar (mantém toda a precisão)
+ *   arred2puexato — Total do item = round2(qtd × custo × (1+BDI)) SEM arredondar o PU com BDI;
+ *                   o PU impresso é round2 do exato (critério de órgãos que calculam assim)
  *
  * Duas entradas, porque os modos tratam VALOR e PREÇO UNITÁRIO diferente:
  *   Arred.valor(v, modo)    -> totais, subtotais, custo direto
@@ -72,7 +74,8 @@
     { id: "arred2aux",     rotulo: "Arredondar em 2 casas decimais incluindo as composições auxiliares", selo: "" },
     { id: "arred2truncpu", rotulo: "Arredondar em 2 casas decimais e truncar os preços unitários", selo: "" },
     { id: "truncar2",      rotulo: "Truncar tudo em 2 casas decimais",                             selo: "Padrão do TCU" },
-    { id: "nenhum",        rotulo: "Não arredondar",                                               selo: "" }
+    { id: "nenhum",        rotulo: "Não arredondar",                                               selo: "" },
+    { id: "arred2puexato", rotulo: "Arredondar o total do item com o preço unitário exato (sem arredondar o unitário com BDI)", selo: "" }
   ];
 
   var PADRAO = "truncar2"; // Padrão do TCU — default do produto
@@ -98,7 +101,7 @@
       switch (this.normalizar(modo)) {
         case "nenhum": return cru(v);
         case "truncar2": return trunc2(v);
-        default: return round2(v); // arred2, arred2aux, arred2truncpu
+        default: return round2(v); // arred2, arred2aux, arred2truncpu, arred2puexato
       }
     },
 
@@ -108,7 +111,7 @@
         case "nenhum": return cru(v);
         case "truncar2": return trunc2(v);
         case "arred2truncpu": return trunc2(v); // arredonda o resto, trunca o PU
-        default: return round2(v); // arred2, arred2aux
+        default: return round2(v); // arred2, arred2aux, arred2puexato (exibição do PU)
       }
     },
 
@@ -142,9 +145,19 @@
       return this.unitario(cu * (1 + pct / 100), modo);
     },
 
+    /* Preço unitário COM BDI EXATO (sem arredondar) — só o modo arred2puexato usa
+     * para multiplicar pela quantidade; nos demais devolve o PU já arredondado. */
+    puExato: function (custoUnitario, bdiPct, modo, incidencia) {
+      if (this.normalizar(modo) !== "arred2puexato") return this.puComBdi(custoUnitario, bdiPct, modo, incidencia);
+      var cu = cru(custoUnitario), pct = cru(bdiPct);
+      if (this.normalizarIncidencia(incidencia) === "final") return cu;
+      return cu * (1 + pct / 100);
+    },
+
     /* Total de um item respeitando modo + incidência. */
     totalItem: function (quantidade, custoUnitario, bdiPct, modo, incidencia) {
       var q = cru(quantidade);
+      if (this.normalizar(modo) === "arred2puexato") return this.valor(q * this.puExato(custoUnitario, bdiPct, modo, incidencia), modo);
       var pu = this.puComBdi(custoUnitario, bdiPct, modo, incidencia);
       return this.valor(q * pu, modo);
     },

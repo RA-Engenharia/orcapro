@@ -493,6 +493,7 @@
             (!admin && usuario.editaGestao === true ? '<button class="conta-item" data-acao="gestao-empresa"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>Planejamento e gestão</button>' : '') +
             '<button class="conta-item" data-acao="tabelas"><span>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</span>Tabelas de preço</button>' +
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</span>Nuvem — sincronizar aparelhos</button>' : '') +
+            (admin && typeof LicitacaoFilaUi !== 'undefined' ? '<button class="conta-item" data-acao="fila-certamepro"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</span>Fila do CertamePRO</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="celular"><span>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</span>Usar no celular ou tablet</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + '</span>Backup dos dados</button>' : '') +
             '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Meu perfil — nome e foto</button>' +
@@ -1088,6 +1089,7 @@
         '<div class="row">' + f("inscricaoMunicipal", "Inscrição municipal", emp.inscricaoMunicipal) + f("banco", "Banco (código e nome)", emp.banco) + '</div>' +
         '<div class="row">' + f("agencia", "Agência", emp.agencia) + f("conta", "Conta corrente", emp.conta) + '</div>' +
         '<div class="row">' + f("socioNome", "Sócio administrador (nome)", emp.socioNome) + f("socioCargo", "Cargo do sócio", emp.socioCargo) + '</div>' +
+        '<div class="row">' + f("socioRg", "Identidade do sócio (RG e órgão expedidor)", emp.socioRg) + f("socioCpf", "CPF do sócio", emp.socioCpf) + '</div>' +
         '<div class="row">' + f("rtNome", "Responsável técnico (nome na proposta)", emp.rtNome) + f("rtCrea", "CREA do responsável técnico", emp.rtCrea) + '</div>' +
         '<div class="row">' +
           '<div class="field"><label>Timbrado: imagem do topo (logo)</label><input type="file" id="emp-timbradoTopo-arq" accept="image/png,image/jpeg,image/webp">' +

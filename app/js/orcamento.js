@@ -26,6 +26,7 @@
         normalizar: function () { return "truncar2"; },
         normalizarIncidencia: function (i) { return i === "final" ? "final" : "unitario"; },
         valor: tr, unitario: tr, auxiliar: tr,
+        puExato: function (cu, pct, m, inc) { return this.puComBdi(cu, pct, m, inc); },
         puComBdi: function (cu, pct, m, inc) { return inc === "final" ? tr(cu) : tr(Number(cu || 0) * (1 + Number(pct || 0) / 100)); },
         totalItem: function (q, cu, pct, m, inc) { return tr(Number(q || 0) * this.puComBdi(cu, pct, m, inc)); },
         custoItem: function (q, cu) { return tr(Number(q || 0) * tr(cu)); }
@@ -1257,7 +1258,8 @@
           var ct = A0.valor(q * cu, modo);
           // PU faturável: com BDI embutido quando a incidência é no unitário
           var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
-          var pt = A0.valor(q * pu, modo);
+          /* arred2puexato: o total usa o PU com BDI EXATO (o impresso é só a exibição arredondada) */
+          var pt = A0.valor(q * (bdiNoPU && modo === "arred2puexato" ? cu * (1 + pct / 100) : pu), modo);
           custoDireto += ct; somaVenda += pt;
           custoPorEtapa[ei] += ct; vendaPorEtapa[ei] += pt;
           /* v1.1.233 — MO/MAT/EQ do orçamento respeitam o modo de custo do

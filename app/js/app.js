@@ -331,6 +331,8 @@
          vem e pede confirmação — depois do render para o toast/modal terem tela.
          Espera a sessão sozinho se a pessoa ainda estiver no login (js/pacote.js). */
       try { if (typeof Pacote !== "undefined" && Pacote.processarParam) Pacote.processarParam(); } catch (ePk) {}
+      /* FILA DO CERTAMEPRO (js/licitacaofilaui.js): lê o #parear_certamepro= (e limpa a URL) e agenda a consulta, se o interruptor estiver ligado */
+      try { if (typeof LicitacaoFilaUi !== "undefined" && LicitacaoFilaUi.iniciar) LicitacaoFilaUi.iniciar(); } catch (eFila) {}
       // Rota #rv (QR da RA/RV no celular): abre o BIM e entra no imersivo Caminhar assim que
       // o modelo estiver carregado. Honesto: precisa do módulo Gestão e de um modelo carregado
       // NESTE aparelho. Para abrir em QUALQUER celular o caminho é o link da nuvem
@@ -2795,6 +2797,7 @@
         case "empresa": this.abrirEmpresa(); break;
         case "gestao-empresa": this.abrirGestaoEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
+        case "fila-certamepro": if (typeof LicitacaoFilaUi !== "undefined") LicitacaoFilaUi.abrir(); break;
         case "backup": this.abrirBackup(); break;
         case "nuvem": this.abrirNuvem(); break;
         case "celular": this.abrirCelular(); break;
@@ -5672,7 +5675,7 @@
       var dados = {};
       /* campos da proposta de licitação (js/empresa.js): se a tela não os desenhou, ficam como estavam —
          nunca apagados por um salvar que não os viu */
-      var _novosEmp = { inscricaoMunicipal: 1, banco: 1, agencia: 1, conta: 1, socioNome: 1, socioCargo: 1, rtNome: 1, rtCrea: 1, timbradoTopo: 1, timbradoFundo: 1 };
+      var _novosEmp = { inscricaoMunicipal: 1, banco: 1, agencia: 1, conta: 1, socioNome: 1, socioCargo: 1, socioRg: 1, socioCpf: 1, rtNome: 1, rtCrea: 1, timbradoTopo: 1, timbradoFundo: 1 };
       var _atualEmp = Empresa.dados(), _pend = this._timbradoPend || {};
       Empresa.campos.forEach(function (k) {
         var el = UI.el("emp-" + k);
@@ -13394,17 +13397,21 @@
         } catch (e0) { resolve({ ok: false, erro: "Este navegador não montou o envio (" + e0.message + ")." }); return; }
         var tempo = null, ctl = null;
         try { if (typeof AbortController !== "undefined") { ctl = new AbortController(); tempo = setTimeout(function () { ctl.abort(); }, 45000); } } catch (e1) {}
-        fetch(d.url, { method: "POST", headers: { "X-Licitacoes": "1" }, body: fd, signal: ctl ? ctl.signal : undefined })
+        /* fila do CertamePRO (js/licitacaofila.js): o destino traz o Authorization em d.cabecalhos; o X-Licitacoes: 1 vai sempre */
+        var cabPost = { "X-Licitacoes": "1" };
+        if (d.cabecalhos && typeof d.cabecalhos === "object") Object.keys(d.cabecalhos).forEach(function (k) { if (k.toLowerCase() !== "x-licitacoes") cabPost[k] = d.cabecalhos[k]; });
+        fetch(d.url, { method: "POST", headers: cabPost, body: fd, signal: ctl ? ctl.signal : undefined })
           .then(function (r) {
             if (tempo) clearTimeout(tempo);
-            return r.text().then(function (txt) { return { ok: r.ok, status: r.status, txt: txt }; });
+            var retryAfter = ""; try { retryAfter = (r.headers && r.headers.get && r.headers.get("Retry-After")) || ""; } catch (eRa) {}
+            return r.text().then(function (txt) { return { ok: r.ok, status: r.status, txt: txt, retryAfter: retryAfter }; });
           })
           .then(function (res) {
             var j = null; try { j = JSON.parse(res.txt); } catch (e2) {}
             if (!res.ok) {
               var dt = j && (j.detail || j.erro || j.mensagem);
               var det = dt ? (typeof dt === "string" ? dt : JSON.stringify(dt)) : "";
-              resolve({ ok: false, status: res.status, j: j, erro: "O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ")." });
+              resolve({ ok: false, status: res.status, j: j, retryAfter: res.retryAfter, erro: "O CertamePRO recusou o envio (HTTP " + res.status + (det ? ": " + det : "") + ")." });
               return;
             }
             resolve({ ok: true, status: res.status, j: j });
@@ -13448,7 +13455,7 @@
         try { prog("envio"); } catch (eP1) {}
         /* Só o Excel vai ao CertamePRO (ele não lê o documento da proposta; ver _licTextoFaltaPdf). */
         return self._licPost(d, g.blob, g.nome).then(function (p) {
-          var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, lido: null, faltaPdf: !!p.ok };
+          var out = { ok: p.ok, etapa: "envio", nome: g.nome, blob: g.blob, erro: p.erro || "", j: p.j || null, status: p.status || 0, retryAfter: p.retryAfter || "", lido: null, faltaPdf: !!p.ok };
           /* 409: o CertamePRO já tem orçamento conferido (devolvido por pessoa ou com valor digitado à mão) e NÃO gravou nada */
           if (!p.ok && p.status === 409) { out.naoAplicado = true; out.motivoNaoAplicado = Licitacao.motivoNaoAplicado ? Licitacao.motivoNaoAplicado(p.j) : ""; }
           if (p.ok) { try { out.lido = Licitacao.lerDevolucao(p.j, Licitacao.totalProposta(orc)); } catch (eL) { out.lido = null; } }

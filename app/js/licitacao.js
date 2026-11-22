@@ -222,7 +222,7 @@
 
   /* ---------------- empresa do certame: campos e timbrado ---------------- */
   var CAMPOS_LICITANTE = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
-    "socioNome", "socioCargo", "rtNome", "rtCrea"];
+    "socioNome", "socioCargo", "rtNome", "rtCrea", "cidade", "socioRg", "socioCpf"];
   /* imagem do timbrado: até ~400 KB por imagem (base64 ~ 4/3). O app reduz o timbrado a 1100 px antes
      de guardar (js/app.js), então isto só barra o que veio grande demais de fora. */
   var TIMBRADO_MAX_CHARS = 560000, TIMBRADO_MAX_CNPJS = 6;
@@ -490,6 +490,9 @@
       lic.certamepro = true;
       lic.certame = s(bloco.certame);
       lic.pncp = s(bloco.numero_controle_pncp);
+      /* CertamePRO 0.18.6: número do edital e processo separados (o bloco traz os dois) */
+      if (s(bloco.numero_edital) && !s(lic.numero_edital)) lic.numero_edital = s(bloco.numero_edital);
+      if (bloco.processo !== undefined && lic.processo_adm === undefined) lic.processo_adm = s(bloco.processo);
       var org = (bloco.orgao && typeof bloco.orgao === "object") ? bloco.orgao : {};
       lic.orgao = { nome: s(org.nome), cnpj: s(org.cnpj) };
       lic.criterio = s(bloco.criterio_julgamento);
@@ -1815,7 +1818,8 @@
         orgao: orgao,
         cnpj: (c.orgao && c.orgao.cnpj) || (orc.cliente && orc.cliente.doc) || "",
         processo: s(c.processo),
-        edital: s(c.pncp) || s(c.certame),
+        edital: s(c.pncp) || s(c.certame) || s(c.numero_edital),
+        numeroEdital: s(c.numero_edital),
         sessao: dt(c.abertura),
         modalidade: s(c.tipo),
         criterio: s(c.criterio),

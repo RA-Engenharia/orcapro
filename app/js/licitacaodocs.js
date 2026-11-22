@@ -113,6 +113,13 @@
     if (isNaN(d.getTime())) d = new Date();
     return (d.getDate() + " de " + MESES[d.getMonth()] + " de " + d.getFullYear()).toUpperCase();
   }
+  /* data da carta como no modelo da Arcturo: dd/mm/aaaa */
+  function dataCurta(d) {
+    d = (d instanceof Date) ? d : new Date(d || Date.now());
+    if (isNaN(d.getTime())) d = new Date();
+    var z = function (n) { return (n < 10 ? "0" : "") + n; };
+    return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear();
+  }
   /* "6 meses" → "06 (seis) meses". Texto que não segue esse jeito sai como veio. */
   function prazoExt(txt) {
     var t = s(txt), m = t.match(/^(\d{1,3})\s*(mes|meses|mês|dia|dias|semana|semanas|ano|anos)\b(.*)$/i);
@@ -450,6 +457,10 @@
       conta: pega("conta", "conta corrente"),
       socioNome: pega("socioNome", "nome do sócio administrador"),
       socioCargo: pega("socioCargo", "cargo do sócio", ""),
+      /* modelo da Arcturo: "Cidade-UF, data." no alto da carta e o representante legal (identidade e CPF) na cláusula da assinatura do contrato */
+      cidade: pega("cidade", "cidade da empresa (local da carta)"),
+      socioRg: pega("socioRg", "identidade e órgão expedidor do sócio administrador"),
+      socioCpf: pega("socioCpf", "CPF do sócio administrador"),
       rtNome: pega("rtNome", "nome do responsável técnico", emp.responsavel),
       rtCrea: pega("rtCrea", "CREA do responsável técnico", emp.crea),
       timbradoTopo: s(emp.timbradoTopo) || s(emp.logo),
@@ -467,7 +478,7 @@
      guardado por CNPJ (Licitacao.guardarTimbrado), não de config.licitacao. Sem licitante, devolve
      `empConta` como veio. */
   var CAMPOS_EMP = ["nome", "cnpj", "inscricaoMunicipal", "endereco", "telefone", "email", "banco", "agencia", "conta",
-    "socioNome", "socioCargo", "rtNome", "rtCrea"];
+    "socioNome", "socioCargo", "rtNome", "rtCrea", "cidade", "socioRg", "socioCpf"];
   function temLicitante(lic) { var Lc = L(); return !!(Lc && Lc.temLicitante && Lc.temLicitante(lic)); }
   function empresaDoCertame(lic, empConta) {
     if (!temLicitante(lic)) return empConta || {};
@@ -834,7 +845,17 @@
     /* ---- cabeçalho ---- */
     var emp = empresaResolvida(empresa);
     var tipoLic = s(lic.tipo), proc = s(lic.processo) || s(lic.certame);
-    var edital = (opcoes.edital ? s(opcoes.edital) : (tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO") + (proc ? " Nº " + proc : ""));
+    /* Contrato CertamePRO 0.18.6: `processo` = só o processo; `numero_edital` = número do edital (o "Nº" da modalidade).
+       Pacote antigo (sem numero_edital) traz em `processo` o processo OU o edital: segue o comportamento de antes. */
+    var nEdital = s(lic.numero_edital), modTxt = tipoLic ? tipoLic.toUpperCase() : "LICITAÇÃO";
+    var edital;
+    if (opcoes.edital) edital = s(opcoes.edital);
+    else if (nEdital) {
+      /* `processo_adm` = só o processo; sem ele, `processo` só conta se não for o próprio número do edital */
+      var procAdm = lic.processo_adm !== undefined ? s(lic.processo_adm) : (s(lic.processo) !== nEdital ? s(lic.processo) : "");
+      edital = modTxt + " Nº " + nEdital + (procAdm ? " · Processo nº " + procAdm : "");
+    }
+    else edital = modTxt + (proc ? " Nº " + proc : "");
     var objInfo = objetoDaCarta(orc, lic, opcoes);
     /* VALIDADE: a do edital (lic.validadeDiasEdital) manda na carta; sem ela, opcoes.validade ou a do comercial do orçamento.
        validadeDias nulo não é dado da empresa; 15 digitado é 15. (O 15 que versões antigas gravavam sozinho é desfeito pela migração.) */
@@ -843,9 +864,15 @@
     var vCom = parseInt(orc.comercial && orc.comercial.validadeDias, 10);
     if (!(vCom > 0)) vCom = 0;
     var vTxt = s(opcoes.validade);
+    /* Cabeçalho de TODA página no modelo da Arcturo: REF. (número do edital), CIDADE, Data de Abertura, OBJETO. A data vem do certame
+       (lic.abertura, ISO ou dd/mm/aaaa); sem ela o cabeçalho sai com aviso [PREENCHER], nunca com data inventada. */
+    var abertura = "", mAb = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(lic.abertura));
+    if (mAb) abertura = mAb[3] + "/" + mAb[2] + "/" + mAb[1];
+    else { mAb = /^(\d{2}\/\d{2}\/\d{4})/.exec(s(lic.abertura)); if (mAb) abertura = mAb[1]; }
     var cab = {
+      refCab: nEdital || edital, abertura: abertura,
       edital: edital, objeto: objInfo.texto, cidade: cidadeDe(orc, lic, opcoes), orgao: s(lic.orgao && lic.orgao.nome),
-      data: dataExtensoUpper(opcoes.data), prazo: "",
+      data: dataExtensoUpper(opcoes.data), dataCurta: dataCurta(opcoes.data), prazo: "",
       validade: vEd ? validadeExt(vEd) : (vTxt || validadeExt(vCom)),
       validadeInicio: contagemValidade(lic.validadeInicio),
       prazoInicio: s(opcoes.prazoInicio)   // sem valor padrão escondido: sem opcoes.prazoInicio a frase de início não existe
@@ -866,6 +893,7 @@
         pend.dados.push("Prazo de execução: " + rotCarta + " usa " + cab.prazo + " (lido do edital), e o prazo do orçamento diz \"" + txtPrazo + "\"" + (diasTxt != null ? " (" + diasTxt + " dias)" : " (não consegui converter em dias)") + ". Conferir qual vale.");
       }
     } else cab.prazo = prazoExt(txtPrazo);
+    if (!abertura) pend.preencher.push("data de abertura da sessão (cabeçalho de toda página; o pacote do certame não trouxe)");
     if (!cab.prazo && !cartaEd) pend.preencher.push("prazo de execução (comercial do orçamento)");
     if (!cab.validade && !cartaEd) pend.preencher.push("validade da proposta (o pacote não trouxe a validade do edital e o orçamento não tem validade em dias)");
     if (vEd) {
@@ -1136,6 +1164,11 @@
       if (dl.auxCiclo && dl.auxCiclo.length) pend.dados.push("Desconto só " + rotInc + ": a base traz " + dl.auxCiclo.join(", ") + " dentro de si mesma; a repetição interna ficou sem desconto. Conferir a composição.");
     }
 
+    var fontesTxt = (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).map(function (b) {
+      var f = s(b && b.fonte); if (!f) return "";
+      return f + (s(b.uf) ? " " + s(b.uf) : "") + (s(b.competencia) ? " " + s(b.competencia) : "") + (s(b.regime) ? " (" + s(b.regime) + ")" : "");
+    }).filter(Boolean).join(", ");
+    if (!fontesTxt) { var fs_ = {}; itens.forEach(function (I) { if (s(I.fonte)) fs_[s(I.fonte)] = true; }); fontesTxt = Object.keys(fs_).join(", "); }
     var dados = {
       valor: valor, valorExtenso: extenso, cab: cab, emp: emp, bdiPct: bdiPct, tabelaRef: tabelaRef,
       base: baseOk ? { tabela: baseOk.tabela, mes: baseOk.mes, uf: baseOk.uf, desonerado: baseOk.desonerado, fonte: baseOk.fonte } : null,
@@ -1145,7 +1178,8 @@
       aux: aux, quant: qLista, curva: curva, crono: crono, bdi: bdi, enc: enc, prazoDias: prazoDias, cronoSemPrazo: cronoSemPrazo, valorMaximo: num0(lic.valorEstimado),
       objetoInfo: objInfo, validadeDias: vEd || vCom || 0, validadeEdital: !!vEd,
       pend: pend, descTrocadas: descTrocadas, prazoTexto: txtPrazo, prazoDiverge: prazoDiverge, prazoDiasTexto: diasTxt,
-      desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd
+      desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd,
+      fontesTxt: fontesTxt, dataBase: s(lic.dataBase)
     };
 
     /* ---- UM valor só ---- */
@@ -1350,8 +1384,8 @@
     ".ld-wm-bg{background-repeat:no-repeat;background-size:contain;background-position:center}",
     ".ld-hd.big{top:6mm;height:38mm;justify-content:center}.ld-hd.big .ld-logo{max-height:36mm;max-width:70mm}",
     ".ld-corpo{position:absolute;left:12mm;right:12mm;top:var(--ld-corpo-top,36mm);bottom:38mm;overflow:hidden;z-index:2}",
-    ".ld-pg[data-t=cartaA] .ld-corpo{top:46mm;bottom:22mm}",
-    ".ld-pg[data-t=cartaB] .ld-corpo{top:14mm;bottom:22mm}",
+    /* a carta também leva o cabeçalho de identificação (REF., CIDADE, Data de Abertura, OBJETO): no modelo da Arcturo ele abre TODAS as páginas, a 1ª inclusive */
+    ".ld-pg[data-t=cartaA] .ld-corpo,.ld-pg[data-t=cartaB] .ld-corpo{bottom:22mm}",
     ".ld-ass{position:absolute;left:12mm;right:12mm;bottom:15mm;height:22mm;display:flex;gap:14mm;align-items:flex-end;justify-content:center;z-index:2;font-size:7.4pt;text-align:center}",
     ".ld-ass div{flex:1;border-top:.7pt solid #222;padding-top:1mm}",
     ".ld-ass b{display:block}",
@@ -1362,7 +1396,7 @@
     ".ld-tp .ld-hd{right:auto;width:var(--ld-id-w,186mm);display:block}",
     ".ld-tp .ld-id{max-width:none;width:100%}",
     ".ld-tp .ld-corpo{bottom:calc(var(--tp-base,27mm) + 31mm)}",
-    ".ld-tp .ld-pg[data-t=cartaA] .ld-corpo,.ld-tp .ld-pg[data-t=cartaB] .ld-corpo{top:calc(var(--tp-top,36mm) + 4mm);bottom:calc(var(--tp-base,27mm) + 9mm)}",
+    ".ld-tp .ld-pg[data-t=cartaA] .ld-corpo,.ld-tp .ld-pg[data-t=cartaB] .ld-corpo{bottom:calc(var(--tp-base,27mm) + 9mm)}",
     ".ld-tp .ld-ass{bottom:calc(var(--tp-base,27mm) + 7mm);height:22mm}",
     ".ld-tp .ld-rod{bottom:calc(var(--tp-base,27mm) + 1.5mm);height:5mm;border-top:0;padding-top:0;justify-content:flex-end}",
     ".ld-rod{position:absolute;left:12mm;right:12mm;bottom:5mm;height:9mm;display:flex;justify-content:space-between;align-items:flex-end;font-size:6.4pt;line-height:1.3;z-index:2;border-top:.5pt solid #bbb;padding-top:1mm}",
@@ -1425,11 +1459,14 @@
       validade: cb.validade ? esc(cb.validade) : '<span class="ld-p0">[PREENCHER: validade da proposta]</span>',
       inicio: esc(cb.prazoInicio)
     };
+    h += '<div class="ld-tit">Proposta de Preços</div>';
+    h += '<p class="ld-p">' + campo(e.cidade, "cidade da empresa") + ', ' + esc(cb.dataCurta) + '.</p>';
     h += '<p class="ld-p" style="margin-bottom:1mm"><b>À<br>Comissão Permanente de Licitação<br>' + vars.cidade + '<br>REF.: ' + vars.edital + '<br>Objeto: ' + vars.objeto + '</b></p>';
     h += '<p class="ld-p">Prezados Senhores,</p>';
     h += '<p class="ld-p">' + subst('Apresentamos a V. Sas. Nossa proposta para execução dos serviços objeto do Edital do certame em epígrafe, pelo valor global de {valor}, com prazo de execução de {prazo}, contados a partir da emissão da Ordem de Serviço pela CONTRATANTE.', vars) + '</p>';
     h += '<p class="ld-p">Concordamos integralmente e sem qualquer restrição com as condições desta licitação em referência, bem assim com as condições de contratação, estabelecidas na minuta do contrato que nos foi fornecida com o edital, e que nos submetemos às disposições regulamentares e legais sobre esta licitação, especialmente a Lei Federal nº 14.133 de 2021 e suas posteriores alterações.</p>';
     h += '<p class="ld-p">Comprometemo-nos a nos manifestarmos acerca da concordância da prorrogação e revalidação da proposta, caso seja necessário, antes de 10 (dez) dias do vencimento da mesma, por igual e sucessivo período, cientes que a falta de manifestação nos libera, excluindo-nos deste certame licitatório.</p>';
+    h += '<p class="ld-p">Caso nos seja adjudicado o objeto da presente licitação, nos comprometemos a assinar o Contrato no prazo determinado no documento de convocação, indicando para esse fim o(a) Sr.(a) ' + campo(e.socioNome, "nome do sócio administrador") + ', portador(a) da Carteira de Identidade nº ' + campo(e.socioRg, "identidade e órgão expedidor do sócio") + ' e CPF nº ' + campo(e.socioCpf, "CPF do sócio") + ', como representante legal desta empresa.</p>';
     h += '<p class="ld-p">' + subst('Informamos que o prazo de validade da nossa proposta é de {validade}, {contagem}.', vars) + '</p>';
     h += '<p class="ld-p">Declaramos que:</p>';
     var decl = [
@@ -1459,6 +1496,19 @@
     return '<section class="ld-sec" data-tipo="carta" data-titulo="Carta proposta">' + h + '</section>';
   }
 
+  /* "VALOR BDI TOTAL" e "VALOR ORÇAMENTO" (sem BDI) que o modelo da Arcturo imprime acima do valor total, na planilha e no resumo */
+  function linhasTotais(d) {
+    return '<p class="ld-p" style="margin:3mm 0 0;text-align:right">VALOR BDI TOTAL: <b>' + esc(R(d.tot.comBdi - d.tot.semBdi)) + '</b></p>' +
+      '<p class="ld-p" style="margin:0;text-align:right">VALOR ORÇAMENTO: <b>' + esc(R(d.tot.semBdi)) + '</b></p>';
+  }
+  /* fontes e data-base como no modelo: só o que o edital/pacote traz (bases exigidas e data-base); sem isso, as fontes dos itens da planilha */
+  function notaFontes(d) {
+    var f = d.fontesTxt, t = "";
+    if (f) t += 'Fontes utilizadas para composições e cotação de preços: ' + esc(f) + '. ';
+    if (d.dataBase) t += 'Data-base: ' + esc(d.dataBase) + '. ';
+    return t + 'BDI: ' + esc(P(d.bdiPct)) + '.';
+  }
+
   function secResumo(d) {
     var h = '<div class="ld-tit">Resumo do Orçamento</div>';
     var t = '<table class="ld-t ld-split"><colgroup><col style="width:7mm"><col style="width:36mm"><col style="width:21mm"><col style="width:21mm"><col style="width:22mm"><col style="width:16mm"><col style="width:23mm"><col style="width:12mm"></colgroup>' +
@@ -1469,7 +1519,7 @@
         tdN(P(d.tot.comBdi > 0 ? E.comBdi / d.tot.comBdi * 100 : 0)) + '</tr>';
     });
     t += '<tr class="tt"><td></td><td>TOTAL:</td>' + tdN(R(d.tot.cat.MO)) + tdN(R(d.tot.cat.MAT)) + tdN(R(d.tot.cat.EQ)) + tdN(R(d.tot.cat.OUTROS)) + tdN(R(d.tot.comBdi)) + tdN("100,00%") + '</tr></tbody></table>';
-    h += t;
+    h += t + linhasTotais(d);
     h += '<p class="ld-p" style="margin-top:3mm;text-align:right"><b>VALOR TOTAL: ' + esc(R(d.valor)) + '</b></p>';
     h += '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
     var ciR = d.custoItens || {}, nPropR = ciR.porProporcao || 0, nDifR = (ciR.compDif && ciR.compDif.n) || 0;
@@ -1493,7 +1543,8 @@
       });
     });
     t += '<tr class="tt"><td colspan="8">VALOR TOTAL:</td>' + tdN(R(d.tot.semBdi)) + tdN(R(d.tot.comBdi)) + '</tr></tbody></table>';
-    h += t + '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
+    h += t + linhasTotais(d) + '<p class="ld-ext">' + esc(cap(d.valorExtenso)) + '</p>';
+    h += '<p class="ld-nota">' + notaFontes(d) + '</p>';
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Planilha orçamentária">' + h + '</section>';
   }
 
@@ -1552,7 +1603,7 @@
   }
 
   function secAnalitico(d) {
-    var h = '<div class="ld-tit">Relatório Analítico - Composições de Custos</div>';
+    var h = '<div class="ld-tit">Composições de Preços Unitários</div>';
     var n = 0;
     d.itens.forEach(function (I) {
       n++;
@@ -1590,7 +1641,7 @@
        sempre: o que a base não tem aparece como "sem detalhamento", para o órgão ver que foi citada. */
     var abertas = d.aux.filter(function (a) { return a.insumos; });
     if (!abertas.length && !d.baseExigida) return '';
-    var h = '<div class="ld-tit">Relatório Analítico - Composições Auxiliares</div>';
+    var h = '<div class="ld-tit">Composições Auxiliares</div>';
     var dl = d.desconto, comDesc = abertas.some(function (a) { return a.descontada; });
     var rotInc = dl && dl.incidencia === "MO" ? "de mão de obra" : (dl && dl.incidencia === "EQ" ? "de equipamento" : "de material");
     h += '<p class="ld-sub">Composições auxiliares citadas nas composições dos serviços, abertas conforme a tabela de referência ' + esc(ref || "do projeto") + '. ' +
@@ -1774,16 +1825,16 @@
     var logo = !e.timbradoTopo ? '<span class="ld-p0">[PREENCHER: timbrado (logo)]</span>'
       : (urlCss(e.timbradoTopo) ? '<div class="ld-logo ld-logo-bg ld-bg-topo"></div>' : '<img class="ld-logo" src="' + esc(e.timbradoTopo) + '" alt="">');
     var wm = !e.timbradoFundo ? '' : (urlCss(e.timbradoFundo) ? '<div class="ld-wm ld-wm-bg ld-bg-fundo"></div>' : '<img class="ld-wm" src="' + esc(e.timbradoFundo) + '" alt="">');
-    var id = '<div class="ld-id"><b>OBRA:</b> ' + campo(cb.objeto, "objeto") + '<br><b>REF:</b> ' + esc(cb.edital) + '.<br><b>CIDADE:</b> ' + esc(cb.cidade) + '<br><b>DATA:</b> ' + esc(cb.data) + '</div>';
+    var id = '<div class="ld-id"><b>REF.:</b> ' + esc(cb.refCab) + '<br><b>CIDADE:</b> ' + esc(cb.cidade) + '<br><b>Data de Abertura:</b> ' + campo(cb.abertura, "data de abertura da sessão") + '<br><b>OBJETO:</b> ' + campo(cb.objeto, "objeto") + '</div>';
     var ass = '<div><b>' + campo(e.nome, "razão social") + '</b>' + campo(e.socioNome, "nome do sócio administrador") + '<br>' + campo(e.socioCargo, "cargo do sócio") + '</div>' +
       '<div><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b>Responsável Técnico<br>' + rtRegistro(e) + '</div>';
-    var rod = '<div>' + campo(e.nome, "razão social") + ' CNPJ ' + campo(e.cnpj, "CNPJ") + '<br>' + campo(e.endereco, "endereço") + '<br>Fone: ' + campo(e.telefone, "telefone") + ' / E-mail: ' + campo(e.email, "e-mail") + '</div><div class="pag">Página: {{pag}}</div>';
+    var rod = '<div>' + campo(e.nome, "razão social") + ' CNPJ ' + campo(e.cnpj, "CNPJ") + '<br>' + campo(e.endereco, "endereço") + '<br>Fone: ' + campo(e.telefone, "telefone") + ' / E-mail: ' + campo(e.email, "e-mail") + '</div><div class="pag">Página {{pag}} de {{tot}}</div>';
     if (modoPagina(d)) {
       /* razão social, endereço e fone já estão impressos no papel: o rodapé só numera */
       return '<template class="ld-tpl" data-n="tpbg"><div class="ld-tpbg ld-bg-pagina"></div></template>' +
         '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + '</div></template>' +
         '<template class="ld-tpl" data-n="ass"><div class="ld-ass">' + ass + '</div></template>' +
-        '<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página: {{pag}}</div></div></template>';
+        '<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página {{pag}} de {{tot}}</div></div></template>';
     }
     return '<template class="ld-tpl" data-n="hd-big"><div class="ld-hd big">' + logo + '</div></template>' +
       '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + id + logo + '</div></template>' +
@@ -1796,10 +1847,22 @@
   function html(d, secoes) {
     /* `secoes` (js/saidas.js): { id: false } pula a seção. Sem ele, o corpo é o de sempre (testado byte a byte em tools/test-saidas.js). */
     var lig = function (id) { return !(secoes && secoes[id] === false); };
-    var corpo = (d.cartaDoEdital || !lig("carta") ? "" : secCarta(d)) + (lig("resumoEtapas") ? secResumo(d) : "") + (lig("sintetico") ? secSintetico(d) : "") +
-      (lig("custosItem") ? secCustosItem(d) : "") + (lig("analitico") ? secAnalitico(d) : "") + (lig("composicoesProprias") ? secProprias(d) : "") +
-      (lig("auxiliares") ? secAuxiliares(d) : "") + (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "") +
-      (lig("cronograma") ? secCronograma(d) : "") + (lig("bdi") ? secBdi(d) : "") + (lig("encargos") ? secEncargos(d) : "");
+    /* ORDEM E NUMERAÇÃO DO MODELO DA ARCTURO: carta, 1 Planilha, 2 Resumo, 3 Composições de preços unitários, 4 Composições auxiliares,
+       5 Cronograma, 6 BDI, 7 Encargos. Seção desligada não deixa buraco na numeração. O que o modelo não tem (custos por item,
+       quantitativos, curva ABC) vai depois, como anexo sem número. */
+    var nSec = 0;
+    var numera = function (h) { nSec++; return h.replace('<div class="ld-tit">', '<div class="ld-tit">' + nSec + '. '); };
+    var corpo = (d.cartaDoEdital || !lig("carta") ? "" : secCarta(d));
+    if (lig("sintetico")) corpo += numera(secSintetico(d));
+    if (lig("resumoEtapas")) corpo += numera(secResumo(d));
+    if (lig("custosItem")) corpo += secCustosItem(d);
+    if (lig("analitico")) corpo += numera(secAnalitico(d));
+    if (lig("composicoesProprias")) corpo += secProprias(d);
+    if (lig("auxiliares")) corpo += numera(secAuxiliares(d));
+    if (lig("cronograma")) corpo += numera(secCronograma(d));
+    if (lig("bdi")) corpo += numera(secBdi(d));
+    if (lig("encargos")) corpo += numera(secEncargos(d));
+    corpo += (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "");
     var tpAttr = '';
     if (modoPagina(d)) {
       var mmDe = function (cm) { return String(+(Number(cm) * 10).toFixed(2)); };   // 3,6 cm -> "36" (e não 36.00000000000001)
@@ -1866,7 +1929,7 @@
       var pg = doc.createElement("div");
       var t = tipo === "carta" ? (idx === 0 ? "cartaA" : "cartaB") : "corpo";
       pg.className = "ld-pg"; pg.setAttribute("data-t", t);
-      var cab = (t === "cartaA") ? (tp ? "" : tpl["hd-big"]) : (t === "cartaB" ? "" : tpl["hd-std"]);
+      var cab = tpl["hd-std"];
       pg.innerHTML = (tp ? (tpl.tpbg || "") : (tpl.wm || "")) + (cab || "") + '<div class="ld-corpo"></div>' + (tpl.ass || "") + (tpl.rod || "").replace("{{pag}}", String(n));
       saida.appendChild(pg);
       return { pg: pg, corpo: pg.querySelector(".ld-corpo") };
@@ -2038,6 +2101,7 @@
     [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { t.parentNode.removeChild(t); });
     /* NUNCA corpo cortado: depois de paginar, toda `.ld-corpo` tem de caber. Se alguma não couber, o gerador acusa (a página e o que sobrou),
        em vez de entregar um documento ao órgão com linha ou total faltando. */
+    [].slice.call(saida.querySelectorAll(".pag")).forEach(function (el) { el.innerHTML = el.innerHTML.replace("{{tot}}", String(n)); });
     [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
       if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
     });

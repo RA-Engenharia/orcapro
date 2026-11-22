@@ -44,6 +44,8 @@
     conta: "",
     socioNome: "",
     socioCargo: "",
+    socioRg: "",
+    socioCpf: "",
     rtNome: "",
     rtCrea: "",
     /* timbrado do pacote: imagem do topo (logo) e do fundo (marca d'água), em data URI */
@@ -53,7 +55,7 @@
 
   var Empresa = {
     campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario",
-      "inscricaoMunicipal", "banco", "agencia", "conta", "socioNome", "socioCargo", "rtNome", "rtCrea", "timbradoTopo", "timbradoFundo"],
+      "inscricaoMunicipal", "banco", "agencia", "conta", "socioNome", "socioCargo", "socioRg", "socioCpf", "rtNome", "rtCrea", "timbradoTopo", "timbradoFundo"],
 
     REGIMES: { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" },
     /* valor válido ou "" — nunca devolve texto livre vindo de fora */
