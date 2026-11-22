@@ -622,7 +622,10 @@
          a Anotar › Cotas). Quem chamar o id antigo (atalho, busca, IA, e2e antiga) cai no substituto. */
     "fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada",
     /* 20/11/2026: o CYPE saiu da interface do cálculo de aço (pedido do Rogério) — o id antigo cai nos Resultados do cálculo */
-    "met-calc-cype": "met-calc-resultados"
+    "met-calc-cype": "met-calc-resultados",
+    /* 21/11/2026 (entrada única Galpão / pórtico, js/metalporticosui.js): Assistente de galpão, Assistente de cálculo, Modelos
+       prontos e Pórticos industriais saíram da fita organizada — o id antigo abre a entrada nova */
+    "met-galpao": "met-galpao-portico", "met-calc-assistente": "met-galpao-portico", "met-calc-modelos": "met-galpao-portico", "met-porticos": "met-galpao-portico"
   };
   /* com o MODELADOR ligado o editor sintético da primeira versão sai: o painel
      dele já não abre (pedido de 09/10/2026) e Parede, Piso, Pilar, Viga, o

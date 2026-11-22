@@ -279,24 +279,42 @@
     { nome: "Elétrica · Documentos", ids: ["ele-docs", "ele-circ-pranchas"] },
     { nome: "Elétrica · Ver", ids: ["ele-fiacao"] }
   ];
-  /* a disciplina Metálica: do eixo à fabricação (o fluxo do detalhista) */
+  /* a disciplina Metálica: do eixo à fabricação (o fluxo do detalhista).
+     21/11/2026 — FITA ENXUTA (decisão do Rogério: "OK na fita"): eram 15 painéis e ~95 botões; ficam 6 painéis na ordem do
+     trabalho (Modelar → Projeto → Calcular → Documentar → Fabricar → Custo) e ~20 botões à vista. NENHUM comando sumiu: as
+     variantes moram nos submenus (▾) e o que é consulta (catálogos, fontes, estrutura desenhada avulsa) foi para Gerenciar ›
+     Metálica. Os três lugares que faziam galpão (Assistente de galpão, Modelos prontos e Pórticos industriais) viraram a
+     entrada única "Galpão / pórtico" (js/metalporticosui.js); os ids antigos caem nela (REMOVIDOS_ORG + SUBSTITUIDOS_B1).
+     Prova: tools/test-bimfita.js [7], tools/e2e-bim-fita-org.js, tools/bim-fita-inventario.js (antes/depois). */
   var ABA_METALICA = [
-    { nome: "Eixos e plano", ids: ["met-plano", "met-grade-eixos", "met-cotas-eixos", "met-niveis-3d"] },
-    { nome: "Peças", ids: ["met-pilar", "met-viga", "met-diagonal", "met-vigas-pilares", "met-terca", "met-chapa-cliques", "met-chapa", "met-perfil", "met-enrijecedor", "met-mecanica"] },
-    { nome: "Ligação inteligente", ids: ["met-lig-inteligente", "met-lig-catalogo", "met-lig-lote", "met-lig-config", "met-lig-biblio", "met-lig-tipos", "met-lig-memorial"] },
-    { nome: "Ligações", ids: ["met-placa-base", "met-chapa-ext", "met-cant-dupla", "met-emenda", "met-clip", "met-contravento", "met-no", "met-conferir", "met-apagar-lig"] },
-    { nome: "Galpão", ids: ["met-galpao"] },
-    { nome: "Pórticos", ids: ["met-porticos"] },
-    { nome: "Peças prontas", ids: ["met-pronta-trelica", "met-pronta-escada", "met-pronta-mezanino", "met-pronta-rolamento", "met-pronta-rack", "met-pronta-skid", "met-pronta-editar"] },
-    { nome: "Acessos", ids: ["met-ac-escolher", "met-ac-galeria", "met-ac-escada", "met-ac-escada-linha", "met-ac-marinheiro", "met-ac-helicoidal", "met-ac-rampa",
-      "met-ac-plataforma", "met-ac-anelar", "met-ac-passarela", "met-ac-guarda", "met-ac-corrimao", "met-ac-piso", "met-ac-verificar"] },
-    { nome: "Andaime", ids: ["met-andaime", "met-andaime-contorno", "met-andaime-pranchas", "met-andaime-ifc"] },
-    { nome: "Andaime multidirecional", ids: ["met-andaime-multi"] },
-    { nome: "Tanques", ids: ["met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular"] },
-    { nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-normas"] },
-    { nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-relacao", "met-etiquetas", "met-producao", "met-vista-portico", "met-parafusos-ver", "met-executivo", "met-ifc", "met-pacote", "met-fontes"] },
-    { nome: "Orçamento e montagem", ids: ["met-orcamento", "met-orcfab", "met-lista-montagem", "met-montagem"] },
-    { nome: "Catálogo", ids: ["met-catalogo-br", "met-catalogo"] }
+    { nome: "Modelar", ids: ["met-pilar", "met-viga", "met-diagonal", "met-terca",
+      { grupo: "gm-met-pecas", rotulo: "Chapa e\npeças", icone: "chapa", disc: "metalica", dica: "Chapa por cliques ou por diálogo, perfil avulso, enrijecedor, vigas entre pilares e peça mecânica.",
+        itens: ["met-chapa-cliques", "met-chapa", "met-perfil", "met-enrijecedor", "met-vigas-pilares", "met-mecanica"] },
+      { grupo: "gm-met-eixos", rotulo: "Eixos e\nvista", icone: "grade", disc: "metalica", dica: "Plano das peças de aço, grade de eixos, cotas dos eixos, níveis no 3D e mostrar/ocultar os parafusos.",
+        itens: ["met-plano", "met-grade-eixos", "met-cotas-eixos", "met-niveis-3d", "met-parafusos-ver"] },
+      { grupo: "gm-met-ligacao", rotulo: "Ligação\ninteligente", icone: "link", disc: "metalica", dica: "A ligação sugerida e calculada pelo sistema, em lote ou uma a uma; as ligações manuais (placa de base, chapa de extremidade, cantoneira dupla, emenda, clip, contraventamento, nó); conferir furos e o catálogo de ligações.",
+        itens: ["met-lig-inteligente", "met-lig-lote", "met-lig-config", "met-lig-tipos", "met-lig-biblio", "met-lig-memorial",
+                "met-placa-base", "met-chapa-ext", "met-cant-dupla", "met-emenda", "met-clip", "met-contravento", "met-no", "met-conferir", "met-apagar-lig", "met-lig-catalogo"] }] },
+    { nome: "Projeto", ids: ["met-galpao-portico",
+      { grupo: "gm-met-prontas", rotulo: "Peças\nprontas", icone: "camadas", disc: "metalica", dica: "Treliça, escada, mezanino, viga de rolamento, rack, skid, tanques e andaimes (tubo-roll e multidirecional).",
+        itens: ["met-pronta-trelica", "met-pronta-escada", "met-pronta-mezanino", "met-pronta-rolamento", "met-pronta-rack", "met-pronta-skid", "met-pronta-editar",
+                "met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular", "met-andaime", "met-andaime-contorno", "met-andaime-pranchas", "met-andaime-ifc", "met-andaime-multi"] },
+      { grupo: "gm-met-acessos", rotulo: "Acessos", icone: "escada", disc: "metalica", dica: "Escadas, marinheiro, helicoidal, rampa, plataforma, passarela, guarda-corpo, corrimão, piso e a verificação dos acessos (NR-12).",
+        itens: ["met-ac-escolher", "met-ac-galeria", "met-ac-escada", "met-ac-escada-linha", "met-ac-marinheiro", "met-ac-helicoidal", "met-ac-rampa",
+                "met-ac-plataforma", "met-ac-anelar", "met-ac-passarela", "met-ac-guarda", "met-ac-corrimao", "met-ac-piso", "met-ac-verificar"] }] },
+    { nome: "Calcular", grande: true, ids: ["met-calc-calcular", "met-calc-resultados", "met-dados-obra", "met-calc-normas"] },
+    { nome: "Documentar", ids: [
+      { grupo: "gm-met-pranchas", rotulo: "Pranchas", icone: "prancha", disc: "metalica", dica: "As pranchas do cálculo, as pranchas executivas do pórtico e a vista isolada de um pórtico.",
+        itens: ["met-calc-pranchas", "met-executivo", "met-vista-portico"] },
+      "met-calc-memorial", "met-desenho"] },
+    { nome: "Fabricar", ids: ["met-numerar",
+      { grupo: "gm-met-pacote", rotulo: "Pacote da\nfábrica", icone: "pasta", disc: "metalica", dica: "Tudo o que vai para a fábrica: o pacote .zip, DSTV, DXF, nesting, lista de corte, chapa dobrada, planificação, pintura e peso, listas, relação para a metalúrgica, IFC e lista de montagem.",
+        itens: ["met-pacote", "met-dstv", "met-dxf", "met-nesting", "met-corte", "met-dobrada", "met-planif", "met-pintura", "met-listas", "met-relacao", "met-ifc", "met-lista-montagem"] },
+      { grupo: "gm-met-producao", rotulo: "Produção\npor QR", icone: "grafico", disc: "metalica", dica: "Acompanhar a fábrica por marca e etapa e imprimir as etiquetas com QR.",
+        itens: ["met-producao", "met-etiquetas"] }] },
+    { nome: "Custo", ids: ["met-orcamento",
+      { grupo: "gm-met-montagem", rotulo: "Montagem", icone: "guindaste", disc: "metalica", dica: "Plano de montagem (içamento) e o orçamento de fábrica.",
+        itens: ["met-montagem", "met-orcfab"] }] }
   ];
   var ABA_MARCENARIA = [
     { nome: "Módulos", ids: ["marc-inserir", "marc-editar", "marc-explodir"] },
@@ -344,7 +362,10 @@
     { nome: "Modelos", ids: ["modelos", "remover-modelos"] },
     { nome: "Fases e opções", ids: ["fases", "filtro-fase", "opcoes-projeto"] },
     { nome: "Consultar e limpar", ids: ["selecionar-id", "localizar-substituir", "advertencias", "limpar-nao-usados", "vista-inicial"] },
-    { nome: "Colaborar", ids: ["reuniao", "compartilhar"] }
+    { nome: "Colaborar", ids: ["reuniao", "compartilhar"] },
+    /* 21/11/2026: o que saiu da fita da Metálica por ser CONSULTA (catálogos e fontes) e o cálculo avulso da estrutura desenhada
+       (o "Calcular e corrigir" da Metálica já escolhe entre galpão e estrutura desenhada) */
+    { nome: "Metálica", ids: ["met-calc-livre", "met-catalogo-br", "met-catalogo", "met-fontes"] }
   ];
   /* a lista que o `organizar` percorre: aba → painéis (a ordem das ABAS é a de ORDEM, mais abaixo). `rotulo` só quando muda. */
   var ORG = [
@@ -369,11 +390,13 @@
   /* rótulos que a organização troca para NÃO haver dois botões com o mesmo nome na mesma disciplina (o objeto é COPIADO:
      o mapa de sempre fica como era). Pilar e Viga genéricos (a seção diz o material) × os de perfil de aço; a Copiar da
      área de transferência × a ferramenta Copiar (ponto base e destino). */
-  var REMOVIDOS_ORG = ["met-eixo", "met-cotas"];
+  /* 21/11/2026: os três lugares que faziam galpão saíram da fita — o id antigo cai na entrada única (Ribbon.SUBSTITUIDOS_B1) */
+  var REMOVIDOS_ORG = ["met-eixo", "met-cotas", "met-galpao", "met-calc-assistente", "met-calc-modelos", "met-porticos"];
   var ROTULOS_ORG = {
     "fx-copiar-area": "Copiar\npara colar", "copiar": "Copiar\nelemento",
     "met-pilar": "Pilar\nde aço", "met-viga": "Viga\nde aço", "met-plano": "Plano das\npeças de aço",
     "met-ac-guarda": "Guarda-corpo\nde aço", "met-ac-rampa": "Rampa\nde aço",
+    "met-calc-calcular": "Calcular\ne corrigir", "met-calc-resultados": "Resultados e\npendências", "met-calc-normas": "Normas",
     /* "Traçar automaticamente" (15 letras sem espaço) passava por cima do vizinho no botão da fita */
     "tracar-auto": "Traçado\nautomático"
   };
@@ -510,7 +533,8 @@
       if (ctx) this.aplicarContexto(null);
       var antes = r.ids().length;
       /* os botões que faziam o MESMO que outro saem da fita (Ribbon.SUBSTITUIDOS_B1 leva o id antigo ao que ficou) */
-      REMOVIDOS_ORG.forEach(function (id) { self0._tirar(id); });
+      /* ⚠ só sai o que tem substituto NA FITA: sem a entrada Galpão / pórtico carregada, o Assistente de galpão fica onde estava */
+      REMOVIDOS_ORG.forEach(function (id) { var sb = r.SUBSTITUIDOS_B1 && r.SUBSTITUIDOS_B1[id]; if (sb && !r.comando(sb)) return; self0._tirar(id); });
       /* a aba Modificar leva o rótulo da seleção ("Modificar | Tubos"): o `organizar` roda com o contexto já tirado (acima) */
       ORG.forEach(function (o) { self0._montarAba(o.id, o.rotulo, o.paineis, o.grandes || null); });
       this._limparVazios();

@@ -307,13 +307,13 @@
     if (!r || !r.ok || !r.modelo || !r.analise || !r.analise.combinacoes) { out.resumo = "sem cálculo"; return out; }
     var LCc = LC(), opc = LCc && LCc.opcoes, edAnt = opc ? opc.edicao : null; if (opc) opc.edicao = ed;
     try { verificar0(r, op, out, LCc); } finally { if (opc) opc.edicao = edAnt; }
-    out.ligacoes.forEach(function (l) { out.n++; if (!l.ok) out.reprovados++; if (!out.pior || l.razao > out.pior.razao) out.pior = l; });
+    out.ligacoes.forEach(function (l) { out.n++; if (!l.ok && !l.foraDaContagem) out.reprovados++; if (!out.pior || l.razao > out.pior.razao) out.pior = l; });
     var cont = {}; out.ligacoes.forEach(function (l) { cont[l.tipo] = (cont[l.tipo] || 0) + 1; });
     out.resumo = out.n + " ligação(ões) dimensionada(s) pela NBR 8800:" + ed + " (" + Object.keys(cont).map(function (k) { return cont[k] + " " + (ROT[k] || k); }).join(", ") + "): " + out.reprovados + " reprovada(s)" +
       (out.pior ? "; pior razão " + br(out.pior.razao, 3) + " (" + out.pior.nome + ": " + out.pior.governante + ")" : "") + (out.naoDim.length ? "; NÃO dimensionado: " + out.naoDim.join("; ") : "");
     return out;
   }
-  var ROT = { parafusada: "pontas parafusadas", clip: "clips de terça", barra: "pontas de barra redonda", placaColuna: "placas de coluna treliçada", placaBase: "placas de base", soldaMF: "mãos-francesas soldadas", almaU: "almas de U sob chapa de nó" };
+  var ROT = { parafusada: "pontas parafusadas", clip: "clips de terça", barra: "pontas de barra redonda", placaColuna: "placas de coluna treliçada", placaBase: "placas de base", soldaMF: "mãos-francesas soldadas", almaU: "almas de U sob chapa de nó", tuboU: "grupos de pontas de tubo na alma do U (js/metaltubou.js)" };
 
   function verificar0(r, op, out, LCc) {
     var M = arr(r.modelo.membros), fck = num(op.fck, FCK_PADRAO), modo = op.ligacao === "parafusada" || op.ligacao === "soldada" ? op.ligacao : "padrao";
@@ -489,6 +489,16 @@
       add({ tipo: "almaU", nome: "Alma do " + s.nome + " no nó " + o.no, membro: pm.id, peca: pm.peca, barraId: pm.calc ? pm.calc.barraId : null, ok: f.ok, razao: f.razao, governante: f.governante, verificacoes: vsA, resumo: res, enrijecedores: enr ? { t: enr.t, h: enr.h, comprimento: enr.comprimento } : null });
       if (!f.ok) out.pendencias.push("Alma do " + s.nome + " no nó " + o.no + ": nem o enrijecedor de " + T_ENR[T_ENR.length - 1] + " mm passa (razão " + br(f.razao, 2) + ") — detalhar à mão.");
     });
+    /* 22/11/2026: pontas de tubo soldadas na alma do U (js/metaltubou.js, via r.nosTubo.tuboU) — a memória entra aqui (Ligação
+       inteligente / resultado do cálculo); a CONTAGEM de reprovadas fica no r.nosTubo (foraDaContagem: não soma de novo). Os
+       enrijecedores dessas pontas vão para o mesmo modelo.enrijecedores (3D) e a chapa de ligação para modelo.gussetsTuboU */
+    var TUv = r.nosTubo && r.nosTubo.tuboU;
+    if (TUv) {
+      arr(TUv.ligacoes).forEach(function (l) { add(l); });
+      if (arr(TUv.enrijecedores).length) out.modelo.enrijecedores = arr(out.modelo.enrijecedores).concat(TUv.enrijecedores);
+      if (arr(TUv.gussets).length) out.modelo.gussetsTuboU = TUv.gussets.slice();
+      arr(TUv.pendencias).forEach(function (x) { out.pendencias.push(x); });
+    }
     Object.keys(faltou).forEach(function (k) { out.naoDim.push(faltou[k] + " barra(s) do grupo " + k); });
     var placasOk = ordCol.length > 0;
     out.cobertos.base = placasOk;

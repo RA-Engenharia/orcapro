@@ -293,6 +293,9 @@
     { tema: "Ligações", item: "6.3.3.2", texto: "parafuso ao cisalhamento Fv,Rd = 0,40·Ab·fub/γa2 com a rosca no plano de corte e 0,50 fora (js/acoligcalc.js)" },
     { tema: "Ligações", item: "6.6.1", texto: "pressão no concreto σc,Rd = fck·√(A2/A1)/(γc·γn) ≤ fck, com γn = 1,4 e √(A2/A1) ≤ 2 (js/acoligcalc.js)" },
     { tema: "Ligações", item: "5.3.4.4 e Anexo F", texto: "mão-francesa de cantoneira simples: esbeltez efetiva do AISC 360-16 E5 (a 2008 tem expressão própria em 5.3.4.4) e Q do grupo 3 (abas de cantoneira)" },
+    { tema: "Ligações", item: "6.2.5, Tabela 8 e Tabela 10", texto: "tubo soldado na alma do U (js/metaltubou.js): filete no contorno da pegada com Fw,Rd = 0,60·Aw·fw/γw2 sem o acréscimo direcional; perna mínima pela parte MENOS espessa (Tabela 10) e perna ≤ parede (critério do projeto)" },
+    { tema: "Ligações", item: "fora da NBR 8800/16239", texto: "alma do U sob a ponta de tubo: EN 1993-1-8:2005 Tabela 7.11 (face do banzo RHS, nó T/Y) e kn da 7.5.2.1 POR ANALOGIA, fora da validade da Tabela 7.8 (β < 0,25; b0/t0 > 35) — de memória, conferir no texto do EN" },
+    { tema: "Ligações", item: "fora da NBR 8800", texto: "alma do U sob chapa de ligação: AISC 360-16 Tabela K1.2 com Qf = 1 − 0,3·U·(1 + U) (js/metalligdim.js almaU) — o Qf do AISC para HSS RETANGULAR é outro (conferir); a correção do tubo no U reaproveita essa verificação" },
     { tema: "Análise", item: "4.9.4 e 4.9.7", texto: "deslocabilidade pequena ≤ 1,1 e média ≤ 1,4; média → rigidez reduzida a 80 %; forças nocionais 0,3 %" }
   ];
   function itemLig(k) { var x = LIGDIM[k]; return x ? FONTE_8800 + ", " + x.item + " (conferir no texto)" : FONTE_8800; }

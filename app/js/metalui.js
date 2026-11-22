@@ -540,6 +540,8 @@
       if (!r.ok) { toast("Galpão: " + r.motivo, "aviso", 8000); return r; }
       /* identidade: todas as peças criadas (também as das ligações, nos lotes de dentro) levam o id do galpão */
       var gid = alvo ? alvo.id : "galpao-" + this.novoId(), primeira = true, info = { id: gid, par: JSON.parse(JSON.stringify(par)), calc: op.calc ? JSON.parse(JSON.stringify(op.calc)) : null, em: new Date().toISOString() };
+      /* 21/11/2026 (entrada única Galpão / pórtico): a tipologia e o par da tela, para reabrir sem o leitor de legado */
+      if (op.porticoTipo) { info.porticoTipo = String(op.porticoTipo); info.porticoPar = JSON.parse(JSON.stringify(op.porticoPar || {})); }
       (function marcar(ops) { (ops || []).forEach(function (o) {
         if (!o) return;
         if (o.op === "criar" && o.caixa) { o.caixa.galpao = gid; if (primeira) { o.caixa.galpaoInfo = info; primeira = false; } }

@@ -242,7 +242,7 @@
         '<main class="ml-palco" data-ml-passo="' + U.passo + '">' + (U.passo === 1 ? passoEstrutura() : U.passo === 2 ? passoCargas() : passoCalcular()) + "</main></div>" +
         '<footer class="ml-rod"><span class="ml-msg">' + esc(U.passo === 3 ? "O sistema decide nós, flambagem e travamentos; o que ele não sabe vira aviso, nunca número chutado." : "Os dados ficam salvos na obra.") + "</span>" +
         (U.passo > 1 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo - 1) + '">Voltar</button>' : "") +
-        (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button>" + '<button class="ml-bt" data-ml-acao="corrigir" title="Calcula, troca toda peça que não passa pelo perfil mais leve da mesma família que atende (e alivia a que tem folga), refaz até fechar e aplica no modelo (Ctrl+Z desfaz)"' + (U.calculando ? " disabled" : "") + ">Calcular e corrigir</button></footer>";
+        (U.passo < 3 ? '<button class="ml-bt" data-ml-acao="passo" data-ml-v="' + (U.passo + 1) + '">Próximo</button>' : "") + '<button class="ml-bt pri" data-ml-acao="calcular"' + (U.calculando ? " disabled" : "") + ">Calcular</button>" + '<button class="ml-bt" data-ml-acao="corrigir" title="Calcula e corrige sozinho, em até 5 voltas: barras (o perfil mais leve que passa), nós de tubo e com chapa, mecanismo e ligações/placas — tudo recalculado, num lote só no modelo (Ctrl+Z desfaz). O que não tem correção automática aparece como pendência."' + (U.calculando ? " disabled" : "") + ">Calcular e corrigir</button></footer>";
     } else if (U.modo === "calculando") {
       h += '<div class="ml-corpo cheio"><main class="ml-palco" data-ml-modo="calculando"><div class="ml-card" style="max-width:520px;margin:60px auto;text-align:center"><h3>Calculando a estrutura</h3><p class="ml-nota">Modelo, combinações, 2ª ordem, verificação de cada barra' + (estado().otimizar ? " e a busca do perfil mais leve por grupo" : "") + ".</p><div data-ml=\"progresso\" style=\"text-align:left\"></div></div></main></div><footer class=\"ml-rod\"><span class=\"ml-msg\"></span></footer>";
     } else if (U.modo === "resultado") {
@@ -459,6 +459,7 @@
           (n >= 2 ? ' <button class="ml-bt mini pri" data-ml-acao="resolver" data-ml-p="' + kP + '" title="Testa cada solução numa cópia do modelo (o cálculo inteiro refeito, nada gravado) e propõe a mais leve que fecha">Resolver (testar ' + n + " soluções)</button>" : ""); },
         depois: function (p, kP) { return U.resolver && U.resolver.r === r && U.resolver.kP === kP ? resolverHtml(U.resolver) : ""; } })
         : '<div class="ml-prob" data-ml="problemas"><h3>O cálculo não seguiu</h3>' + arr(r.problemas).map(function (p) { return '<p data-ml-prob="' + esc(p.tipo) + '"><b>' + esc(p.texto) + "</b></p>"; }).join("") + "</div>";
+      U.probExtra = U.probExtra || {}; h += autoHtml(r);
       return h;
     }
     var lmin = arr(r.flambagem).reduce(function (a, f) { return f.lambda > 0 && f.lambda < a ? f.lambda : a; }, Infinity);
@@ -476,6 +477,7 @@
       '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
       '<div class="ml-kpi"><small>Modelo</small><b>' + r.modelo.membros.length + ' barras</b><span class="ml-nota">' + r.modelo.modelo.nos.length + " nós · " + r.combinacoes.length + " combinações · " + fmt(r.tempoMs / 1000, 1) + " s</span></div></div>";
     U.probExtra = {};
+    h += autoHtml(r);
     if (r.estabilidadeGlobal && !r.estabilidadeGlobal.ok) h += probExtraHtml("estabilidade", { tipo: "estabilidade", titulo: "A estrutura se desloca demais de lado (grande deslocabilidade)", texto: r.estabilidadeGlobal.texto,
       solucoes: [{ id: "engastar-bases", texto: "Engastar as bases dos pilares", muda: "bases engastadas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "ligacoes-rigidas", texto: "Ligações viga × pilar rígidas", muda: "ligações rígidas e novo cálculo (\"Desfazer a solução\" volta)" }, { id: "contraventar", texto: "Gerar o contraventamento (X nos planos que se movem)", muda: "diagonais novas no modelo (Ctrl+Z desfaz)" }] }, 'data-ml="estabilidade"');
     if (nvs.length) h += PC() ? PC().lista(nvs.map(function (x, k) {
@@ -1030,7 +1032,7 @@
     function erroCalc(msg) { return { ok: false, motivo: "Erro no cálculo: " + msg, problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + msg, solucoes: [] }] }; }
     function cancelar() {
       if (U.calcId !== idc) return;
-      U.calcId = null; if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+      U.calcId = null; if (w) { try { w.terminate(); } catch (eT) {} w = null; } if (wAnt) { try { wAnt.terminate(); } catch (eT2) {} wAnt = null; }
       U.calculando = false; U.corrigir = false; U.modo = U.r ? "resultado" : "passos"; render();
       toast("Cálculo cancelado — nada foi gravado.", "aviso", 6000);
     }
@@ -1058,7 +1060,131 @@
     }, 30);
     return true;
   }
-  function calcularCorrigir() { var e = estado(); U.corrigir = { otimizarAntes: !!e.otimizar }; e.otimizar = true; return calcular(); }
+  /* ============================================================ 21/11/2026: CALCULAR E CORRIGIR = A AUTOCORREÇÃO (js/acoautocorrige.js)
+     Pedido do Rogério: "o módulo de cálculo da estrutura metálica deve ser capaz de solucionar os problemas que encontrar através de
+     automação e corrigir de uma vez; aí somem todos os erros". Até 5 voltas: calcula (com o otimizador, no Worker), corrige o que tem
+     correção (barra, nó de tubo, nó com chapa, mecanismo, ligações/placas) numa CÓPIA do modelo e recalcula; no fim o modelo recebe UM
+     lote (um Ctrl+Z) com tudo o que o cálculo aprovou. O que não tem correção automática vira cartão (js/problemacard.js).
+     Cancelar para o Worker: nada é gravado. Sem o motor (arquivo velho em cache): o "Calcular e corrigir" antigo (só os perfis). */
+  var AUTO_VOLTAS = 5;
+  function calcularCorrigir() {
+    var AC = global.AcoAutoCorrigir, D = DL(), M = MU();
+    if (!AC || !D || !M || !M.enviar) { var e0 = estado(); U.corrigir = { otimizarAntes: !!e0.otimizar }; e0.otimizar = true; return calcular(); }
+    if (!lic("calcular a estrutura desenhada")) return false;
+    var ent0 = entrada(), caixas0 = copia(caixas()), idc = "a" + Date.now(), pg = null, w = null, wAnt = null, porId = {}, idAnt = null, nCalc = 0, voltaAgora = 1, extras = [];
+    U.calculando = true; U.modo = "calculando"; U.calcId = idc; U.auto = null; render();
+    var cancelado = function () { return U.calcId !== idc; };
+    /* medição (21/11/2026): localStorage "orcapro:metal:tempo" = "1" põe no console o tempo de cada fase de cada volta */
+    var DBGT = null; try { if (global.localStorage && localStorage.getItem("orcapro:metal:tempo") === "1") DBGT = { t0: Date.now(), u: "" }; } catch (eD) {}
+    function cancelar() {
+      if (U.calcId !== idc) return;
+      U.calcId = null; if (w) { try { w.terminate(); } catch (eT) {} w = null; }
+      if (pg) pg.fim();
+      U.calculando = false; U.modo = U.r ? "resultado" : "passos"; render();
+      toast("Calcular e corrigir cancelado — nada foi gravado no modelo.", "aviso", 6000);
+    }
+    function etapas() { var l = []; for (var i = 1; i <= AUTO_VOLTAS; i++) l.push({ id: "v" + i, peso: 1, rotulo: "Volta " + i + " de " + AUTO_VOLTAS }); return l; }
+    /* um cálculo (no Worker quando dá; o mesmo Worker serve às voltas): fim(r) */
+    function umCalculo(e, fim) {
+      if (cancelado()) return;
+      var id = idc + "-" + (++nCalc), ok0 = false;
+      function naPagina() { setTimeout(function () { if (cancelado()) return; var r; try { r = D.calcular(e); } catch (eC) { r = { ok: false, motivo: "Erro no cálculo: " + (eC && eC.message) }; } fim(r); }, 30); }
+      var podeW = typeof Worker === "function" && !(global.location && global.location.protocol === "file:");
+      /* 22/11/2026: um Worker NOVO por volta. No mesmo processo, depois das trocas de perfil da descida, a análise do modelo da volta
+         seguinte ficava 9× mais lenta (o V8 desotimiza a fatoração: "dependent prototype chain changed"; Gabriel 22 s → 199 s por
+         rodada, reproduzido no Node). O da volta anterior fica vivo só com a análise compactada (o resultado escolhido pode ser dele). */
+      if (podeW) {
+        if (w) { if (wAnt && wAnt !== w) { try { wAnt.terminate(); } catch (eT0) {} } wAnt = w; porId[idAnt] = wAnt; }
+        try { w = new Worker("js/acolivreworker.js" + (global.ORCAPRO_VER ? "?v=" + global.ORCAPRO_VER : "")); } catch (eW) { w = null; }
+        Object.keys(porId).forEach(function (k) { if (porId[k] !== wAnt) delete porId[k]; });
+        if (w) { porId[id] = w; idAnt = id; }
+      }
+      if (!w) { if (pg) pg.texto("Volta " + voltaAgora + " de " + AUTO_VOLTAS + ": calculando nesta tela (sem processo paralelo)"); naPagina(); return; }
+      w.onmessage = function (ev) {
+        var m = ev.data || {}; if (m.id !== id || cancelado()) return;
+        if (DBGT && m.tipo === "progresso" && m.fase + m.rodada !== DBGT.u) { DBGT.u = m.fase + m.rodada; console.log("[auto-tempo] " + ((Date.now() - DBGT.t0) / 1000).toFixed(1) + " s volta " + voltaAgora + " rodada " + m.rodada + " fase " + m.fase); }
+        if (DBGT && m.tipo === "fim") console.log("[auto-tempo] " + ((Date.now() - DBGT.t0) / 1000).toFixed(1) + " s volta " + voltaAgora + " fim do Worker: " + m.ms + " ms no Worker, " + m.bytes + " bytes");
+        if (m.tipo === "progresso") { if (pg) pg.etapa("v" + voltaAgora, m.rodada > 1 ? 1 - Math.pow(0.85, m.rodada - 1) : (m.n ? 0.3 * m.k / m.n : 0.1), "Volta " + voltaAgora + " de " + AUTO_VOLTAS + " — " + textoProg(m)); }
+        else if (m.tipo === "fim") { ok0 = true; var r; try { r = JSON.parse(m.texto); } catch (eJ) { r = { ok: false, motivo: "resultado ilegível do processo paralelo" }; } fim(r); }
+        else if (m.tipo === "erro") { try { w.terminate(); } catch (eT) {} w = null; naPagina(); }
+      };
+      w.onerror = function (ev) { if (cancelado() || ok0) return; if (ev && ev.preventDefault) ev.preventDefault(); try { w.terminate(); } catch (eT) {} w = null; naPagina(); };
+      w.postMessage({ tipo: "calcular", id: id, entrada: JSON.parse(JSON.stringify(e)), op: { leve: true } });
+    }
+    /* o resultado escolhido sem r.analise (op.leve): a análise vem do Worker só agora, uma vez */
+    function analiseDe(r, fim) {
+      var wa = r && r._analiseNoWorker ? porId[r._analiseNoWorker] : null;
+      if (!r || !r._analiseNoWorker || !wa) { if (r && r._analiseNoWorker && r.avisos) r.avisos.push("A análise completa desta volta não voltou do processo paralelo: calcule de novo para ver a deformada e o memorial completos."); fim(); return; }
+      var de = r._analiseNoWorker, idA = idc + "-an";
+      wa.onmessage = function (ev) {
+        var m = ev.data || {}; if (m.id !== idA) return;
+        var an = null; try { an = m.achou ? JSON.parse(m.texto) : null; } catch (eJ) { an = null; }
+        if (an) { r.analise = an; delete r._analiseNoWorker; } else if (r.avisos) r.avisos.push("A análise completa desta volta não voltou do processo paralelo: calcule de novo para ver a deformada e o memorial completos.");
+        fim();
+      };
+      wa.postMessage({ tipo: "analise", id: idA, de: de });
+    }
+    var io = {
+      entrada: ent0,
+      novoId: function () { return M.novoId(); },
+      calcular: function (e, fim) { umCalculo(e, fim); },
+      cancelado: cancelado,
+      progresso: function (p) { voltaAgora = Math.max(1, Math.min(AUTO_VOLTAS, p.volta || 1)); if (pg) pg.etapa("v" + voltaAgora, p.etapa === "calculo" ? 0.02 : 0.95, p.texto); },
+      /* as ligações dimensionadas no modelo: o pórtico da biblioteca refeito (na cópia) com r.ligDim.modelo */
+      ligacoes: function (r, e) {
+        var PU = global.MetalPorticosUI; if (!PU || !PU.ligacoesLote) return null;
+        var L = PU.ligacoesLote(r, e.caixas); if (!L) return null;
+        var sai = {}; L.alvo.pecas.forEach(function (id) { sai[String(id)] = true; });
+        var e2 = copia(e); e2.caixas = arr(e.caixas).filter(function (c) { return c && !sai[String(c.id)]; }).concat(L.caixas);
+        if (Array.isArray(e2.ids)) e2.ids = e2.ids.filter(function (id) { return !sai[String(id)]; }).concat(L.caixas.map(function (c) { return String(c.id); }));
+        extras = L.extras;   /* os furos das ligações (metalFuros) do pórtico refeito vão no lote final */
+        return { entrada: AC.reaplicar(e2, e), texto: L.lote.pedido || "" };
+      }
+    };
+    setTimeout(function () {
+      var el = document.querySelector('[data-ml="progresso"]');
+      if (el && global.UI && UI.progresso) pg = UI.progresso(el, { titulo: "Calcular e corrigir", etapas: etapas(), cancelar: cancelar, texto: "Volta 1 de " + AUTO_VOLTAS + ": calculando", fundo: true });
+      AC.rodar(io, { voltas: AUTO_VOLTAS, aoFim: function (res0) { if (U.calcId !== idc) return; analiseDe(res0.resultado, function () { fimAuto(res0); }); } });
+    }, 30);
+    function fimAuto(res) {
+      {
+        if (U.calcId !== idc) return;
+        if (w) { try { w.terminate(); } catch (eT) {} w = null; } if (wAnt) { try { wAnt.terminate(); } catch (eT3) {} wAnt = null; }
+        if (pg) pg.fim();
+        U.calculando = false;
+        if (res.cancelado) { U.modo = U.r ? "resultado" : "passos"; render(); return; }
+        var r = res.resultado;
+        /* o modelo recebe UM lote com o que o cálculo aprovou (um Ctrl+Z) */
+        var tG = Date.now(), lt = AC.loteModelo(caixas0, res.entrada.caixas, function () { return M.novoId(); }), gravou = false;
+        if (lt) {
+          var vivos = {}; arr(res.entrada.caixas).forEach(function (c) { vivos[String(c.id)] = true; });
+          extras.forEach(function (o) { if (o && o.id != null && vivos[String(o.id)]) lt.ops.push(o); });
+          gravou = !!M.enviar(lt);
+          if (!gravou) toast("O editor recusou as correções — o modelo ficou como estava.", "erro", 9000);
+        }
+        if (r) { r._assin = gravou || !lt ? assinaturaAgora() : null; if (gravou || !lt) r.aplicado = true; }
+        U.auto = { tempos: res.tempos, gravarMs: Date.now() - tG, voltas: res.voltas, tempoMs: res.tempoMs, aplicadas: res.aplicadas, pendencias: res.pendencias, relatorio: res.relatorio, convergiu: res.convergiu, gravou: gravou, r: r };
+        U.ligAuto = null;
+        U.r = r; U.modo = "resultado"; render();
+        var n = res.aplicadas.length;
+        toast(res.convergiu ? "Calcular e corrigir: APROVADO em " + res.voltas + " volta(s)" + (n ? " — " + n + " correção(ões) no modelo (Ctrl+Z desfaz tudo)" : "") + "." : "Calcular e corrigir: " + res.voltas + " volta(s), " + n + " correção(ões); " + res.pendencias.length + " pendência(s) sem correção automática (ver abaixo).", res.convergiu ? "ok" : "aviso", 10000);
+        status(r && r.ok ? "Estrutura desenhada: " + (r.aprovado ? "APROVADA" : r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA" : "REPROVADA") + " — Calcular e corrigir (" + res.voltas + " volta(s))" : "Estrutura desenhada: não calculou");
+      }
+    }
+    return true;
+  }
+  /* o quadro do "Calcular e corrigir" no resultado: voltas, o que foi corrigido e as pendências (cartões com "Mostrar no 3D") */
+  function autoHtml(r) {
+    var A = U.auto; if (!A || A.r !== r) return "";
+    var h = '<div class="ml-card" data-ml="autocorrigir" style="border-color:' + (A.convergiu ? "var(--ml-ok)" : "var(--ml-aviso)") + '"><h4>Calcular e corrigir — ' + A.voltas + " volta(s), " + fmt(A.tempoMs / 1000, 0) + " s</h4>" +
+      (A.aplicadas.length ? '<ul class="ml-l" data-ml="auto-aplicadas">' + A.aplicadas.slice(0, 30).map(function (a) { return "<li>" + esc(a.texto) + "</li>"; }).join("") + "</ul>" + (A.gravou ? '<p class="ml-nota">Tudo isso foi para o modelo num lote só — Ctrl+Z desfaz de uma vez.</p>' : "") : '<p class="ml-nota">Nada precisou mudar.</p>') +
+      '<details><summary class="ml-nota">Como foi cada volta</summary><ul class="ml-l">' + A.relatorio.map(function (t) { return '<li class="ml-nota">' + esc(t) + "</li>"; }).join("") + "</ul></details></div>";
+    if (A.pendencias.length && PC()) {
+      U.probExtra = U.probExtra || {};
+      h += PC().lista(A.pendencias.map(function (p, k) { U.probExtra["auto" + k] = p; return p; }), { pre: "ml", titulo: "O que não tem correção automática", gravidade: "aviso", attrs: 'data-ml="auto-pendencias"', acoes: function () { return false; }, prefixoIndice: "x:auto" });
+    }
+    return h;
+  }
   function aplicar() {
     var r = U.r, D = DL(), M = MU(); if (!r || !r.ok || !r.trocas || !D || !M) return;
     if (barrarVelho()) return;   /* VÍNCULOS: a troca de perfis de um modelo que já não existe */
@@ -1237,6 +1363,8 @@
     /* a trava na função, para quem integra e para o teste */
     licenca: function (acao) { return lic(acao || "usar a função"); },
     resultado: function () { return U.r; },
+    /* 21/11: o que o último "Calcular e corrigir" fez (a e2e lê) */
+    autocorrecao: function () { var A = U.auto; return A ? { tempos: A.tempos || [], gravarMs: A.gravarMs, voltas: A.voltas, tempoMs: A.tempoMs, convergiu: A.convergiu, gravou: A.gravou, aplicadas: A.aplicadas.map(function (a) { return a.tipo + ": " + a.texto; }), pendencias: A.pendencias.map(function (p) { return p.titulo; }), relatorio: A.relatorio.slice() } : null; },
     convergindo: function () { return !!U.calculando || (U.convergirLig > 0 && arr(U.r && U.r.ligacoesDesatualizadas).some(function (q) { return q.ligDim; })); },
     /* LIGAÇÃO AO LANÇAR: o que o último cálculo fez com as ligações "a confirmar" (a e2e lê) */
     ligAuto: function () { return U.ligAuto || null; },

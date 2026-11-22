@@ -15,7 +15,8 @@
  *   Face do banzo = a dimensão ao longo da normal do plano da treliça (eixo local ey do membro); sem o eixo, calcula com
  *   cada lado e ADOTA O PIOR (a favor da segurança).
  *   → { nos: [{ no, banzo, tipo, razao, ok, bloqueante, ... }], n, reprovados, naoVerificados, pior, resumo }
- *   Barra de alma chegando em perfil que não é tubo (U da coluna): fora deste verificador (chapa de nó) — contada à parte.
+ *   Barra de alma chegando em perfil que não é tubo (U da coluna): verificada pelo js/metaltubou.js (22/11/2026) → out.tuboU;
+ *   out.reprovados soma as pontas no U que nenhuma correção salva; out.foraDoEscopo = só as que não deu para verificar.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -44,14 +45,14 @@
     /* o banzo também é "tuboSoldado" na tesoura-leve: banzo = nome com "banzo" ou o tubo em que o nó é INTERNO; alma = o resto */
     function ehBanzo(m) { return /banzo/i.test(String(m.nome || "") + " " + String(m.papelLivre || "")); }
     var alma = M.filter(function (m) { return m.calc && m.calc.tuboSoldado && !ehBanzo(m) && dims(m.secao && m.secao.nome); });
-    var porNo = {};
+    var porNo = {}, semTubo = [];
     alma.forEach(function (b) {
       var ns = arr(b.nos); if (ns.length < 2) return;
       [ns[0], ns[ns.length - 1]].forEach(function (no, k) {
         var ch = M.filter(function (c) { return c !== b && arr(c.nos).indexOf(no) >= 0 && (ehBanzo(c) || !(c.calc && c.calc.tuboSoldado) || (arr(c.nos).indexOf(no) > 0 && arr(c.nos).indexOf(no) < arr(c.nos).length - 1)); });
         var tubos = ch.filter(function (c) { return dims(c.secao && c.secao.nome); }), interno = function (c) { var i = arr(c.nos).indexOf(no); return i > 0 && i < arr(c.nos).length - 1; };
         var tubo = tubos.filter(ehBanzo)[0] || tubos.filter(interno)[0] || tubos[0];
-        if (!tubo) { if (ch.length) out.foraDoEscopo++; return; }
+        if (!tubo) { if (ch.length) { out.foraDoEscopo++; semTubo.push({ b: b, no: no, ch: ch }); } return; }
         var k2 = no + "|" + tubo.id;
         (porNo[k2] = porNo[k2] || { no: no, banzo: tubo, barras: [] }).barras.push({ m: b, outra: k === 0 ? ns[ns.length - 1] : ns[0] });
       });
@@ -101,13 +102,73 @@
       if (o.bloqueante.length) out.naoVerificados++; else if (!o.ok) out.reprovados++;
       if (!o.bloqueante.length && (!out.pior || o.razao > out.pior.razao)) out.pior = o;
     });
+    /* 22/11/2026: as pontas de tubo soldadas na ALMA DO U da coluna (antes "foraDoEscopo", não verificadas) — js/metaltubou.js.
+       foraDoEscopo passa a contar SÓ as que ele não conseguiu verificar; as reprovadas (nenhuma correção passa) somam em reprovados.
+       n continua = nós tubo-tubo; as pontas no U ficam em out.tuboU (e out.tuboU.ligacoes vai para a memória do js/metalligdim.js) */
+    var TU = dep("MetalTuboU", "./metaltubou.js");
+    if (TU && semTubo.length) {
+      var vu = TU.verificar(r, { pontas: semTubo }); out.tuboU = vu;
+      out.foraDoEscopo = vu.naoVerificados; out.reprovados += vu.reprovados;
+    }
     out.resumo = out.n + " nó(s) tubo-tubo verificados (NBR 16239:2013 / EN 1993-1-8:2005, Tabelas 7.10 e 7.12): " + out.reprovados + " reprovado(s), " + out.naoVerificados + " fora da validade" +
       (out.pior ? "; pior razão " + br(out.pior.razao, 3) + " (nó " + out.pior.no + ", " + out.pior.tipo + ", banzo " + out.pior.banzoPerfil + ", " + out.pior.governante + ")" : "") +
-      (out.foraDoEscopo ? "; " + out.foraDoEscopo + " ponta(s) de tubo em perfil aberto (U da coluna) — chapa de nó, fora deste verificador" : "");
+      (out.tuboU ? "; pontas no U da coluna: " + out.tuboU.resumo : "") +
+      (out.foraDoEscopo ? "; " + out.foraDoEscopo + " ponta(s) de tubo em perfil aberto sem verificação (peça do nó não é U)" : "");
     return out;
   }
 
-  var MetalNosTubo = { verificar: verificar, dims: dims };
+  /* 21/11/2026 (js/acoautocorrige.js) — O QUE O NÓ PRECISA: para cada peça de BANZO com nó reprovado (ou fora da validade por
+     parede/esbeltez — a sobreposição λov é geometria, não perfil), o perfil MAIS LEVE de op.candidatos(nome) que faz TODOS os nós
+     dessa peça passarem; sem banzo que resolva, a(s) barra(s) da ALMA do nó. A verificação é REFEITA com o candidato (mesmos
+     esforços deste cálculo; σ0 com a área do banzo atual = a favor da segurança — o banzo maior tem σ0 menor).
+     op = { candidatos(nome) → [nomes, do mais leve ao mais pesado], proibido?(peca, para) }
+     → { trocas: [{ peca, papel: "banzo"|"alma", de, para, nos[], motivo }], semSolucao: [{ no, motivo }] } */
+  function precisa(r, op) {
+    op = op || {};
+    var out = { trocas: [], semSolucao: [] }, cand = op.candidatos || function () { return []; }, proib = op.proibido || function () { return false; };
+    if (!r || !r.modelo) return out;
+    var base = r.nosTubo || verificar(r), M = arr(r.modelo.membros), porId = {};
+    M.forEach(function (m) { porId[m.id] = m; });
+    function geom(o) { return arr(o.bloqueante).some(function (b) { return /sobrepost|λov|afaste/i.test(b); }); }
+    var ruins = arr(base.nos).filter(function (o) { return !o.ok && !geom(o); });
+    arr(base.nos).filter(function (o) { return !o.ok && geom(o); }).forEach(function (o) { out.semSolucao.push({ no: o.no, motivo: o.bloqueante[0] }); });
+    if (!ruins.length) return out;
+    /* r com as peças trocadas (só o nome da seção: dims() lê o nome; A0 do banzo antigo fica — a favor) */
+    function comTroca(mapa) {
+      var ms = M.map(function (m) { var n = mapa[String(m.peca)]; if (!n) return m; var c = {}; Object.keys(m).forEach(function (k) { c[k] = m[k]; }); c.secao = { nome: n, mm: m.secao && m.secao.mm, forma: m.secao && m.secao.forma }; return c; });
+      var mo = {}; Object.keys(r.modelo).forEach(function (k) { mo[k] = r.modelo[k]; }); mo.membros = ms;
+      return { ok: true, modelo: mo, membros: r.membros };
+    }
+    function nosOk(v, nos) { var por = {}; arr(v.nos).forEach(function (o) { por[o.no + "|" + o.banzo] = o; }); return nos.every(function (k) { var o = por[k]; return !o || o.ok; }); }
+    /* 1) o BANZO: por peça */
+    var gr = {}, ordem = [];
+    ruins.forEach(function (o) { var mb = porId[o.banzo]; if (!mb) return; var pc = String(mb.peca); if (!gr[pc]) { gr[pc] = { peca: pc, de: o.banzoPerfil, nos: [], chaves: [] }; ordem.push(pc); } gr[pc].nos.push(o.no); gr[pc].chaves.push(o.no + "|" + o.banzo); });
+    var resolvidos = {};
+    ordem.forEach(function (pc) {
+      var g = gr[pc], lista = cand(g.de).filter(function (n) { return !proib(pc, n); });
+      for (var i = 0; i < lista.length; i++) {
+        var mp = {}; mp[pc] = lista[i];
+        if (nosOk(verificar(comTroca(mp)), g.chaves)) { out.trocas.push({ peca: pc, papel: "banzo", de: g.de, para: lista[i], nos: g.nos, motivo: "o nó passa com o banzo " + lista[i] }); g.chaves.forEach(function (k) { resolvidos[k] = true; }); return; }
+      }
+    });
+    /* 2) a ALMA dos nós que o banzo não resolveu */
+    ruins.filter(function (o) { return !resolvidos[o.no + "|" + o.banzo]; }).forEach(function (o) {
+      var feito = false;
+      arr(o.barras).forEach(function (b) {
+        if (feito) return; var mb = porId[b.id]; if (!mb) return; var pc = String(mb.peca);
+        if (out.trocas.some(function (t) { return t.peca === pc; })) { feito = true; return; }
+        var lista = cand(b.perfil).filter(function (n) { return !proib(pc, n); });
+        for (var i = 0; i < lista.length; i++) {
+          var mp = {}; mp[pc] = lista[i];
+          if (nosOk(verificar(comTroca(mp)), [o.no + "|" + o.banzo])) { out.trocas.push({ peca: pc, papel: "alma", de: b.perfil, para: lista[i], nos: [o.no], motivo: "o nó passa com a barra " + lista[i] }); feito = true; return; }
+        }
+      });
+      if (!feito) out.semSolucao.push({ no: o.no, motivo: (o.bloqueante && o.bloqueante[0]) || ("razão " + br(o.razao, 2) + " — nenhum tubo da família resolve") });
+    });
+    return out;
+  }
+
+  var MetalNosTubo = { verificar: verificar, dims: dims, precisa: precisa };
   global.MetalNosTubo = MetalNosTubo;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalNosTubo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

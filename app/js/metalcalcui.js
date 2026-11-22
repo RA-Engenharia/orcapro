@@ -2136,7 +2136,8 @@
       case "passo": case "passo-assistente": UIC.passo = clamp(+val || 1, 1, PASSOS.length); UIC.modo = "assistente"; render(); return;
       case "proximo": UIC.passo = Math.min(PASSOS.length, UIC.passo + 1); render(); return;
       case "voltar": UIC.passo = Math.max(1, UIC.passo - 1); render(); return;
-      case "modelos": UIC.modo = "modelos"; render(); return;
+      /* 21/11/2026: os Modelos prontos moram na entrada única Galpão / pórtico (presets da alma cheia); sem ela, a galeria de sempre */
+      case "modelos": if (global.MetalPorticosUI && global.MetalPorticosUI.entrada && global.BimPrevia && global.BimPrevia.modelador && global.BimPrevia.modelador()) { fechar(); global.MetalPorticosUI.entrada({ modelos: true }); return; } UIC.modo = "modelos"; render(); return;
       case "normas": UIC.modo = "normas"; render(); return;
       case "cype-guia": abrirGuiaCype(); return;
       case "cype-guia-voltar": voltarDoGuia(); return;

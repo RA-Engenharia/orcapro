@@ -197,6 +197,9 @@
        coluna onde a alma sozinha não aguenta a força ⊥ da chapa de nó — aqui eles viram peça (chapa A36 dentro do U, nas bordas da
        chapa de nó, anexa ao elemento da coluna) e entram na lista de montagem e na relação de fábrica com a massa e a solda */
     if (LD && arr(LD.enrijecedores).length) enrijecedoresU(g, Mod, cx, M, criar, out, LD.enrijecedores);
+    /* ---------------- 4c. CHAPA DE LIGAÇÃO DO TUBO NA ALMA DO U (22/11/2026, js/metaltubou.js): tubo de parede menor que o filete
+       mínimo chega na alma do U por uma chapa A36 soldada na alma, no plano da treliça, com parafusos passantes pelo tubo */
+    if (LD && arr(LD.gussetsTuboU).length) gussetsTuboU(g, Mod, cx, M, Nn, criar, out, LD.gussetsTuboU);
 
     /* ---------------- 5. emendas: o gerador não corta barra (a mais longa cabe numa barra de 12 m) */
     var maior = 0; g.pecas.forEach(function (c) { if (c.metal && c.metal.kind === "perfil" && num(c.metal.L, 0) > maior) maior = num(c.metal.L, 0); });
@@ -233,6 +236,43 @@
     });
     if (out.contagem.enrijecedor) out.soldas.push({ ligacao: "Enrijecedores da alma do U (par por nó com chapa)", marca: "EN", cordao: "filete nos 2 lados na alma (bw − 2t) e nas 2 abas (bf − t)", comprimento: null, fonte: "js/metalligdim.js — dimensionado no cálculo (NBR 8800:2008 6.2.5)" });
   }
+
+  /* e = { no, barraId (U), P (m), dir (unitário, do nó para a outra ponta do tubo), t, Lg, hg (m), solda { dw, Lw mm }, parafusos { n, id, classe, passo, borda mm },
+     tubo } — a chapa fica na face EXTERNA da alma (a = −bf/2), centrada no nó ao longo do U, no plano do tubo; pontas no mesmo nó do mesmo
+     U dividem a mesma chapa (a maior). Parafusos: na linha do tubo, a partir de c0 + borda da face, eixo ⊥ ao plano, aperto = largura do tubo */
+  function gussetsTuboU(g, Mod, cx, M, Nn, criar, out, lista) {
+    var porB = {}; Mod.barras.forEach(function (b) { porB[b.id] = b; });
+    out.contagem.gussetTuboU = 0; out.parafusos.tuboU = 0;
+    var feitas = {};
+    lista.forEach(function (e) {
+      var host = e.barraId ? cx(porB[e.barraId]) : null, mb = host ? M.membro(host) : null;
+      if (!mb || !e.P || !mb.perfil || mb.perfil.forma !== "frio") { out.avisos.push("Chapa do tubo no nó " + e.no + ": a coluna (" + (e.barraId || "?") + ") não foi achada no modelo — não desenhada."); return; }
+      var pf = mb.perfil, bf = num(pf.bf, 0.05), te = num(e.t, 0.008), P = V3(e.P), d = unit(V3(e.dir)), rel = sub(P, mb.Pref), xN = dot(rel, mb.X), aN = dot(rel, mb.A), bN = dot(rel, mb.B);
+      if (dot(d, mb.A) > -0.05) { out.avisos.push("Chapa do tubo no nó " + e.no + ": o tubo não chega pela face externa da alma do " + e.U + " — não desenhada (conferir o detalhe)."); return; }
+      var ex = mb.X, ey = mul(mb.A, -1), ez = unit(cross(ex, ey)), k = e.barraId + "|" + e.no + "|" + Math.round(bN * 1000);
+      if (!feitas[k]) {
+        var Lg = num(e.Lg, 0.1), hg = num(e.hg, 0.1), x0 = Math.max(0, Math.min(mb.L + num(mb.xOff, 0) - Lg, xN - Lg / 2));
+        var O = add(add(add(add(mb.Pref, mul(mb.X, x0)), mul(mb.A, -bf / 2)), mul(mb.B, bN)), mul(ez, -te / 2));
+        var c = M.chapa({ origem: O, ex: ex, ey: ey, t: te, ret: { L: Lg, B: hg }, papel: "Chapa de ligação do tubo na alma do U", aco: "ASTM A36", lig: "tuboU:" + e.no, soldadaEm: host.id,
+          nome: "Chapa " + r1(te * 1000) + " mm do tubo — nó " + e.no, solda: { tipo: "filete", perna: num(e.solda && e.solda.dw, 3), lados: "ambos", comprimento: Math.round(2 * num(e.solda && e.solda.Lw, Lg * 1000)) / 1000, campo: false } });
+        if (c.erro) { out.avisos.push("Chapa do tubo no nó " + e.no + ": " + c.erro); return; }
+        c.metal.tuboU = { no: e.no, tubo: e.tubo };
+        criar(c, host, "lig:tuboU"); out.contagem.gussetTuboU++;
+        feitas[k] = true;
+      }
+      var pa = e.parafusos || {}, Pp = Nn.parafuso(pa.id || "M12"); if (!Pp) return;
+      var dface = aN + bf / 2, Pw = add(P, mul(d, dface / Math.max(0.2, -dot(d, mb.A)))), aperto = 0.05;
+      var tuboHost = e.tuboBarraId ? cx(porB[e.tuboBarraId]) : null; if (tuboHost && tuboHost.metal && tuboHost.metal.perfil) aperto = num(tuboHost.metal.perfil.b, num(tuboHost.metal.perfil.d, 0.05));
+      for (var i = 0; i < num(pa.n, 2); i++) {
+        var dist = (C0_TUBOU + num(pa.borda, 20) + i * num(pa.passo, 40)) / 1000, Pb = add(Pw, mul(d, dist));
+        var pc = parafuso({ origem: add(Pb, mul(ez, -aperto / 2)), eixo: ez, aperto: aperto }, Pp, pa.classe || "8.8", "tuboU:" + e.no, { itens: [{ papel: "tubo (2 paredes) + chapa no rasgo" }] });
+        if (pc.erro) { out.avisos.push("Parafuso do tubo no nó " + e.no + ": " + pc.erro); continue; }
+        criar(pc, tuboHost || host, "lig:tuboU"); out.parafusos.tuboU++;
+      }
+    });
+    if (out.contagem.gussetTuboU) out.soldas.push({ ligacao: "Chapa de ligação do tubo na alma do U (tubo de parede fina, parafusos passantes)", marca: "TU", cordao: "filete nos 2 lados da chapa ao longo da alma", comprimento: null, fonte: "js/metaltubou.js — dimensionado no cálculo (NBR 8800:2008 6.2.5)" });
+  }
+  var C0_TUBOU = 20;   /* folga da ponta do tubo até a alma (mm) — a mesma do js/metaltubou.js */
 
   function nomeBarra(dbmm) {
     var Nn = N(), best = null, dd = 1e9; Nn.PARAFUSOS.forEach(function (q) { var d = Math.abs(q.d - dbmm); if (d < dd) { dd = d; best = q.id; } });

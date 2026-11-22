@@ -32,9 +32,28 @@
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 6000); } catch (e) {} }
+  /* 22/11/2026: a barra de progresso num cartão PRÓPRIO por cima da tela. O UI.progresso escreve com innerHTML no elemento que
+     recebe: passar o document.body apagava a fita e o BIM inteiro depois de "Criar no modelo" (achado na e2e-metal-porticos). */
+  function barraProg(op) {
+    var doc = global.document; if (!doc || !doc.body || !global.UI || !UI.progresso) return null;
+    var h = doc.createElement("div"); h.setAttribute("data-mpo", "progresso");
+    h.style.cssText = "position:fixed;left:50%;top:38%;transform:translateX(-50%);z-index:99999;min-width:320px;padding:12px 20px;border-radius:10px;background:var(--card,#fff);color:inherit;box-shadow:0 8px 32px rgba(0,0,0,.3)";
+    doc.body.appendChild(h);
+    var pg = UI.progresso(h, op), fim0 = pg.fim;
+    pg.fim = function () { try { fim0(); } catch (e) {} try { if (h.parentNode) h.parentNode.removeChild(h); } catch (e2) {} return pg; };
+    return pg;
+  }
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
+  /* 21/11/2026 — ENTRADA ÚNICA "Galpão / pórtico" (decisão do Rogério: "OK na fita"): os três lugares que faziam galpão
+     (Assistente de galpão, Modelos prontos do cálculo e esta biblioteca) abrem AQUI. Os ids antigos (met-galpao,
+     met-calc-assistente, met-calc-modelos) continuam registrados como ATALHOS desta entrada (atalhos de teclado, busca, IA e
+     e2e usam esses ids). O cálculo continua no backend de cada tipologia (MetalPorticos.motorDe): a alma cheia segue no
+     js/acodimensionar.js; o resto, na estrutura desenhada. "Dados da obra" (endereço → vento, faces, telha) é o passo do
+     js/metalcalcui.js, o mesmo para as duas rotas. */
   var COMANDOS = [
+    { id: "met-galpao-portico", rotulo: "Galpão /\npórtico", icone: "estrutura", grande: true, dica: "Entrada única do galpão de aço: escolha um modelo pronto (cobertura aberta, fechado, misto, centro logístico, uma água, oficina, Pedido Gabriel) ou uma das 13 tipologias de pórtico, ajuste e crie no modelo — ou crie e calcule. Abre também o galpão já salvo nesta obra." },
+    { id: "met-dados-obra", rotulo: "Dados\nda obra", icone: "casa", grande: true, dica: "Os dados que valem para qualquer cálculo da metálica desta obra: endereço (o vento sai das isopletas da NBR 6123), as faces abertas ou fechadas e a telha." },
     { id: "met-porticos", rotulo: "Pórticos\nindustriais", icone: "estrutura", grande: true, dica: "Biblioteca de pórticos industriais paramétricos: alma cheia de uma e duas águas, mísula, atirantado, treliçados (banzos paralelos, trapezoidal, tesouras Howe/Pratt/Warren), shed, multivão, ponte rolante, mezanino, coluna treliçada e tesoura leve (coluna treliçada de U com alma em cantoneira). Gera o modelo BIM inteiro e prepara o cálculo." }
   ];
 
@@ -130,7 +149,15 @@
     registrar: function (reg) {
       if (!previa() || !MP()) return false;
       var self = this;
-      reg["met-porticos"] = function () { try { self.abrir(); } catch (e) { toast("Pórticos: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
+      function seguro(fn) { return function () { try { fn(); } catch (e) { toast("Galpão / pórtico: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; }
+      reg["met-porticos"] = seguro(function () { self.abrir(); });
+      reg["met-galpao-portico"] = seguro(function () { self.entrada(); });
+      reg["met-dados-obra"] = seguro(function () { self.dadosObra(); });
+      /* os ids antigos → a entrada nova (ALIASES). O galpão do assistente antigo SELECIONADO continua abrindo o "Editar galpão"
+         de sempre (refaz no lugar, com os campos dele — o que a tipologia não descreve, como a vedação, mora lá) */
+      reg["met-calc-modelos"] = seguro(function () { self.entrada({ modelos: true }); });
+      reg["met-calc-assistente"] = seguro(function () { self.entrada({ assistente: true }); });
+      reg["met-galpao"] = seguro(function () { var U = MU(), g = self.galpaoSelecionado(); if (g && U && U.dlgGalpao) U.dlgGalpao(); else self.entrada(); });
       return true;
     },
     /* os pórticos da biblioteca no modelo (peças com caixa.portico; o de alma cheia é um galpão: caixa.galpao + porticoTipo) */
@@ -145,15 +172,73 @@
     },
     /* 21/11/2026: o resultado do DIMENSIONAMENTO DAS LIGAÇÕES (r.ligDim, js/metalligdim.js) volta para o modelo — o pórtico é refeito
        no lugar (um Ctrl+Z) com o nº de parafusos, o diâmetro, a placa e o chumbador calculados; a lista de montagem conta do modelo */
+    /* 21/11/2026 (js/acoautocorrige.js, "Calcular e corrigir"): o MESMO pórtico refeito com as ligações calculadas, SEM mandar para o
+       editor — { alvo (o pórtico de agora: as peças que saem), lote (as ops do gerador), caixas (as peças novas, com o id) } | null.
+       A autocorreção calcula com ele numa cópia e só grava no fim, num lote único (um Ctrl+Z). */
+    ligacoesLote: function (r, caixasAtuais) {
+      var M = MP(); if (!M || !r || !r.ligDim || !r.ligDim.modelo) return null;
+      var cx = arr(caixasAtuais || this.caixas()), pc = {}; arr(r.modelo && r.modelo.membros).forEach(function (m) { pc[String(m.peca)] = 1; });
+      var por = {}, ordem = [];
+      cx.forEach(function (c) { if (!c || !c.portico) return; var g0 = String(c.portico); if (!por[g0]) { por[g0] = { id: g0, pecas: [], info: null }; ordem.push(g0); } por[g0].pecas.push(String(c.id)); if (c.porticoInfo) por[g0].info = c.porticoInfo; });
+      var alvo = ordem.map(function (k) { return por[k]; }).filter(function (g0) { return g0.info && g0.pecas.some(function (id) { return pc[id]; }); })[0];
+      if (!alvo) return null;
+      var self = this, p = M.normalizar(alvo.info.tipo, alvo.info.par);
+      var g = M.gerar(alvo.info.tipo, p, function () { return self.novoId(); }, { ligDim: r.ligDim.modelo, porticoId: alvo.id, edicoes: global.MetalElemento ? global.MetalElemento.edicoesDe(cx, alvo.id) : null });
+      if (!g || !g.ok || !g.op) return null;
+      var caixas = arr(g.op.ops).filter(function (o) { return o.op === "criar" && o.caixa; }).map(function (o) { var c = JSON.parse(JSON.stringify(o.caixa)); c.id = String(o.id); return c; });
+      return { alvo: alvo, lote: g.op, caixas: caixas, extras: arr(g.op.ops).filter(function (o) { return o.op !== "criar"; }), fixacao: g.fixacao || null };
+    },
     atualizarLigacoes: function (r) {
       var M = MP(), self = this; if (!M || !r || !r.ligDim || !r.ligDim.modelo) { toast("Calcule a estrutura primeiro: as ligações saem do cálculo.", "aviso"); return null; }
       var pc = {}; arr(r.modelo && r.modelo.membros).forEach(function (m) { pc[String(m.peca)] = 1; });
       var alvo = this.porticos().filter(function (g) { return arr(g.pecas).some(function (id) { return pc[String(id)]; }); })[0];
       if (!alvo || !alvo.info) { toast("O cálculo não é de um pórtico da biblioteca — as ligações ficam só na memória.", "aviso", 8000); return null; }
-      var el = global.document && document.body, pg = el && global.UI && UI.progresso ? UI.progresso(el, { titulo: "Atualizar as ligações no modelo", etapas: [{ id: "g", peso: 1, rotulo: "Refazendo o pórtico com as ligações calculadas" }], texto: "Refazendo o pórtico", fundo: true }) : null;
+      var pg = barraProg({ titulo: "Atualizar as ligações no modelo", etapas: [{ id: "g", peso: 1, rotulo: "Refazendo o pórtico com as ligações calculadas" }], texto: "Refazendo o pórtico" });
       try { if (pg) pg.etapa("g", 0.3, "Refazendo o pórtico (" + alvo.n + " peças)"); var g = this.criar(alvo.info.tipo, alvo.info.par, { alvo: alvo, ligDim: r.ligDim.modelo }); if (g && g.ok) toast("Ligações do cálculo no modelo: " + (g.fixacao ? g.fixacao.resumo : "") + ". Recalcule para conferir o modelo novo.", "ok", 10000); return g; }
       finally { if (pg) pg.fim(); }
     },
+    /* o galpão do motor antigo com uma peça selecionada (caixa.galpao) */
+    galpaoSelecionado: function () {
+      var U = MU(), ids = U && U.selecao ? U.selecao().map(String) : [];
+      var c = this.caixas().filter(function (x) { return x && x.galpao && ids.indexOf(String(x.id)) >= 0; })[0];
+      return c && U && U.galpao ? U.galpao(c.galpao) : null;
+    },
+    obraId: function () { var G = global.Gestao; return String((G && G._bimSel) || "geral"); },
+    /* tudo o que a obra já tem salvo (MetalPorticos.lerLegado — só leitura) */
+    legado: function () { var M = MP(); if (!M || !M.lerLegado) return { itens: [], salvo: null }; try { return M.lerLegado(this.obraId(), this.caixas(), global.localStorage); } catch (e) { return { itens: [], salvo: null }; } },
+    /* os Modelos prontos do galpão como PRESETS da alma cheia (a fonte é o js/metalcalcui.js: nada duplicado) */
+    modelosProntos: function () {
+      var M = MP(), C = global.MetalCalcUI; if (!M || !M.parDoModeloPronto || !C || !C.MODELOS) return [];
+      return C.MODELOS.map(function (m) { return M.parDoModeloPronto(m); }).filter(Boolean);
+    },
+    /* A ENTRADA ÚNICA. o = { modelos: abre com os modelos prontos à vista; assistente: prefere o estado do Cálculo do galpão } */
+    entrada: function (o) {
+      o = o || {}; var M = MP(); if (!M) return false;
+      if (this.porticoSelecionado()) return this.abrir();
+      var L = this.legado(), sel = this.galpaoSelecionado(), it = null;
+      if (sel) it = L.itens.filter(function (x) { return x.id === sel.id; })[0] || null;
+      if (!it && o.assistente) it = L.itens.filter(function (x) { return x.origem === "assistente"; })[0] || null;
+      if (!it && !o.modelos && L.salvo) it = { origem: "salvo", tipo: L.salvo.tipo, par: L.salvo.par };
+      if (!it && !o.modelos) it = L.itens.filter(function (x) { return x.origem === "assistente"; })[0] || null;
+      if (it) return this.abrir(it.tipo, { novo: true, par: it.par, legado: it, galpaoAlvo: it.origem === "galpao" || it.origem === "galpao-calculo" ? (sel || null) : null, foco: o.modelos ? "modelos" : null });
+      return this.abrir(o.modelos ? "alma-cheia-2" : null, { novo: true, foco: o.modelos ? "modelos" : null });
+    },
+    usarModeloPronto: function (id) {
+      var d = this._dlg, M = MP(); if (!d || !M) return false;
+      var m = this.modelosProntos().filter(function (x) { return x.id === id; })[0]; if (!m) return false;
+      d.tipo = m.tipo; d.par = this.semear(m.tipo, m.par); d.modelo = m.id;
+      var tp = d.raiz && d.raiz.querySelector('[data-mpo="tipos"]'); if (tp) Array.prototype.forEach.call(tp.querySelectorAll("[data-mpo-tipo]"), function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-mpo-tipo") === m.tipo)); });
+      this.desenharCampos(); this.previa();
+      status("Modelo pronto “" + m.rotulo + "” — ajuste o que for diferente na obra.");
+      return true;
+    },
+    /* Dados da obra: o passo 1 do assistente (endereço → vento, faces, telha) — o mesmo para a alma cheia e a estrutura desenhada */
+    dadosObra: function () {
+      var C = global.MetalCalcUI; if (!C || !C.abrir) { toast("Os dados da obra não carregaram (js/metalcalcui.js).", "erro", 8000); return false; }
+      try { if (this._dlg) UI.fecharModal(); } catch (e) {} this._dlg = null;
+      return C.abrir(1);
+    },
+    _ventoDaObra: function () { var M = MP(), C = global.MetalCalcUI; try { return M && M.dadosObra && C && C.estado ? M.dadosObra(C.estado()).vento : null; } catch (e) { return null; } },
     porticoSelecionado: function () {
       var U = MU(), ids = U && U.selecao ? U.selecao().map(String) : [], gs = this.porticos();
       var c = this.caixas().filter(function (x) { return x && x.portico && ids.indexOf(String(x.id)) >= 0; })[0];
@@ -165,19 +250,19 @@
       var M = MP(); if (!M || !global.UI) return false;
       css(); o = o || {};
       var alvo = o.alvo || (o.novo ? null : this.porticoSelecionado());
-      var par = alvo && alvo.info && alvo.info.par ? clone(alvo.info.par) : null;
+      var par = alvo && alvo.info && alvo.info.par ? clone(alvo.info.par) : (o.par ? clone(o.par) : null);
       tipo = (alvo && alvo.info && alvo.info.tipo) || tipo || (this._ultimo && this._ultimo.tipo) || "alma-cheia-2";
       if (!par) par = this._ultimoPar && this._ultimoPar[tipo] ? clone(this._ultimoPar[tipo]) : M.padrao(tipo);
-      this._dlg = { tipo: tipo, par: this.semear(tipo, par), alvo: alvo };
+      this._dlg = { tipo: tipo, par: this.semear(tipo, par), alvo: alvo, galpaoAlvo: o.galpaoAlvo || null, legado: o.legado || null, foco: o.foco || null };
       var self = this, h = '<div class="mpo-dlg" data-modal-largo data-mpo="dlg"><div class="mpo-tipos" role="list" data-mpo="tipos">' + this.htmlTipos(tipo) + '</div><div class="mpo-campos" data-mpo="campos"></div>' +
         '<div class="mpo-lado"><div data-mpo="lado-resumo" class="mpo-lado"><div class="mpo-prev" data-mpo="previa"></div><div class="mpo-pos" data-mpo="posic"></div><p class="mpo-motor" data-mpo="motor"></p><ul class="mpo-nv" data-mpo="nv"></ul><p class="mpo-res" data-mpo="resumo"></p><p class="mpo-erro" data-mpo="erro" role="alert"></p><ul class="mpo-av" data-mpo="avisos"></ul>' +
         '<p class="muted" style="font-size:11px;margin:0">Os perfis são de <b>partida</b>: o cálculo confere todos e mostra o que não passa (e acha o mais leve, se pedido).</p></div><div data-mpo="ajuda" class="mpo-ajuda-box" hidden></div></div></div>';
       var bts = [];
-      if (alvo) bts.push({ texto: "Atualizar no lugar", classe: "primary", onClick: function () { self._confirmar(false, true); } });
+      if (alvo || o.galpaoAlvo) bts.push({ texto: "Atualizar no lugar", classe: "primary", onClick: function () { self._confirmar(false, true); } });
       bts.push({ texto: "Criar e calcular", classe: alvo ? "" : "primary", onClick: function () { self._confirmar(true, !!alvo); } });
       if (!alvo) bts.push({ texto: "Criar no modelo", onClick: function () { self._confirmar(false, false); } });
       bts.push({ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); self._dlg = null; } });
-      UI.modal(alvo ? "Pórtico da biblioteca — " + M.TIPOS[tipo].rotulo + " (" + alvo.n + " peças)" : "Pórticos industriais", h, bts);
+      UI.modal(alvo ? "Pórtico da biblioteca — " + M.TIPOS[tipo].rotulo + " (" + alvo.n + " peças)" : (o.galpaoAlvo ? "Galpão / pórtico — galpão do modelo (" + o.galpaoAlvo.n + " peças)" : "Galpão / pórtico"), h, bts);
       var raiz = document.querySelector('[data-mpo="dlg"]'); this._dlg.raiz = raiz;
       if (raiz) {
         raiz.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-mpo-tipo]") : null; if (b && !self._dlg.alvo) self.trocarTipo(b.getAttribute("data-mpo-tipo")); });
@@ -185,6 +270,8 @@
           var c = ev.target && ev.target.closest, b1 = c ? ev.target.closest("[data-mpo-preset]") : null, b4 = c ? ev.target.closest("[data-mpo-preset4]") : null;
           if (b1) { var q = b1.getAttribute("data-mpo-preset").split(":"); self.usarPreset(q[0], q[1]); }
           if (b4) self.gerarPreset4(b4.getAttribute("data-mpo-preset4"));
+          var bm = c ? ev.target.closest("[data-mpo-modelo]") : null; if (bm) self.usarModeloPronto(bm.getAttribute("data-mpo-modelo"));
+          var bd = c ? ev.target.closest("[data-mpo-dados]") : null; if (bd) self.dadosObra();
           var bc = c ? ev.target.closest("[data-mpo-comparar]") : null; if (bc) self.comparar(bc.getAttribute("data-mpo-comparar"));
         });
         /* 21/11/2026: posições dos pórticos (sugestões, pontas) e AJUDA por campo (cartão no painel da direita ao focar/clicar) */
@@ -202,6 +289,7 @@
         raiz.addEventListener("change", function (ev) { if (ev.target && ev.target.closest && ev.target.closest('[data-mpo="campos"]')) self.previa(); });
       }
       this.desenharCampos(); this.previa();
+      if (this._dlg.foco === "modelos") { var fm = raiz && raiz.querySelector('[data-mpo="modelos"]'); if (fm && fm.scrollIntoView) { try { fm.scrollIntoView({ block: "nearest" }); } catch (eS) {} } }
       return true;
     },
     htmlTipos: function (sel) {
@@ -234,6 +322,13 @@
       var M0 = MP(), PG = M0 && M0.PRESETS && M0.PRESETS["pedido-gabriel"];
       if (PG && d.tipo === PG.tipo && !d.alvo) h = '<div class="mpo-preset" style="grid-column:1/-1"><b>' + esc(PG.rotulo) + ':</b> ' + PG.variantes.map(function (v) { return '<button type="button" data-mpo-preset="pedido-gabriel:' + v.id + '">' + esc(v.rotulo) + "</button>"; }).join(" ") +
         ' <button type="button" class="primary" data-mpo-preset4="pedido-gabriel">Gerar as 4 variantes</button> <button type="button" data-mpo-comparar="pedido-gabriel">Comparar as 4 variantes</button> <span class="mpo-revisao" data-mpo-revisao="pedido-gabriel" style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:4px;background:#2e7d32;color:#fff;font-weight:700">Calculado — conferir e assinar pelo responsável técnico (barras, nós, ligações e placas de base passam nas 4 variantes, NBR 8800:2008 com itens a conferir no texto; os enrijecedores da coluna ainda não estão no 3D)</span></div>' + h;
+      /* 21/11/2026 — os MODELOS PRONTOS do galpão (presets da alma cheia) e os Dados da obra, no topo dos campos */
+      var mods = this.modelosProntos();
+      if (mods.length && !d.alvo) h = '<div class="mpo-preset" data-mpo="modelos" style="grid-column:1/-1"><b>Modelos prontos:</b> ' + mods.map(function (m) { return '<button type="button" data-mpo-modelo="' + esc(m.id) + '"' + (d.modelo === m.id ? ' aria-pressed="true"' : "") + ' title="' + esc(m.desc) + '">' + esc(m.rotulo) + "</button>"; }).join(" ") +
+        ' <button type="button" data-mpo-dados="1" title="Endereço (vento NBR 6123), faces e telha — valem para o cálculo de qualquer tipologia">Dados da obra…</button></div>' + h;
+      var lg = d.legado;
+      if (lg && lg.origem !== "salvo") h = '<div class="mpo-preset" data-mpo="legado" style="grid-column:1/-1">' + ({ galpao: "Galpão do modelo (assistente de galpão)", "galpao-calculo": "Galpão do modelo (Cálculo do galpão)", assistente: "Galpão salvo no Cálculo do galpão desta obra", portico: "Pórtico da biblioteca" }[lg.origem] || "Salvo na obra") +
+        (lg.n ? " — " + lg.n + " peças" : "") + (lg.trelicado ? ". <b>Treliçado</b>: a tela mostra a alma cheia; o modelo refeito mantém a treliça e o que mais foi definido no assistente." : ". Os dados abriram aqui; o que a tela não mostra fica como estava.") + "</div>" + h;
       if (el) el.innerHTML = h;
     },
     /* a variante no formulário */
@@ -373,8 +468,15 @@
       if (e) { var er = d.raiz && d.raiz.querySelector('[data-mpo="erro"]'); if (er) er.textContent = e; return false; }
       this._ultimoPar = this._ultimoPar || {}; this._ultimoPar[d.tipo] = clone(p); this._ultimo = { tipo: d.tipo };
       UI.fecharModal();
-      var tipo = d.tipo, alvo = atualizar ? d.alvo : null; this._dlg = null;
-      return this.criar(tipo, p, { calcular: calcular, alvo: alvo });
+      var tipo = d.tipo, alvo = atualizar ? d.alvo : null, gAlvo = atualizar ? d.galpaoAlvo : null, origem = d.modelo ? "modelo:" + d.modelo : (d.legado ? d.legado.origem : "entrada"); this._dlg = null;
+      if (!gAlvo) { delete p._legadoBIM; delete p._legadoMapa; }   /* galpão NOVO: a tipologia inteira (o par antigo só vale para refazer no lugar) */
+      var pg = barraProg({ titulo: "Galpão / pórtico", etapas: [{ id: "g", peso: 1, rotulo: "Gerando as peças no modelo" }], texto: "Gerando " + M.TIPOS[tipo].rotulo });
+      try {
+        if (pg) pg.etapa("g", 0.2, "Gerando " + M.TIPOS[tipo].rotulo);
+        var r = this.criar(tipo, p, { calcular: calcular, alvo: alvo, galpaoAlvo: gAlvo });
+        if (r && r.ok !== false && M.salvarPortico) { var q = clone(p); delete q._legadoBIM; delete q._legadoMapa; M.salvarPortico(this.obraId(), { tipo: tipo, par: q, origem: origem }, global.localStorage); }
+        return r;
+      } finally { if (pg) pg.fim(); }
     },
 
     /* ------------------------------------------------------------ criar (e calcular) */
@@ -383,7 +485,10 @@
       var M = MP(), U = MU(), self = this; if (!M || !U) { toast("O modelador da metálica não carregou.", "erro"); return null; }
       var T = M.TIPOS[tipo], p = M.normalizar(tipo, par);
       if (T.motor === "galpao") {
-        var rg = U.gerarGalpao(M.parGalpaoBIM(tipo, p), {});
+        /* a tipologia e o par da tela vão junto (galpaoInfo.porticoTipo/porticoPar): reabre pela entrada nova sem o inverso.
+           Refazer o galpão ANTIGO no lugar: o par dele já está em metros (doCalculo — o tirante não é dividido de novo) */
+        var pTela = clone(p); delete pTela._legadoBIM; delete pTela._legadoMapa;
+        var rg = U.gerarGalpao(M.parGalpaoBIM(tipo, p), { substituir: op.galpaoAlvo ? op.galpaoAlvo.id : null, porticoTipo: tipo, porticoPar: pTela, doCalculo: !!p._legadoBIM });
         if (!rg || !rg.ok) return rg;
         /* a alma cheia é um GALPÃO do assistente no modelo (caixa.galpao): o Cálculo do galpão o atualiza ("Atualizar o galpão no
            modelo"), sem marca própria da biblioteca */
@@ -407,11 +512,18 @@
       var tx = (op.alvo ? "Pórtico atualizado no lugar — " : "") + g.resumo + " Ctrl+Z desfaz.";
       status(tx); toast(tx, "ok", 9000);
       try { var PU = global.MetalProntasUI; if (PU && PU.enquadrar) { var fin = {}; g.pecas.forEach(function (c) { fin[c.id] = c; }); PU.enquadrar({ finais: fin }); } } catch (eE) {}
+      /* 21/11/2026: "Criar no modelo" também deixa a tela do cálculo PREPARADA (cargas por água, vento da tipologia, peças do pórtico)
+         — sem isso o "Calcular e corrigir" depois de criar calculava o pórtico sem as cargas da tipologia */
+      if (!op.calcular && !op.alvo && global.MetalCalcLivreUI && MetalCalcLivreUI.preparar) {
+        try { var pre0 = M.presetLivre(tipo, p, g, this.caixas()); if (p.vento) { pre0.vento = {}; Object.keys(p.vento).forEach(function (k) { pre0.vento[k] = p.vento[k]; }); pre0.vento.ativo = true; } MetalCalcLivreUI.preparar(pre0); } catch (eP) {}
+      }
       if (op.calcular && global.MetalCalcLivreUI && MetalCalcLivreUI.preparar) {
         var pre = M.presetLivre(tipo, p, g, this.caixas());
         /* 20/11/2026 (achado na e2e): o vento da tipologia (Pedido Gabriel: Castanhal-PA) vai para a tela do cálculo — sem ele o
            "Criar e calcular" parava em "falta o local da obra" */
-        if (p.vento) { pre.vento = {}; Object.keys(p.vento).forEach(function (k) { pre.vento[k] = p.vento[k]; }); pre.vento.ativo = true; }
+        /* sem vento na tipologia: o dos Dados da obra (o mesmo endereço do Cálculo do galpão) */
+        var vt = p.vento || this._ventoDaObra();
+        if (vt) { pre.vento = {}; Object.keys(vt).forEach(function (k) { pre.vento[k] = vt[k]; }); pre.vento.ativo = true; }
         MetalCalcLivreUI.preparar(pre);
         MetalCalcLivreUI.abrir(3);
         try { MetalCalcLivreUI.calcular(); } catch (eL) {}

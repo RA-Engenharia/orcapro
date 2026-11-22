@@ -36,7 +36,8 @@
     "met-clip": "clip-terca", "met-placa-base": "placa-base-rotulada", "met-chapa-ext": "chapa-extremidade",
     "met-cant-dupla": "cantoneira-dupla", "met-emenda": "emenda-cobrejunta", "met-contravento": "contraventamento-cobertura",
     "met-no": "gusset", "met-enrijecedor": "enrijecedor", "met-perfil": "secao-w", "met-conferir": "parafuso",
-    "met-galpao": "portico-alma-cheia", "met-calc-assistente": "portico-alma-cheia", "met-calc-modelos": "portico-trelicado",
+    /* entrada única do galpão (met-galpao-portico): os ids antigos ficam apontando para a mesma ilustração */
+    "met-galpao-portico": "portico-alma-cheia", "met-galpao": "portico-alma-cheia", "met-calc-assistente": "portico-alma-cheia", "met-calc-modelos": "portico-trelicado",
     "met-calc-calcular": "deformada", "met-calc-resultados": "flambagem-lateral"
   };
   var EXTRA = {};

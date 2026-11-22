@@ -870,14 +870,16 @@
         var Fi = [r.f[0], r.f[1], r.f[2]], Mi = [r.f[3], r.f[4], r.f[5]];
         /* pontos do elemento: estações uniformes + onde o cortante troca de sinal (o momento extremo EXATO) */
         var xs = []; for (var s = 0; s < nEst; s++) if (!(ke > 0 && s === 0)) xs.push(e.L * s / (nEst - 1));
+        /* 22/11/2026: as mesmas contas, na mesma ordem, sem criar vetor a cada ponto (era ~1/4 do tempo em coleta de lixo) */
         function corte(xl) {
-          var xb = e.x0 + xl, Q = [0, 0, 0];
-          cargasB.forEach(function (t) {
-            var a = Math.max(t.xa, e.x0), b = Math.min(t.xb, xb); if (!(b > a + 1e-12)) return;
+          var xb = e.x0 + xl, Q0 = 0, Q1 = 0, Q2 = 0;
+          for (var it = 0; it < cargasB.length; it++) {
+            var t = cargasB[it], a = Math.max(t.xa, e.x0), b = Math.min(t.xb, xb); if (!(b > a + 1e-12)) continue;
             var h = (b - a) / 2, m = (b + a) / 2;
-            GP.forEach(function (g) { var x = m + h * g[0], w = h * g[1], sp = (t.xb - t.xa) > 0 ? (x - t.xa) / (t.xb - t.xa) : 0; Q = add(Q, mul(add(t.qa, mul(sub(t.qb, t.qa), sp)), w)); });
-          });
-          return mul(add(Fi, Q), -1);
+            for (var ig = 0; ig < GP.length; ig++) { var g = GP[ig], x = m + h * g[0], w = h * g[1], sp = (t.xb - t.xa) > 0 ? (x - t.xa) / (t.xb - t.xa) : 0;
+              Q0 = Q0 + (t.qa[0] + (t.qb[0] - t.qa[0]) * sp) * w; Q1 = Q1 + (t.qa[1] + (t.qb[1] - t.qa[1]) * sp) * w; Q2 = Q2 + (t.qa[2] + (t.qb[2] - t.qa[2]) * sp) * w; }
+          }
+          return [(Fi[0] + Q0) * -1, (Fi[1] + Q1) * -1, (Fi[2] + Q2) * -1];
         }
         if (cargasB.length) {
           var fino = 24, prev = corte(0);
@@ -897,18 +899,20 @@
         for (var si = 0; si < xs.length; si++) {
           var xl = xs[si], xb = e.x0 + xl;
           /* S = −(Fi + ∫q); Sm = −(Mi + (ri − rx) × Fi + ∫ (rs − rx) × q ds) — eixos locais da barra (os do elemento são os mesmos) */
-          var Q = [0, 0, 0], Mq = [0, 0, 0];
-          cargasB.forEach(function (t) {
-            var a = Math.max(t.xa, e.x0), b = Math.min(t.xb, xb);
-            if (!(b > a + 1e-12)) return;
+          var Q0 = 0, Q1 = 0, Q2 = 0, M0 = 0, M1 = 0, M2 = 0;
+          for (var it3 = 0; it3 < cargasB.length; it3++) {
+            var t = cargasB[it3], a = Math.max(t.xa, e.x0), b = Math.min(t.xb, xb);
+            if (!(b > a + 1e-12)) continue;
             var h = (b - a) / 2, m = (b + a) / 2;
-            GP.forEach(function (g) {
-              var x = m + h * g[0], w = h * g[1], sp = (t.xb - t.xa) > 0 ? (x - t.xa) / (t.xb - t.xa) : 0;
-              var q = add(t.qa, mul(sub(t.qb, t.qa), sp));
-              Q = add(Q, mul(q, w));
-              Mq = add(Mq, mul(cross([x - xb, 0, 0], q), w));
-            });
-          });
+            for (var ig3 = 0; ig3 < GP.length; ig3++) {
+              var g = GP[ig3], x = m + h * g[0], w = h * g[1], sp = (t.xb - t.xa) > 0 ? (x - t.xa) / (t.xb - t.xa) : 0;
+              var q0 = t.qa[0] + (t.qb[0] - t.qa[0]) * sp, q1 = t.qa[1] + (t.qb[1] - t.qa[1]) * sp, q2 = t.qa[2] + (t.qb[2] - t.qa[2]) * sp, dx = x - xb;
+              Q0 = Q0 + q0 * w; Q1 = Q1 + q1 * w; Q2 = Q2 + q2 * w;
+              /* cross([dx, 0, 0], q) = [0·q2 − 0·q1, 0·q0 − dx·q2, dx·q1 − 0·q0] — escrito igual para dar o mesmo número */
+              M0 = M0 + (0 * q2 - 0 * q1) * w; M1 = M1 + (0 * q0 - dx * q2) * w; M2 = M2 + (dx * q1 - 0 * q0) * w;
+            }
+          }
+          var Q = [Q0, Q1, Q2], Mq = [M0, M1, M2];
           var S = mul(add(Fi, Q), -1);
           /* deslocamento global no ponto (Hermite nos eixos locais do elemento) */
           var d = r.d, e1 = xl / e.L, e2 = e1 * e1, e3 = e2 * e1, Le = e.L;

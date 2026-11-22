@@ -264,15 +264,21 @@
   /* cada rodada leva a foto dos perfis com que foi feita (para voltar a ela) */
   /* PROGRESSO (20/11/2026): op.aoProgresso({ fase, k, n, rodada }) — fase = "modelo" | "analise" | "analise80" | "verificacao" |
      "flambagem"; k/n = a combinação (análises) ou a barra (verificação). Só avisa: o cálculo é o mesmo com e sem ele */
+  /* modelo pequeno (≤ 300 peças): a descida vai até o fim (cada rodada custa pouco); grande: 15 — sempre por contagem, nunca por relógio */
+  var DESCIDAS_PEQUENO = 60, PECAS_GRANDE = 300;   // aco:ok
+  var DESCIDAS_MAX = 15, TETO_MS = 900000;   // aco:ok tentativas da descida conferida (Gabriel: a 14ª é a última que desce; convergida em 33 dá o mesmo peso); teto de segurança 15 min (só proteção)
   var PROG = { f: null, fase: null, rodada: 0 };
+  /* 21/11/2026 (medição do "Calcular e corrigir"): quantas rodadas (análise completa + verificação) e quanto tempo — sai em r.tempos */
+  var TEMPOS = { rodadas: 0, rodadaMs: 0 };
   function avisar(fase, k, n) { PROG.fase = fase; if (PROG.f) { try { PROG.f({ fase: fase, k: k || 0, n: n || 0, rodada: PROG.rodada }); } catch (e) {} } }
   function rodada(lido, entrada, op) {
     var A = Ana(), antes = PROG.f, antA = A && A.OPC ? A.OPC.aoProgresso : null;
     PROG.f = op && typeof op.aoProgresso === "function" ? op.aoProgresso : null; PROG.rodada++;
     if (PROG.f && A && A.OPC) A.OPC.aoProgresso = function (m) { avisar(PROG.fase, m.k, m.n); };
     avisar("modelo", 0, 0);
+    var tR = Date.now();
     try { var r = rodada0(lido, entrada, op); r._perfis = perfisAtuais(lido); return r; }
-    finally { if (A && A.OPC) A.OPC.aoProgresso = antA; PROG.f = antes; }
+    finally { TEMPOS.rodadas++; TEMPOS.rodadaMs += Date.now() - tR; if (A && A.OPC) A.OPC.aoProgresso = antA; PROG.f = antes; }
   }
   function restaurar(lido, r) { if (!r || !r._perfis) return; lido.pecas.forEach(function (p) { var n = r._perfis[p.id]; if (n && n !== p.cat) trocarPerfil(p, n); }); }
   function rodada0(lido, entrada, op) {
@@ -685,7 +691,7 @@
     /* perfis trocados à mão por grupo (tela): { "papel|perfil": novo } */
     var orig = {}; lido.pecas.forEach(function (p) { orig[p.id] = p.cat; });
     Object.keys(entrada.perfisGrupo || {}).forEach(function (gk) { lido.pecas.forEach(function (p) { if (chaveGrupo(p) === gk) trocarPerfil(p, entrada.perfisGrupo[gk]); }); });
-    PROG.rodada = 0;
+    PROG.rodada = 0; TEMPOS.rodadas = 0; TEMPOS.rodadaMs = 0;
     var r = rodada(lido, entrada, op), log = [], r0 = r;
     /* otimização */
     var alvo = entrada.otimizar === true ? null : (arr(entrada.otimizar).length ? entrada.otimizar : (entrada.otimizar ? null : []));
@@ -696,7 +702,10 @@
          pela NBR 16239: parede ≥ 2,5 mm e b/t ≤ 35 (EN 1993-1-8, 7.1.1 e Tabela 7.8) — senão o cálculo aprovava barra sem ligação */
       var tuboNoOk = function (nome) { var x = Cat() && Cat().obter(nome); if (!x || !/^tubo/.test(x.forma)) return true; var t = num(x.t, 0), b = Math.max(num(x.h, 0), num(x.b, 0), num(x.d, 0)); return t >= 2.5 - 1e-9 && b / t <= (x.forma === "tubo-circ" ? 50 : 35) + 1e-9; };
       var famDe = function (gk, nome) { var l = familia(nome), p0 = conj[gk] && conj[gk][0]; return p0 && p0.calc && p0.calc.tuboSoldado ? l.filter(function (n) { return n === nome || tuboNoOk(n); }) : l; };
-      var conj = {}; lido.pecas.forEach(function (p) { var gk = p.papel + "|" + orig[p.id]; if (!alvo || alvo.indexOf(gk) >= 0 || alvo.indexOf(chaveGrupo(p)) >= 0) (conj[gk] = conj[gk] || []).push(p); });
+      /* 21/11/2026 (js/acoautocorrige.js): entrada.fixos = peças que a AUTOCORREÇÃO subiu por causa do NÓ (banzo de tubo, chapa) —
+         o otimizador não mexe nelas (ele só olha a barra: desceria o banzo e o nó voltaria a reprovar) */
+      var fixos = {}; arr(entrada.fixos).forEach(function (id) { fixos[String(id)] = true; });
+      var conj = {}; lido.pecas.forEach(function (p) { if (fixos[String(p.id)]) return; var gk = p.papel + "|" + orig[p.id]; if (!alvo ||alvo.indexOf(gk) >= 0 || alvo.indexOf(chaveGrupo(p)) >= 0) (conj[gk] = conj[gk] || []).push(p); });
       var razoes = function (res, ps) {
         var o = { e: 0, s: 0 };
         ps.forEach(function (p) { var mm = res.modelo.membros.filter(function (m) { return m.peca === p.id; })[0]; if (!mm) return; o.e = Math.max(o.e, num((res.membros[mm.id] || {}).razao, 0)); res.servico.forEach(function (sv) { if (sv.membro === mm.id) o.s = Math.max(o.s, sv.razao); }); });
@@ -724,7 +733,9 @@
          1,53 GB na tesoura leve com 588 nós. A rodada nova nascia com a anterior ainda viva (2 × 1,5 GB → o Node estourava com
          3,6 GB). O otimizador só lê modelo, membros, servico e estabilidadeGlobal: antes de cada rodada a análise do resultado
          corrente sai e, no fim, a vencedora é calculada de novo (uma rodada a mais) para chegar inteira às ligações e ao memorial. */
-      var aliviar = function (res) { if (res && res.analise) { res.analise = null; res._semAnalise = true; } };
+      /* 22/11/2026: em vez de JOGAR FORA a análise (e refazer a rodada inteira no fim, ~45 s no Gabriel), as estações de cada barra
+         são COMPACTADAS em Float64Array (os mesmos números, sem os objetos: ~1/4 da memória) e voltam a objetos se esta rodada vencer */
+      var aliviar = function (res) { if (res && res.analise && !res._compacta) { compactar(res.analise); res._compacta = true; } };
       var aplicar = function (lista, rot) { lista.forEach(function (x) { conj[x.gk].forEach(function (p) { trocarPerfil(p, x.para); }); log.push("Rodada " + rot + ": " + conj[x.gk].length + " peça(s) " + x.gk.split("|")[0] + " " + x.de + " → " + x.para + " (" + x.motivo + ")"); }); };
       /* FASE 1 — até passar: SÓ sobe os grupos que falham (descer junto já desestabilizou a 2ª ordem num mezanino de
          teste: pilar e viga mais leves ao mesmo tempo que a secundária subia — 13/10/2026) */
@@ -752,7 +763,10 @@
          para. No fim, o vizinho mais leve de cada grupo REPROVA (é o que o teste confere). */
       /* a reprovação na descida vale enquanto os OUTROS grupos não mudam: um grupo mais leve alivia os demais (o peso
          próprio desce) e o vizinho que reprovou antes pode passar — o peso total só cai, então a busca termina */
-      var proibD = {}, saltoFeito = {}, tent = 0, maxDesc = num(op.maxDescida, 60), tMax = num(op.tempoMaxMs, 25000), limpou = false;
+      /* 22/11/2026 (decisão técnica): a descida para por um NÚMERO FIXO de tentativas (DESCIDAS_MAX), não pelo relógio. Com os 25 s de
+         antes o resultado mudava com a carga do PC (Gabriel: 17.835 kg numa execução, 19.084 kg noutra; 474 s a mais de 1 h). O tempo
+         ficou só como TETO DE SEGURANÇA (TETO_MS) e, se estourar, o aviso sai explícito no resultado. */
+      var proibD = {}, saltoFeito = {}, tent = 0, maxDesc = num(op.maxDescida, lido.pecas.length > PECAS_GRANDE ? DESCIDAS_MAX : DESCIDAS_PEQUENO), tMax = num(op.tempoMaxMs, TETO_MS), limpou = false;
       while (r.ok && r.aprovado && tent < maxDesc && Date.now() - t0 < tMax) {
         var aceitou = false;
         Object.keys(conj).forEach(function (gk) {
@@ -781,9 +795,11 @@
         if (!aceitou) { if (limpou) break; proibD = {}; limpou = true; }
         else limpou = false;
       }
-      if (tent >= maxDesc || Date.now() - t0 >= tMax) log.push("A descida parou pelo limite de " + (tent >= maxDesc ? tent + " rodadas" : Math.round(tMax / 1000) + " s") + ": pode haver perfil mais leve — rode de novo a partir deste.");
-      if (r && r._semAnalise) { restaurar(lido, r); var rf = rodada(lido, entrada, op); if (rf.ok) r = rf; else log.push("A rodada final (para a análise completa) não fechou: " + (rf.motivo || "análise")); }
-      if (r.ok) r.otimizacao = { iteracoes: it + tent, log: log, historico: hist.map(function (h) { return { falhas: h.falhas, peso: h.peso }; }) };
+      var pelaHora = Date.now() - t0 >= tMax && tent < maxDesc;
+      if (tent >= maxDesc || pelaHora) log.push("A descida parou pelo limite de " + (pelaHora ? Math.round(tMax / 1000) + " s (TETO DE SEGURANÇA: o resultado pode mudar de uma máquina para outra)" : tent + " tentativas") + ": pode haver perfil mais leve — rode de novo a partir deste.");
+      if (r && r._compacta) { restaurar(lido, r); descompactar(r.analise); delete r._compacta; }
+      if (r.ok) r.otimizacao = { iteracoes: it + tent, descidas: tent, pelaHora: !!pelaHora, log: log, historico: hist.map(function (h) { return { falhas: h.falhas, peso: h.peso }; }) };
+      if (r.ok && pelaHora) { var avH = "ATENÇÃO — o otimizador parou pelo TETO DE TEMPO (" + Math.round(tMax / 1000) + " s), não pelo limite de " + maxDesc + " tentativas: os perfis podem não ser os mais leves e o resultado pode mudar de uma máquina para outra. Calcule de novo a partir deste."; r.avisos.unshift(avH); r.decisoes.push({ tema: "Otimizador parado pelo tempo", decisao: avH, motivo: "teto de segurança do cálculo" }); }
     }
     if (r.ok) {
       avisosLeitura.forEach(function (x) { r.avisos.unshift(x); });
@@ -917,7 +933,32 @@
     if (r.ok && r.situacao && r.situacao.id !== "aprovado") { r.barrasAprovadas = aprovBarras0; r.aprovado = false; }
     else if (r.ok) r.barrasAprovadas = aprovBarras0 && !!r.aprovado;
     r.tempoMs = Date.now() - t0;
+    r.tempos = { totalMs: r.tempoMs, rodadas: TEMPOS.rodadas, rodadasMs: TEMPOS.rodadaMs };
     return r;
+  }
+  /* estações de esforço → Float64Array por barra (campos numéricos + o vetor u); `ul` (deslocamento local) e desloc1 saem — o fim do
+     calcular os apaga de qualquer jeito. A volta (descompactar) refaz os objetos com os mesmos campos, na mesma ordem. */
+  function compactar(an) {
+    Object.keys(an.combinacoes || {}).forEach(function (k) {
+      var cb = an.combinacoes[k]; if (!cb || !cb.barras) return; delete cb.desloc1;
+      Object.keys(cb.barras).forEach(function (id) {
+        var b = cb.barras[id], es = b.estacoes; if (!Array.isArray(es) || !es.length) return;
+        var ch = Object.keys(es[0]).filter(function (c) { return c !== "ul" && c !== "u"; }), temU = "u" in es[0], w = ch.length + (temU ? 3 : 0), f = new Float64Array(es.length * w);
+        es.forEach(function (e, i) { var o = i * w; for (var j = 0; j < ch.length; j++) f[o + j] = e[ch[j]] == null ? NaN : e[ch[j]]; if (temU) { var u = e.u; f[o + ch.length] = u ? u[0] : NaN; f[o + ch.length + 1] = u ? u[1] : NaN; f[o + ch.length + 2] = u ? u[2] : NaN; } });
+        b.estacoes = null; b._pack = { ch: ch, temU: temU, n: es.length, uNulo: !es[0].u, f: f };
+      });
+    });
+  }
+  function descompactar(an) {
+    Object.keys(an.combinacoes || {}).forEach(function (k) {
+      var cb = an.combinacoes[k]; if (!cb || !cb.barras) return;
+      Object.keys(cb.barras).forEach(function (id) {
+        var b = cb.barras[id], P = b._pack; if (!P) return;
+        var w = P.ch.length + (P.temU ? 3 : 0), es = new Array(P.n);
+        for (var i = 0; i < P.n; i++) { var o = i * w, e = {}; for (var j = 0; j < P.ch.length; j++) e[P.ch[j]] = P.f[o + j]; if (P.temU) e.u = P.uNulo ? null : [P.f[o + P.ch.length], P.f[o + P.ch.length + 1], P.f[o + P.ch.length + 2]]; es[i] = e; }
+        b.estacoes = es; delete b._pack;
+      });
+    });
   }
   function perfisAtuais(lido) { var o = {}; lido.pecas.forEach(function (p) { o[p.id] = p.cat; }); return o; }
   function semFuncoes(o) { try { return copia(o); } catch (e) { return {}; } }
@@ -948,7 +989,7 @@
     return { lote: { op: "lote", id: String(typeof novoId === "function" ? novoId() : "lote-" + Date.now()), origem: "metal-calc-livre", ops: ops }, n: ops.length, erros: erros };
   }
 
-  var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro, servicoLocal: servicoLocal, cargaEixos: cargaEixos }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
+  var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro, servicoLocal: servicoLocal, cargaEixos: cargaEixos }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, compactar: compactar, descompactar: descompactar, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
   global.AcoDimLivre = AcoDimLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDimLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

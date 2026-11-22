@@ -1305,6 +1305,16 @@
   /* ================================================================ MOTOR DO GALPÃO (alma cheia) */
   function parGalpaoBIM(t, par) {
     var p = normalizar(t, par);
+    /* 21/11/2026 (leitor de legado): o galpão do assistente antigo traz o par ORIGINAL do modelador em `_legadoBIM` — o que a
+       tipologia não descreve (tirante, nº de colunas de tapamento, vedação, treliçado, ligações desligadas) fica como estava e só
+       os campos que a tela mostra são sobrepostos: sem edição, o galpão refeito é o MESMO (prova: tools/test-metal-legado.js) */
+    if (p._legadoBIM) {
+      var o0 = clone(p._legadoBIM);
+      /* só o que MUDOU desde a leitura (`_legadoMapa` = o valor normalizado de cada campo quando o galpão foi lido) */
+      var m0 = p._legadoMapa || {};
+      CAMPOS_LEGADO.forEach(function (k) { if (p[k] != null && p[k] !== "" && JSON.stringify(p[k]) !== JSON.stringify(m0[k])) o0[k === "cota" ? "base" : k] = p[k]; });
+      return o0;
+    }
     return { vao: p.vao, comprimento: p.comprimento, espacamento: p.espacamento, peDireito: p.peDireito, inclinacao: p.inclinacao, aguas: p.aguas, base: p.cota, x0: p.x0, z0: p.z0, tipo: "alma-cheia",
              pilar: p.pilar, viga: p.viga, terca: p.terca, espTercas: p.espTercas, contraventos: p.contraventamento !== "nenhum", contravento: p.contraventamento === "X-cantoneira" ? p.cantoneiraCv : "L51X51X4.8",
              tapamento: p.tapamento, tapamentos: p.fechamento === "fechado" ? Math.max(0, Math.ceil(p.vao / p.espTapamento - 1e-9) - 1) : 0, tirantes: true, ligacoes: true };
@@ -1320,6 +1330,99 @@
     if (p.contraventamento === "X-cantoneira") o.perfis.contravento = p.cantoneiraCv;
     if (p.vento) o.vento = clone(p.vento);
     return o;
+  }
+
+  /* ================================================================ LEITOR DE LEGADO (21/11/2026, etapa 3 da unificação)
+   * A entrada única "Galpão / pórtico" abre também o que foi salvo pelos motores antigos — SÓ LEITURA: nenhuma chave antiga
+   * (`orcapro:metal:calc:<obra>`, `orcapro:metal:livre:<obra>`) nem campo de peça (caixa.galpao, galpaoInfo, caixa.portico,
+   * porticoInfo, metal.calc) é alterado. A gravação nova vai em `orcapro:metal:portico:<obra>` com versao: 2.
+   *   parDoGalpaoBIM(bim)     o par do BimMetalGalpao (galpaoInfo.par) → { tipo: "alma-cheia-1|2", par } (inverso do parGalpaoBIM)
+   *   parDoAssistente(est)    o estado do Cálculo do galpão (metalcalcui) → { tipo, par } (inverso do parGalpao)
+   *   parDoModeloPronto(m)    um MetalCalcUI.MODELOS → { tipo, par } (os "Modelos prontos" viram presets da alma cheia)
+   *   dadosObra(est)          local/vento/fechamento do assistente, para a rota da estrutura desenhada
+   *   lerLegado(obra, caixas, ls)  tudo o que a obra tem, na ordem: pórticos da biblioteca, galpões no modelo, assistente salvo
+   * Prova: tools/test-metal-legado.js (teste de ouro). */
+  var CHAVE_PORTICO = "orcapro:metal:portico:";
+  var CAMPOS_LEGADO = ["vao", "comprimento", "espacamento", "peDireito", "inclinacao", "aguas", "x0", "z0", "cota", "pilar", "viga", "terca", "espTercas", "tapamento"];
+  function fechDasFaces(f) {
+    var ks = ["frente", "fundo", "esquerda", "direita"], ab = 0;
+    ks.forEach(function (k) { if (f && f[k] && f[k].tipo === "aberto") ab++; });
+    return f && ab === ks.length ? "aberto" : "fechado";
+  }
+  function obraDe(id) { return String(id == null || id === "" ? "geral" : id); }
+  function parDoGalpaoBIM(bim) {
+    if (!bim || typeof bim !== "object") return null;
+    var aguas = num(bim.aguas, 2) === 1 ? 1 : 2, t = "alma-cheia-" + aguas, P = TIPOS[t].PADRAO;
+    var cv = bim.contraventos === false ? "nenhum" : (bim.contravento && bim.contravento !== "L51X51X4.8" ? "X-cantoneira" : "X-barra");
+    var par = { vao: num(bim.vao, P.vao), comprimento: num(bim.comprimento, 18), espacamento: num(bim.espacamento, P.espacamento), peDireito: num(bim.peDireito, P.peDireito), inclinacao: num(bim.inclinacao, P.inclinacao),
+                aguas: aguas, cota: num(bim.base, 0), x0: num(bim.x0, 0), z0: num(bim.z0, 0), base: P.base,
+                fechamento: num(bim.tapamentos, 0) > 0 || bim.vedacao ? "fechado" : "aberto", contraventamento: cv, _legadoBIM: clone(bim) };
+    ["pilar", "viga", "terca", "tapamento"].forEach(function (k) { if (bim[k]) par[k] = String(bim[k]); });
+    if (bim.espTercas != null) par.espTercas = num(bim.espTercas, P.espTercas);
+    if (cv === "X-cantoneira") par.cantoneiraCv = String(bim.contravento);
+    par.nPorticos = Math.max(2, Math.round(par.comprimento / Math.max(0.1, par.espacamento)) + 1);
+    var nz = normalizar(t, par), mapa = {};
+    CAMPOS_LEGADO.forEach(function (k) { mapa[k] = clone(nz[k]); });
+    par._legadoMapa = mapa;
+    return { tipo: t, par: par, trelicado: bim.tipo === "trelicado" };
+  }
+  function dadosObra(est) {
+    var o = { vento: null, fechamento: null };
+    if (!est) return o;
+    var L = est.local || {}, V = est.vento || {};
+    if (L.lat != null && L.lon != null && L.lat !== "" && L.lon !== "" && isFinite(+L.lat) && isFinite(+L.lon)) {
+      o.vento = { lat: +L.lat, lon: +L.lon, categoria: V.categoria || "III", grupoS3: num(V.grupoS3, 2) };
+      if (L.usarV0 && num(L.v0Manual, 0) > 0) o.vento.v0 = num(L.v0Manual, 0);
+    }
+    if (est.fechamentos) o.fechamento = fechDasFaces(est.fechamentos);
+    return o;
+  }
+  function parDoAssistente(est) {
+    if (!est || !est.geometria) return null;
+    var g = est.geometria, aguas = num(g.aguas, 2) === 1 ? 1 : 2, t = "alma-cheia-" + aguas, cv0 = est.contraventamento;
+    var par = { vao: num(g.vao, 15), comprimento: num(g.comprimento, 30), espacamento: num(g.espacamento, 6), peDireito: num(g.peDireito, 6), inclinacao: num(g.inclinacaoPct, 10), aguas: aguas,
+                base: g.base === "rotulada" ? "rotulada" : "engastada", fechamento: fechDasFaces(est.fechamentos),
+                contraventamento: cv0 === "nenhum" ? "nenhum" : (cv0 === "X-cantoneira" ? "X-cantoneira" : "X-barra") };
+    /* o cálculo do galpão (js/acomodelo.js) divide o comprimento no nº de vãos mais próximo do espaçamento pedido
+       (nV = round(L ÷ esp)): a entrada nova usa "por número" com esse nV — 40 m a cada 6 m = 7 vãos de 5,714 m nos dois */
+    par.definirPor = "numero"; par.nPorticos = Math.max(1, Math.round(par.comprimento / Math.max(0.1, par.espacamento))) + 1;
+    var pf = est.perfis || {};
+    if (pf.modo && pf.modo !== "auto") ["pilar", "viga", "tapamento"].forEach(function (k) { if (pf[k]) par[k] = String(pf[k]); });
+    var d = dadosObra(est); if (d.vento) par.vento = d.vento;
+    return { tipo: t, par: par, modelo: est.modelo || null };
+  }
+  function parDoModeloPronto(m) {
+    if (!m || !m.geometria) return null;
+    var r = parDoAssistente({ geometria: m.geometria, fechamentos: m.fechamentos, contraventamento: (m.extra && m.extra.contraventamento) || "auto" });
+    r.id = m.id; r.rotulo = m.nome; r.desc = m.desc || ""; r.modelo = m.id;
+    return r;
+  }
+  function lerJSON(ls, k) { try { var v = ls && ls.getItem ? ls.getItem(k) : null; return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function lerPortico(obraId, ls) { var o = lerJSON(ls, CHAVE_PORTICO + obraDe(obraId)); return o && o.versao === 2 && TIPOS[o.tipo] ? o : null; }
+  function salvarPortico(obraId, reg, ls) {
+    if (!reg || !TIPOS[reg.tipo] || !ls || !ls.setItem) return null;
+    var o = { versao: 2, tipo: reg.tipo, par: clone(reg.par || {}), origem: reg.origem || "entrada", ref: reg.ref || null, em: reg.em || new Date().toISOString() };
+    try { ls.setItem(CHAVE_PORTICO + obraDe(obraId), JSON.stringify(o)); } catch (e) { return null; }
+    return o;
+  }
+  function lerLegado(obraId, caixas, ls) {
+    var obra = obraDe(obraId), out = [], porP = {}, porG = {}, ordP = [], ordG = [];
+    (Array.isArray(caixas) ? caixas : []).forEach(function (c) {
+      if (!c) return;
+      if (c.portico) { var p = String(c.portico); if (!porP[p]) { porP[p] = { pecas: [], info: null }; ordP.push(p); } porP[p].pecas.push(String(c.id)); if (c.porticoInfo) porP[p].info = c.porticoInfo; }
+      else if (c.galpao) { var g = String(c.galpao); if (!porG[g]) { porG[g] = { pecas: [], info: null }; ordG.push(g); } porG[g].pecas.push(String(c.id)); if (c.galpaoInfo) porG[g].info = c.galpaoInfo; }
+    });
+    ordP.forEach(function (id) { var o = porP[id]; if (o.info && TIPOS[o.info.tipo]) out.push({ origem: "portico", id: id, tipo: o.info.tipo, par: clone(o.info.par || {}), pecas: o.pecas, n: o.pecas.length }); });
+    ordG.forEach(function (id) {
+      var o = porG[id], inf = o.info || {}, r = null;
+      /* o galpão que a entrada nova criou leva a tipologia e o par da tela (porticoTipo/porticoPar): volta como foi salvo */
+      if (inf.porticoTipo && TIPOS[inf.porticoTipo]) r = { tipo: inf.porticoTipo, par: clone(inf.porticoPar || {}) };
+      else r = parDoGalpaoBIM(inf.par);
+      if (r) out.push({ origem: inf.calc ? "galpao-calculo" : "galpao", id: id, tipo: r.tipo, par: r.par, trelicado: !!r.trelicado, pecas: o.pecas, n: o.pecas.length, doCalculo: !!inf.calc });
+    });
+    var sC = lerJSON(ls, "orcapro:metal:calc:" + obra);
+    if (sC && sC.estado) { var a = parDoAssistente(sC.estado); if (a) out.push({ origem: "assistente", id: "calc:" + obra, tipo: a.tipo, par: a.par, modelo: a.modelo, galpaoId: sC.estado.galpaoId || null, ultimo: sC.ultimo || null }); }
+    return { obra: obra, itens: out, salvo: lerPortico(obra, ls), livreSalvo: !!lerJSON(ls, "orcapro:metal:livre:" + obra) };
   }
 
   /* ================================================================ GERAR (o lote do editor) */
@@ -1513,7 +1616,7 @@
       /* os dois sistemas para o comparativo (MetalComparativo.calcularVariante(..., { sistema })) */
       sistemas: {
         cantoneira: { sistemaTrelica: "cantoneira" },
-        tubo: { sistemaTrelica: "tubo", diagonal: "TQ 50 x 50 x 2,65 Tuper", montante: "TQ 50 x 50 x 2,65 Tuper", travejamento: "TQ 40 x 40 x 2,65 Tuper", banzo: "TR 50 x 100 x 3,75 Tuper",
+        tubo: { sistemaTrelica: "tubo", diagonal: "TQ 50 x 50 x 2,65 Tuper", montante: "TQ 50 x 50 x 2,65 Tuper", travejamento: "TQ 40 x 40 x 3 Tuper", banzo: "TR 50 x 100 x 3,75 Tuper",   /* 22/11: era 2,65 — a parede de 2,65 não leva o filete mínimo de 3 mm na alma do U (js/metaltubou.js); com 3 mm zera as pontas reprovadas e pesa menos que as chapas */
                 terca: "Ue 250 x 85 x 25 x 2,65", tercaBorda: "Ue 300 x 85 x 25 x 2,66", banzoColuna: "U 300 x 100 x 3,75", escora: "TQ 88,9 x 88,9 x 2 Tuper", escoraColuna: "TQ 110 x 110 x 5 VMB" }
       },
       solar: 0.15, instalacoes: 0.10,
@@ -1534,7 +1637,7 @@
   }
 
   var MetalPorticos = { esquemaPlanta: esquemaPlanta, posicoesPorticos: posicoesPorticos, PRESETS: PRESETS, presetPar: presetPar, presetVariantes: presetVariantes, TIPOS: TIPOS, ORDEM: ORDEM, COMUM: COMUM, PADROES: PADROES, padrao: padrao, normalizar: normalizar, validar: validar, motorDe: motorDe, modelo: modelo, gerar: gerar,
-                        misulaMedidas: misulaMedidas, tolLeitor: tolLeitor, tercaTrelicada: tercaTrelicadaLigada, VAO_TERCA_TRELICADA: VAO_TERCA_TRELICADA, parGalpaoBIM: parGalpaoBIM, parGalpao: parGalpao, entradaLivre: entradaLivre, presetLivre: presetLivre, NAO_VERIFICA: NAO_VERIFICA, calcular: calcular, esquema: esquema, consoleCota: consoleCota };
+                        misulaMedidas: misulaMedidas, tolLeitor: tolLeitor, tercaTrelicada: tercaTrelicadaLigada, VAO_TERCA_TRELICADA: VAO_TERCA_TRELICADA, parGalpaoBIM: parGalpaoBIM, parGalpao: parGalpao, lerLegado: lerLegado, lerPortico: lerPortico, salvarPortico: salvarPortico, parDoGalpaoBIM: parDoGalpaoBIM, parDoAssistente: parDoAssistente, parDoModeloPronto: parDoModeloPronto, dadosObra: dadosObra, CHAVE_PORTICO: CHAVE_PORTICO, entradaLivre: entradaLivre, presetLivre: presetLivre, NAO_VERIFICA: NAO_VERIFICA, calcular: calcular, esquema: esquema, consoleCota: consoleCota };
   global.MetalPorticos = MetalPorticos;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalPorticos;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
