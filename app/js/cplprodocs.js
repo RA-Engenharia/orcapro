@@ -175,6 +175,30 @@
     return h + par("Sugestões da biblioteca da casa: texto a conferir pelo órgão antes da adoção.");
   }
 
+  /* Quadro «Pesquisa de preços (art. 23, Lei 14.133/2021)»: por item que teve pesquisa no banco de preços públicos (cfg.pesquisaPublica, gravada por
+     «Usar no processo»), mostra o critério (termo, data da consulta, método, regra de descarte), as amostras ESCOLHIDAS com fonte e link do PNCP e o
+     preço de referência. Só entra quem tem registro; sem registro devolve "" e o documento fica como estava. */
+  function quadroPesquisaPublica(p, linhas) {
+    var itens = (p.pesquisa || {}).itens || {}, h = "", n = 0;
+    arr(linhas).forEach(function (l) {
+      var cfg = itens[l.item] || {}, r = cfg.pesquisaPublica; if (!r) return;
+      var chaves = {}; arr(r.fontesChaves).forEach(function (k) { chaves[k] = 1; });
+      var fs = arr(cfg.fontes).filter(function (f) { return f && f.origem && chaves[f.origem.chave]; });
+      n++;
+      h += "<h3>Item " + esc(l.item) + " — " + esc(l.descricao) + "</h3>";
+      h += par("Fonte: banco de preços públicos do CertamePRO (atas de registro de preços e contratos publicados no PNCP). Consulta feita em <b>" + esc(dataBR(String(r.consultadoEm || "").slice(0, 10))) + "</b>. Termo pesquisado: «" + esc(r.termo) + "»" +
+        (r.uf ? "; UF " + esc(r.uf) : "; todas as UFs") + (r.desde || r.ate ? "; período " + esc(dataBR(r.desde)) + " a " + esc(dataBR(r.ate)) : "") + ".");
+      h += par("Critério: preço de referência pela <b>" + esc(r.metodo) + "</b> das amostras escolhidas" + (r.unidade ? " (somente na unidade " + esc(r.unidade) + ")" : "") + ". " + esc(r.regraDescarte) + " " +
+        (r.desmarcadasManual ? r.desmarcadasManual + " amostra(s) foram retiradas pelo responsável da pesquisa. " : "") + "Foram coletadas " + esc(r.coletadas) + ", utilizadas " + esc(r.usadas) + " e descartadas " + esc(r.descartadas) + ".");
+      h += fs.length ? tabela(["Órgão / local / fornecedor", "Registro", "Valor unitário", "Fonte (link)"], fs.map(function (f) {
+        var o = f.origem || {};
+        return [esc(f.fornecedor), esc((o.tipoRegistro || "") + (o.dataRegistro ? " de " + dataBR(o.dataRegistro) : "")), esc(numBR(f.valor, 2)), f.link ? esc(f.link) : "—"];
+      })) : par("As amostras escolhidas não estão mais entre as fontes do item (foram removidas depois da pesquisa).");
+      h += par("<b>Preço de referência: " + (typeof r.valorReferencia === "number" ? esc(brl(r.valorReferencia)) : "—") + "</b>" + (typeof r.minimo === "number" ? " (mínimo " + esc(brl(r.minimo)) + "; mediana " + esc(brl(r.mediana)) + "; média " + esc(brl(r.media)) + "; máximo " + esc(brl(r.maximo)) + ")" : "") + ".");
+    });
+    return n ? h : "";
+  }
+
   function mapaPrecos(p, ctx) {
     var h = cab(p, ctx, "Mapa da pesquisa de preços", "Documento INTERNO — preços e fontes; sigiloso até o julgamento quando o orçamento é sigiloso (art. 24).");
     var pq = ctx && ctx.pesquisa;
@@ -207,6 +231,8 @@
       arr(av.pendencias).forEach(function (m) { corpo += par(esc(m)); });
     });
     if (corpo) h += secao(2, "Fontes por item sem base oficial", corpo);
+    var qpp = quadroPesquisaPublica(p, linhas);
+    if (qpp) h += secao(3, "Pesquisa de preços (art. 23, Lei 14.133/2021)", qpp);
     return h + assinatura("Responsável pela pesquisa");
   }
 

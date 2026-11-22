@@ -35,7 +35,7 @@
 
   function novoEstado() {
     var h = new Date(), a = new Date(h.getFullYear() - 1, h.getMonth(), h.getDate());
-    return { params: { q: "", uf: "", desde: iso(a), ate: iso(h), limite: 50 }, regra: regraSalva(), proc: "", obj: "", consulta: null, falha: "", visao: "mapa", ocupado: false };
+    return { params: { q: "", uf: "", desde: iso(a), ate: iso(h), limite: 50 }, regra: regraSalva(), proc: "", obj: "", consulta: null, falha: "", visao: "mapa", ocupado: false, desmarcadas: {}, alvo: null };
   }
   var E = novoEstado();
 
@@ -48,7 +48,7 @@
     if (isFinite(a) && a > 0) E.regra.alto = a;
     E.regra.metodo = val("pp-metodo") || E.regra.metodo;
   }
-  function pesquisaAtual() { return E.consulta ? PP.montarPesquisa(E.consulta, E.regra) : null; }
+  function pesquisaAtual() { return E.consulta ? PP.montarPesquisa(E.consulta, E.regra, undefined, Object.keys(E.desmarcadas)) : null; }
   function render() { try { if (global.App && global.App.render) global.App.render(); } catch (e) {} }
 
   var UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
@@ -56,11 +56,15 @@
   function dataBR(i) { return PP.brDeIso(i); }
   function link(u) { return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">abrir</a>' : "—"; }
 
+  /* seleção de amostras: um botão por linha (o dispatcher só aceita data-gacao em botão/select). Quem a regra descartou não tem botão. */
+  function botaoAmostra(i, usada) {
+    return '<button type="button" class="btn sm' + (usada ? "" : " ghost") + '" data-gacao="pp-marcar" data-k="' + esc(PP.chaveFonte(i)) + '" aria-pressed="' + (usada ? "true" : "false") + '" title="' + (usada ? "Tirar esta amostra do cálculo" : "Voltar com esta amostra") + '">' + (usada ? "Usada" : "Tirada") + "</button>";
+  }
   function tabelaItens(lista, comMotivo) {
-    var h = '<div style="overflow:auto;max-height:46vh"><table class="tbl" style="font-size:12px"><thead><tr><th>Descrição</th><th>Un.</th><th class="num">Valor unit.</th><th>Data</th><th>Órgão</th><th>Local</th><th>Fornecedor</th><th>Tipo</th><th>Fonte</th>' + (comMotivo ? "<th>Motivo</th>" : "") + "</tr></thead><tbody>";
+    var h = '<div style="overflow:auto;max-height:46vh"><table class="tbl" style="font-size:12px"><thead><tr>' + (comMotivo ? "" : "<th>Amostra</th>") + '<th>Descrição</th><th>Un.</th><th class="num">Valor unit.</th><th>Data</th><th>Órgão</th><th>Local</th><th>Fornecedor</th><th>Tipo</th><th>Fonte</th>' + (comMotivo ? "<th>Motivo</th>" : "") + "</tr></thead><tbody>";
     lista.forEach(function (x) {
       var i = comMotivo ? x.item : x;
-      h += "<tr><td>" + esc(i.descricao) + "</td><td>" + esc(i.unidade) + '</td><td class="num">' + fmtN(i.valor) + "</td><td>" + dataBR(i.data) + "</td><td>" + esc(i.orgao) + "</td><td>" + esc(i.municipio ? i.municipio + "/" + i.uf : i.uf) + "</td><td>" + esc(i.fornecedor) + "</td><td>" + esc(i.tipo) + "</td><td>" + link(i.link) + "</td>" + (comMotivo ? "<td>" + esc(x.motivo) + "</td>" : "") + "</tr>";
+      h += "<tr>" + (comMotivo ? "" : "<td>" + botaoAmostra(i, true) + "</td>") + "<td>" + esc(i.descricao) + "</td><td>" + esc(i.unidade) + '</td><td class="num">' + fmtN(i.valor) + "</td><td>" + dataBR(i.data) + "</td><td>" + esc(i.orgao) + "</td><td>" + esc(i.municipio ? i.municipio + "/" + i.uf : i.uf) + "</td><td>" + esc(i.fornecedor) + "</td><td>" + esc(i.tipo) + "</td><td>" + link(i.link) + "</td>" + (comMotivo ? "<td>" + esc(x.motivo) + (x.manual ? " " + botaoAmostra(i, false) : "") + "</td>" : "") + "</tr>";
     });
     return h + "</tbody></table></div>";
   }
@@ -92,14 +96,17 @@
       '<div class="field"><label>Preço de referência pela</label><select id="pp-metodo">' + [["mediana", "Mediana"], ["media", "Média"], ["menor", "Menor valor"]].map(function (o) { return "<option value=\"" + o[0] + "\"" + (o[0] === r.metodo ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div></div>" +
       '<p class="muted" style="font-size:12px;margin:2px 0 8px">Padrão: fora de 0,5× a 2× a mediana de todos os preços coletados, em uma única passada. A mediana é a base do art. 23; ajuste a faixa se o objeto pedir.</p>' +
       '<div class="cpl-acoes"><button type="button" class="btn primary" data-gacao="pp-consultar"' + (E.ocupado ? " disabled" : "") + ">" + (E.ocupado ? "Consultando…" : "Consultar preços públicos") + "</button> " +
-      (E.consulta ? '<button type="button" class="btn" data-gacao="pp-recalcular">Aplicar a regra de novo (sem nova consulta)</button>' : "") + "</div>";
+      '<button type="button" class="btn" data-gacao="pp-atas"' + (E.ocupado ? " disabled" : "") + ' title="Consulta atas de registro de preços do banco e mostra as vigentes, com órgão gerenciador, valor e link do PNCP. Só consulta: não cria processo.">Procurar ata para aderir</button> ' +
+      (E.consulta ? '<button type="button" class="btn" data-gacao="pp-recalcular">Aplicar a regra de novo (sem nova consulta)</button>' : "") +
+      (E.ocupado ? ' <span class="muted" role="status" aria-live="polite">Consultando o banco de preços públicos… aguarde (até 25 s).</span>' : "") + "</div>";
+    if (E.alvo) corpo = '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Pesquisa do item <b>' + esc(E.alvo.item) + "</b> do processo — o termo veio da descrição do item; edite se precisar. Marque abaixo quais amostras entram e use «Usar no processo».</p>" + corpo;
     h += M.secao({ titulo: "Consulta", corpoHtml: corpo });
     if (E.falha) h += M.aviso({ tom: "alerta", titulo: "Não foi possível consultar agora.", texto: E.falha });
     if (!pesq) return h;
     var st = pesq.referencia.stats;
     h += M.kpis([
       { rotulo: "Preços coletados", valor: String(pesq.itens.length), sub: "consulta de " + dataBR(s(pesq.consultadoEm).slice(0, 10)) },
-      { rotulo: "Usados / descartados", valor: pesq.mantidos.length + " / " + pesq.descartados.length, sub: "regra " + s(pesq.regra.baixo).replace(".", ",") + "× a " + s(pesq.regra.alto).replace(".", ",") + "× a mediana" },
+      { rotulo: "Usados / descartados", valor: pesq.mantidos.length + " / " + pesq.descartados.length, sub: (pesq.desmarcadas ? pesq.desmarcadas + " tirado(s) à mão; " : "") + "regra " + s(pesq.regra.baixo).replace(".", ",") + "× a " + s(pesq.regra.alto).replace(".", ",") + "× a mediana" },
       { rotulo: "Preço de referência (" + (pesq.referencia.metodo || "") + ")", valor: pesq.referencia.valor == null ? "—" : "R$ " + fmtN(pesq.referencia.valor), sub: st.n ? "faixa R$ " + fmtN(st.minimo) + " a R$ " + fmtN(st.maximo) : "sem preços usados", tom: st.n ? "pos" : "alerta" }
     ]);
     if (pesq.estatisticaServico && pesq.estatisticaServico.mediana != null && Math.abs(pesq.estatisticaServico.mediana - (pesq.medianaBase || 0)) > 0.02) {
@@ -121,17 +128,33 @@
     return h;
   }
 
+  /* uma consulta por clique; indicador de espera na tela; falha vira recado e o resto do CPLPRO segue */
+  function consultarAgora(visao) {
+    lerForm(); gravarRegra(E.regra);
+    if (E.ocupado) return;
+    E.ocupado = true; E.falha = ""; render();
+    PP.consultar(E.params).then(function (r) {
+      E.ocupado = false;
+      if (r.ok) { r.params = { q: E.params.q, uf: E.params.uf, desde: E.params.desde, ate: E.params.ate, limite: E.params.limite }; E.consulta = r; E.falha = ""; E.visao = visao || "mapa"; E.desmarcadas = {}; }
+      else E.falha = r.motivo || r.erro || "Falha desconhecida.";
+      render();
+    }, function (e) { E.ocupado = false; E.falha = "Falha inesperada na consulta (" + (e && e.message ? e.message : e) + "). O resto do CPLPRO segue funcionando."; render(); });
+  }
+  /* leva a pesquisa para um item do processo: preenche o termo e (se pedido) já consulta */
+  function prepararItem(o) {
+    o = o || {};
+    E.params.q = s(o.q); if (o.uf != null) E.params.uf = s(o.uf).toUpperCase();
+    E.alvo = o.item ? { proc: s(o.proc), item: s(o.item), unidade: s(o.unidade) } : null;
+    if (o.objeto != null) E.obj = s(o.objeto); if (o.processo != null) E.proc = s(o.processo);
+    E.consulta = null; E.falha = ""; E.visao = "mapa"; E.desmarcadas = {};
+  }
   var acoes = {
-    "pp-consultar": function () {
-      lerForm(); gravarRegra(E.regra);
-      if (E.ocupado) return;
-      E.ocupado = true; E.falha = ""; render();
-      PP.consultar(E.params).then(function (r) {
-        E.ocupado = false;
-        if (r.ok) { r.params = { q: E.params.q, uf: E.params.uf, desde: E.params.desde, ate: E.params.ate, limite: E.params.limite }; E.consulta = r; E.falha = ""; E.visao = "mapa"; }
-        else E.falha = r.motivo || r.erro || "Falha desconhecida.";
-        render();
-      });
+    "pp-consultar": function () { consultarAgora("mapa"); },
+    "pp-atas": function () { consultarAgora("atas"); },
+    "pp-marcar": function (ds) {
+      lerForm(); var k = ds && ds.k; if (!k) return;
+      if (E.desmarcadas[k]) delete E.desmarcadas[k]; else E.desmarcadas[k] = 1;
+      render();
     },
     "pp-recalcular": function () { lerForm(); gravarRegra(E.regra); render(); },
     "pp-visao": function (ds) { lerForm(); E.visao = ds && ds.v === "atas" ? "atas" : "mapa"; render(); },
@@ -202,6 +225,6 @@
     });
   }
 
-  global.PrecosPubUI = { html: html, pesquisa: function () { lerForm(); return pesquisaAtual(); }, abrirOrcamento: abrirOrcamento, _estado: function () { return E; }, _reset: function () { E = novoEstado(); } };
+  global.PrecosPubUI = { termoDoItem: function (d) { return termoDoItem(d); }, prepararItem: prepararItem, consultarAgora: consultarAgora, alvo: function () { return E.alvo; }, html: html, pesquisa: function () { lerForm(); return pesquisaAtual(); }, abrirOrcamento: abrirOrcamento, _estado: function () { return E; }, _reset: function () { E = novoEstado(); } };
   if (typeof module !== "undefined" && module.exports) module.exports = global.PrecosPubUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

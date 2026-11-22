@@ -5,9 +5,11 @@
  *   GET https://app.certamepro.com.br/api/publico/precos?q=&uf=&desde=&ate=&limite=
  *   → { itens: [{ descricao, unidade, quantidade, valor_unitario, data, orgao, uf, municipio, fornecedor, tipo ('ata'|'contrato'), link }],
  *       estatistica: { n, minimo, mediana, media, maximo } }
- * ⚠ EM 20/11/2026 O ENDPOINT AINDA NÃO ESTAVA NO AR (respondeu 401 "entre com seu e-mail e senha"). Tudo aqui foi escrito contra o contrato,
- *   testado com fixture SINTÉTICA (tools/dados/apis/certamepro-precos.json — marcada como sintética) e tem o modo "indisponível" amigável:
- *   401/403/404/rede fora viram um recado que diz o que aconteceu e que a pesquisa manual (fontes do passo de pesquisa) continua valendo.
+ * ENDPOINT NO AR desde 21/11/2026 (rota pública, só leitura, sem login; CORS só para ra-engenharia.github.io, app.cplpro.com.br e localhost/127.0.0.1
+ *   http de qualquer porta — outra origem, p.ex. orcaprogestao.com.br, o navegador bloqueia e cai no recado "sem conexão"). Resposta real conferida em
+ *   21/11/2026: { consulta, itens[], estatistica, estatistica_por_tipo, total_encontrado, fontes, coletado_ate, aviso }. NÃO existe campo de vigência da ata.
+ *   Testado com fixture SINTÉTICA (tools/dados/apis/certamepro-precos.json — marcada como sintética) e tem o modo "indisponível" amigável:
+ *   401/403/404/429/rede fora viram um recado que diz o que aconteceu e que a pesquisa manual (fontes do passo de pesquisa) continua valendo.
  *
  * O QUE ESTE MOTOR GARANTE (cada regra existe por causa de um erro que a pesquisa de preços não pode cometer):
  *  • Todo preço mostrado leva FONTE: órgão, data, link. Item sem valor positivo não entra (e é contado, não escondido).
@@ -128,8 +130,10 @@
     _voo[url] = P.resolve().then(function () { return f(url); }).then(function (r) {
       delete _voo[url];
       if (!r) return { ok: false, indisponivel: true, motivo: "Sem resposta do serviço de preços do CertamePRO." };
-      if (r.status === 401 || r.status === 403) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO ainda não está liberado para consulta pública (exigiu login: HTTP " + r.status + "). Use as fontes do passo de pesquisa de preços enquanto isso." };
-      if (r.status === 404) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO ainda não está no ar (HTTP 404). Use as fontes do passo de pesquisa de preços enquanto isso." };
+      if (r.status === 401 || r.status === 403) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO não liberou a consulta (HTTP " + r.status + "). O resto do CPLPRO segue funcionando; use as fontes do passo de pesquisa de preços enquanto isso." };
+      if (r.status === 404) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO não respondeu neste endereço (HTTP 404). O resto do CPLPRO segue funcionando; use as fontes do passo de pesquisa de preços enquanto isso." };
+      if (r.status === 429) return { ok: false, indisponivel: true, motivo: "Muitas consultas seguidas ao serviço de preços. Espere um minuto e consulte de novo; o resto do CPLPRO segue funcionando." };
+      if (r.status === 422) return { ok: false, erro: "O serviço de preços não aceitou os filtros (UF, datas ou tipo). Confira e tente de novo." };
       if (!r.ok) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO respondeu com erro (HTTP " + r.status + "). Tente de novo mais tarde." };
       return P.resolve(r.json()).then(function (j) {
         var l = lerResposta(j);
@@ -140,7 +144,7 @@
       });
     }).then(null, function (e) {
       delete _voo[url];
-      return { ok: false, indisponivel: true, motivo: "Sem conexão com o serviço de preços (" + (e && e.message ? e.message : "falha de rede") + "). Confira a internet; a pesquisa manual segue valendo." };
+      return { ok: false, indisponivel: true, motivo: "Sem conexão com o serviço de preços (" + (e && e.message ? e.message : "falha de rede") + "). Confira a internet (ou se este endereço do aplicativo está liberado no serviço); o resto do CPLPRO segue funcionando e a pesquisa manual continua valendo." };
     });
     return _voo[url];
   }
@@ -195,10 +199,20 @@
   }
 
   /* mapa de preços da pesquisa: tudo que o relatório e a tela mostram */
-  function montarPesquisa(consulta, regra, hojeIso) {
+  /* `desmarcadas` (opcional): chaves (chaveFonte) das amostras que o responsável TIROU à mão depois da regra. Viram "descartadas" com o motivo dito e
+     o preço de referência é recalculado só com as que ficaram. A regra automática continua sendo aplicada primeiro, sobre todos os preços. */
+  function montarPesquisa(consulta, regra, hojeIso, desmarcadas) {
     regra = regra || REGRA_PADRAO;
-    var r = aplicarRegra(consulta.itens, regra), ref = precoReferencia(r.mantidos, regra.metodo || REGRA_PADRAO.metodo);
-    return { params: consulta.params || {}, url: consulta.url, consultadoEm: consulta.consultadoEm, itens: consulta.itens, mantidos: r.mantidos, descartados: r.descartados,
+    var r = aplicarRegra(consulta.itens, regra), fora = {}, manuais = 0;
+    arr(desmarcadas).forEach(function (k) { fora[k] = 1; });
+    var mant = [];
+    r.mantidos.forEach(function (i) {
+      if (fora[chaveFonte(i)]) { r.descartados.push({ item: i, motivo: "desmarcado pelo responsável pela pesquisa (não entra no cálculo)", manual: true }); manuais++; }
+      else mant.push(i);
+    });
+    r.mantidos = mant;
+    var ref = precoReferencia(r.mantidos, regra.metodo || REGRA_PADRAO.metodo);
+    return { params: consulta.params || {}, url: consulta.url, consultadoEm: consulta.consultadoEm, itens: consulta.itens, mantidos: r.mantidos, descartados: r.descartados, desmarcadas: manuais,
       regraTexto: r.texto, regra: { baixo: r.baixo, alto: r.alto, metodo: regra.metodo || REGRA_PADRAO.metodo }, medianaBase: r.medianaBase,
       referencia: ref, estatisticaServico: consulta.estatisticaServico || null, invalidos: consulta.invalidos || 0 };
   }
@@ -293,6 +307,15 @@
     });
     return { fontes: fontes, outraUnidade: outraUnidade };
   }
+  /* o que fica GRAVADO no item do processo (cfg.pesquisaPublica): critério, data da consulta e quais amostras entraram (chaves = origem.chave das fontes) */
+  function registroPesquisa(pesq, opts) {
+    opts = opts || {};
+    var st = pesq.referencia.stats, usadas = arr(opts.chaves);
+    return { termo: s(pesq.params && pesq.params.q), uf: s(pesq.params && pesq.params.uf), desde: s(pesq.params && pesq.params.desde), ate: s(pesq.params && pesq.params.ate),
+      consultadoEm: pesq.consultadoEm, url: pesq.url, metodo: pesq.referencia.metodo || (pesq.regra ? pesq.regra.metodo : ""), valorReferencia: pesq.referencia.valor,
+      regraDescarte: pesq.regraTexto, coletadas: arr(pesq.itens).length, usadas: arr(pesq.mantidos).length, descartadas: arr(pesq.descartados).length, desmarcadasManual: pesq.desmarcadas || 0,
+      minimo: st.minimo, mediana: st.mediana, media: st.media, maximo: st.maximo, unidade: s(opts.unidade), fator: typeof opts.fator === "number" ? opts.fator : 1, fontesChaves: usadas };
+  }
   function mesclarFontes(existentes, novas) {
     var tem = {}, out = arr(existentes).slice(), add = 0, repetidas = 0;
     out.forEach(function (f) { if (f && f.origem && f.origem.chave) tem[f.origem.chave] = 1; });
@@ -300,7 +323,7 @@
     return { fontes: out, adicionadas: add, repetidas: repetidas };
   }
 
-  global.PrecosPub = { fontesParaProcesso: fontesParaProcesso, mesclarFontes: mesclarFontes, chaveFonte: chaveFonte, ENDPOINT: ENDPOINT, REGRA_PADRAO: REGRA_PADRAO, TTL_MS: TTL_MS, INTERVALO_MIN_MS: INTERVALO_MIN_MS,
+  global.PrecosPub = { registroPesquisa: registroPesquisa, fontesParaProcesso: fontesParaProcesso, mesclarFontes: mesclarFontes, chaveFonte: chaveFonte, ENDPOINT: ENDPOINT, REGRA_PADRAO: REGRA_PADRAO, TTL_MS: TTL_MS, INTERVALO_MIN_MS: INTERVALO_MIN_MS,
     montarUrl: montarUrl, lerResposta: lerResposta, normalizarItem: normalizarItem, estatistica: estatistica, consultar: consultar, aplicarRegra: aplicarRegra,
     precoReferencia: precoReferencia, filtrar: filtrar, atasVigentes: atasVigentes, montarPesquisa: montarPesquisa, comparar: comparar,
     relatorioHtml: relatorioHtml, construirXlsx: construirXlsx, addMeses: addMeses, moeda: moeda, brDeIso: brDeIso, isoDe: isoDe,

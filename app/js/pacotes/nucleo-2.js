@@ -52826,6 +52826,26 @@ corpo += "<h3>" + (a === "sem" ? "Sem alocação definida" : esc(ALOC_ROTULO[a] 
 h += secao(2, "Matriz de alocação", corpo);
 return h + par("Sugestões da biblioteca da casa: texto a conferir pelo órgão antes da adoção.");
 }
+function quadroPesquisaPublica(p, linhas) {
+var itens = (p.pesquisa || {}).itens || {}, h = "", n = 0;
+arr(linhas).forEach(function (l) {
+var cfg = itens[l.item] || {}, r = cfg.pesquisaPublica; if (!r) return;
+var chaves = {}; arr(r.fontesChaves).forEach(function (k) { chaves[k] = 1; });
+var fs = arr(cfg.fontes).filter(function (f) { return f && f.origem && chaves[f.origem.chave]; });
+n++;
+h += "<h3>Item " + esc(l.item) + " — " + esc(l.descricao) + "</h3>";
+h += par("Fonte: banco de preços públicos do CertamePRO (atas de registro de preços e contratos publicados no PNCP). Consulta feita em <b>" + esc(dataBR(String(r.consultadoEm || "").slice(0, 10))) + "</b>. Termo pesquisado: «" + esc(r.termo) + "»" +
+(r.uf ? "; UF " + esc(r.uf) : "; todas as UFs") + (r.desde || r.ate ? "; período " + esc(dataBR(r.desde)) + " a " + esc(dataBR(r.ate)) : "") + ".");
+h += par("Critério: preço de referência pela <b>" + esc(r.metodo) + "</b> das amostras escolhidas" + (r.unidade ? " (somente na unidade " + esc(r.unidade) + ")" : "") + ". " + esc(r.regraDescarte) + " " +
+(r.desmarcadasManual ? r.desmarcadasManual + " amostra(s) foram retiradas pelo responsável da pesquisa. " : "") + "Foram coletadas " + esc(r.coletadas) + ", utilizadas " + esc(r.usadas) + " e descartadas " + esc(r.descartadas) + ".");
+h += fs.length ? tabela(["Órgão / local / fornecedor", "Registro", "Valor unitário", "Fonte (link)"], fs.map(function (f) {
+var o = f.origem || {};
+return [esc(f.fornecedor), esc((o.tipoRegistro || "") + (o.dataRegistro ? " de " + dataBR(o.dataRegistro) : "")), esc(numBR(f.valor, 2)), f.link ? esc(f.link) : "—"];
+})) : par("As amostras escolhidas não estão mais entre as fontes do item (foram removidas depois da pesquisa).");
+h += par("<b>Preço de referência: " + (typeof r.valorReferencia === "number" ? esc(brl(r.valorReferencia)) : "—") + "</b>" + (typeof r.minimo === "number" ? " (mínimo " + esc(brl(r.minimo)) + "; mediana " + esc(brl(r.mediana)) + "; média " + esc(brl(r.media)) + "; máximo " + esc(brl(r.maximo)) + ")" : "") + ".");
+});
+return n ? h : "";
+}
 function mapaPrecos(p, ctx) {
 var h = cab(p, ctx, "Mapa da pesquisa de preços", "Documento INTERNO — preços e fontes; sigiloso até o julgamento quando o orçamento é sigiloso (art. 24).");
 var pq = ctx && ctx.pesquisa;
@@ -52858,6 +52878,8 @@ if (av.justificativaObrigatoria) corpo += par("Menos preços do que o mínimo. J
 arr(av.pendencias).forEach(function (m) { corpo += par(esc(m)); });
 });
 if (corpo) h += secao(2, "Fontes por item sem base oficial", corpo);
+var qpp = quadroPesquisaPublica(p, linhas);
+if (qpp) h += secao(3, "Pesquisa de preços (art. 23, Lei 14.133/2021)", qpp);
 return h + assinatura("Responsável pela pesquisa");
 }
 function ehLances(p) { var c = pv(p, "criterio_julgamento"); return c === "menor preço" || c === "maior desconto"; }
@@ -55268,7 +55290,7 @@ if (n && n.getAttribute && n.getAttribute("data-cpl-retorno") === chave) return;
 r.el = desenharRetorno(alvo, r, chave);
 });
 }
-var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-aba-precos": 1, "cpl-pp-proc": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
+var NAVEGACAO = { "cpl-obra": 1, "cpl-aba-lista": 1, "cpl-aba-papeis": 1, "cpl-aba-modelos": 1, "cpl-aba-orgao": 1, "cpl-aba-precos": 1, "cpl-pp-item": 1, "cpl-pp-proc": 1, "cpl-voltar": 1, "cpl-abrir": 1, "cpl-aba": 1, "cpl-passo": 1, "cpl-ir-atual": 1, "cpl-corrigir": 1, "cpl-porque": 1, "cpl-painel": 1, "cpl-ir-usuarios": 1, "cpl-doc-previa": 1 };
 function iniciarAcao(nome, ds) {
 if (NAVEGACAO[nome]) return;
 ds = ds || {};
@@ -55448,12 +55470,13 @@ var PU = global.PrecosPubUI, pesq = PU && PU.pesquisa ? PU.pesquisa() : null;
 if (!pesq || !pesq.mantidos.length) return "";
 var procs = listaProc().filter(function (x) { return x.status !== "publicado"; });
 if (!procs.length) return M.secao({ titulo: "Usar no processo", corpoHtml: M.aviso({ tom: "info", titulo: "Não há processo em andamento.", texto: "Crie um processo para levar estes preços ao passo de pesquisa." }) });
-var alvo = procs.filter(function (x) { return x.id === G._cplId; })[0] || procs[0];
+var alvoPP = PU.alvo ? PU.alvo() : null;
+var alvo = procs.filter(function (x) { return x.id === G._cplId; })[0] || procs.filter(function (x) { return alvoPP && x.id === alvoPP.proc; })[0] || procs[0];
 var orc = orcDoProc(alvo), c = calc(orc), itens = [];
 if (c) { var pq = F.pesquisar(alvo, c.linhas, modoDoOrc(c)); c.linhas.forEach(function (l, i) { if (!pq.avaliacoes[i].comBase) itens.push(l); }); }
 var corpo = '<p class="muted" style="font-size:12.5px;margin-top:0">Leva os <b>' + pesq.mantidos.length + ' preço(s) aceitos</b> (sem os descartados) para as fontes do item escolhido, como «contratação similar». Cada fonte guarda órgão, link, data do registro, <b>data da consulta</b> e a <b>regra de descarte</b>. Clicar de novo não duplica.</p>' +
 '<div class="cpl-form"><div class="field"><label>Processo</label><select id="cpl-pp-proc" data-gacao="cpl-pp-proc">' + procs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === alvo.id ? " selected" : "") + ">" + esc(F.codigoDe(x) + " — " + String(x.objeto || "(sem objeto)").substring(0, 60)) + "</option>"; }).join("") + "</select></div>" +
-'<div class="field"><label>Item da pesquisa (sem base oficial)</label><select id="cpl-pp-item">' + itens.map(function (l) { return '<option value="' + esc(l.numero) + '">' + esc(l.numero + " — " + String(l.descricao).substring(0, 60) + " (" + l.unidade + ")") + "</option>"; }).join("") + "</select></div>" +
+'<div class="field"><label>Item da pesquisa (sem base oficial)</label><select id="cpl-pp-item">' + itens.map(function (l) { return '<option value="' + esc(l.numero) + '"' + (alvoPP && String(alvoPP.item) === String(l.numero) ? " selected" : "") + ">" + esc(l.numero + " — " + String(l.descricao).substring(0, 60) + " (" + l.unidade + ")") + "</option>"; }).join("") + "</select></div>" +
 '<div class="field"><label>Fator de atualização (índice)</label><input id="cpl-pp-fator" inputmode="decimal" style="width:100px" value="1,0000"></div></div>' +
 '<p class="muted" style="font-size:12px">O regulamento exige índice de atualização nas contratações similares. 1,0000 = sem atualização (registros recentes); para atualizar, calcule o fator em «Reajustar por índice» e informe aqui. Só entram preços na mesma unidade do item.</p>' +
 (itens.length ? '<div class="cpl-acoes">' + btn("Usar no processo", "cpl-pp-usar", "", "primary") + "</div>" : M.aviso({ tom: "alerta", titulo: "O processo não tem item sem base oficial.", texto: "Todos os itens já têm base (SINAPI/SICRO) ou o processo ainda não tem orçamento." }));
@@ -55866,6 +55889,11 @@ if (a.avisoDescarte) h += '<p class="muted">' + esc(a.avisoDescarte) + "</p>";
 arr(a.pendencias).forEach(function (m) { h += '<p class="cpl-alerta">' + esc(m) + "</p>"; });
 if (a.justificativaObrigatoria) h += campo("Justificativa (menos preços que o mínimo — aprovada pela autoridade)", '<textarea id="cpl-pj-' + esc(l.numero) + '" rows="2"' + d + ">" + esc(cfg.justificativa || "") + "</textarea> " + btn("Salvar justificativa", "cpl-f-just", ' data-item="' + esc(l.numero) + '"' + d, "sm"));
 var tipoSel = G._cplFonteTipo[l.numero] || (tipos[0] ? tipos[0][0] : "");
+if (typeof global.PrecosPubUI !== "undefined") {
+var pp0 = cfg.pesquisaPublica;
+h += '<p class="cpl-acoes">' + btn("Pesquisar preço público", "cpl-pp-item", ' data-item="' + esc(l.numero) + '" title="Consulta o banco de preços públicos do CertamePRO (atas e contratos do PNCP) para este item, com fonte e link"', "sm") +
+(pp0 ? ' <span class="muted" style="font-size:12px">Última pesquisa pública: ' + esc(dataBR(String(pp0.consultadoEm || "").slice(0, 10))) + " · " + esc(pp0.metodo || "") + " · " + esc(pp0.usadas) + " amostra(s)" + (typeof pp0.valorReferencia === "number" ? " · " + moeda(pp0.valorReferencia) : "") + "</span>" : "") + "</p>";
+}
 if (reg) {
 var oficial = tipoSel === "sistema_oficial";
 h += '<div class="cpl-novafonte"><b>Adicionar fonte</b> <select data-gacao="cpl-f-tipo" aria-label="Tipo da fonte"' + d + ">" + selOptsCtx(tipos, tipoSel, l.numero) + "</select>" +
@@ -56731,11 +56759,23 @@ var ok = gravar("orcamento", function (q) {
 q.pesquisa = q.pesquisa || { itens: {} }; q.pesquisa.itens = q.pesquisa.itens || {};
 var cfg = q.pesquisa.itens[it] = q.pesquisa.itens[it] || { fontes: [], justificativa: null };
 var m = PP.mesclarFontes(cfg.fontes, conv.fontes); resumo = m;
-if (!m.adicionadas) return null;
+var reg0 = PP.registroPesquisa(pesq, { unidade: un, fator: fator, chaves: conv.fontes.map(function (f) { return f.origem.chave; }) });
+var mudouReg = JSON.stringify(cfg.pesquisaPublica || null) !== JSON.stringify(reg0);
+if (!m.adicionadas && !mudouReg) return null;
+cfg.pesquisaPublica = reg0;
 var antes = arr(cfg.fontes).length; cfg.fontes = m.fontes;
 return { antes: "item " + it + ": " + antes + " fonte(s)", depois: "item " + it + ": " + m.fontes.length + " fonte(s) (+" + m.adicionadas + " de preços públicos, consulta " + String(pesq.consultadoEm).slice(0, 10) + ")" };
 }, "editar_pesquisa");
 if (ok) { toast(resumo.adicionadas + " fonte(s) levada(s) ao item " + it + (resumo.repetidas ? " (" + resumo.repetidas + " já estavam lá)" : "") + (conv.outraUnidade ? "; " + conv.outraUnidade + " de outra unidade ficaram de fora" : "") + ". Veja no passo de pesquisa de preços.", "ok"); App.render(); }
+},
+"cpl-pp-item": function (ds) {
+var PU = global.PrecosPubUI, p0 = procAtual(); if (!PU || !p0 || !ds || ds.item == null) return;
+var it = String(ds.item), l0 = null;
+try { calc(orcDoProc(p0)).linhas.forEach(function (l) { if (String(l.numero) === it) l0 = l; }); } catch (e) {}
+if (!l0) { toast("Não achei o item " + it + " no orçamento do processo.", "erro"); return; }
+PU.prepararItem({ q: PU.termoDoItem(l0.descricao), item: it, unidade: l0.unidade, proc: p0.id, objeto: p0.objeto || "", processo: F.codigoDe(p0) });
+G._cplId = p0.id; G._cplView = "precos"; App.render();
+PU.consultarAgora("mapa");
 },
 "cpl-aba-precos": function () { G._cplView = "precos"; App.render(); },
 "cpl-aba-lista": function () { G._cplView = "lista"; App.render(); },
@@ -57561,8 +57601,10 @@ _ultima = agora;
 _voo[url] = P.resolve().then(function () { return f(url); }).then(function (r) {
 delete _voo[url];
 if (!r) return { ok: false, indisponivel: true, motivo: "Sem resposta do serviço de preços do CertamePRO." };
-if (r.status === 401 || r.status === 403) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO ainda não está liberado para consulta pública (exigiu login: HTTP " + r.status + "). Use as fontes do passo de pesquisa de preços enquanto isso." };
-if (r.status === 404) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO ainda não está no ar (HTTP 404). Use as fontes do passo de pesquisa de preços enquanto isso." };
+if (r.status === 401 || r.status === 403) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO não liberou a consulta (HTTP " + r.status + "). O resto do CPLPRO segue funcionando; use as fontes do passo de pesquisa de preços enquanto isso." };
+if (r.status === 404) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO não respondeu neste endereço (HTTP 404). O resto do CPLPRO segue funcionando; use as fontes do passo de pesquisa de preços enquanto isso." };
+if (r.status === 429) return { ok: false, indisponivel: true, motivo: "Muitas consultas seguidas ao serviço de preços. Espere um minuto e consulte de novo; o resto do CPLPRO segue funcionando." };
+if (r.status === 422) return { ok: false, erro: "O serviço de preços não aceitou os filtros (UF, datas ou tipo). Confira e tente de novo." };
 if (!r.ok) return { ok: false, indisponivel: true, motivo: "O serviço de preços do CertamePRO respondeu com erro (HTTP " + r.status + "). Tente de novo mais tarde." };
 return P.resolve(r.json()).then(function (j) {
 var l = lerResposta(j);
@@ -57573,7 +57615,7 @@ return out;
 });
 }).then(null, function (e) {
 delete _voo[url];
-return { ok: false, indisponivel: true, motivo: "Sem conexão com o serviço de preços (" + (e && e.message ? e.message : "falha de rede") + "). Confira a internet; a pesquisa manual segue valendo." };
+return { ok: false, indisponivel: true, motivo: "Sem conexão com o serviço de preços (" + (e && e.message ? e.message : "falha de rede") + "). Confira a internet (ou se este endereço do aplicativo está liberado no serviço); o resto do CPLPRO segue funcionando e a pesquisa manual continua valendo." };
 });
 return _voo[url];
 }
@@ -57619,10 +57661,18 @@ c.vigenteAte = fim; c.vigenciaPresumida = presumida; out.push(c);
 });
 return out;
 }
-function montarPesquisa(consulta, regra, hojeIso) {
+function montarPesquisa(consulta, regra, hojeIso, desmarcadas) {
 regra = regra || REGRA_PADRAO;
-var r = aplicarRegra(consulta.itens, regra), ref = precoReferencia(r.mantidos, regra.metodo || REGRA_PADRAO.metodo);
-return { params: consulta.params || {}, url: consulta.url, consultadoEm: consulta.consultadoEm, itens: consulta.itens, mantidos: r.mantidos, descartados: r.descartados,
+var r = aplicarRegra(consulta.itens, regra), fora = {}, manuais = 0;
+arr(desmarcadas).forEach(function (k) { fora[k] = 1; });
+var mant = [];
+r.mantidos.forEach(function (i) {
+if (fora[chaveFonte(i)]) { r.descartados.push({ item: i, motivo: "desmarcado pelo responsável pela pesquisa (não entra no cálculo)", manual: true }); manuais++; }
+else mant.push(i);
+});
+r.mantidos = mant;
+var ref = precoReferencia(r.mantidos, regra.metodo || REGRA_PADRAO.metodo);
+return { params: consulta.params || {}, url: consulta.url, consultadoEm: consulta.consultadoEm, itens: consulta.itens, mantidos: r.mantidos, descartados: r.descartados, desmarcadas: manuais,
 regraTexto: r.texto, regra: { baixo: r.baixo, alto: r.alto, metodo: regra.metodo || REGRA_PADRAO.metodo }, medianaBase: r.medianaBase,
 referencia: ref, estatisticaServico: consulta.estatisticaServico || null, invalidos: consulta.invalidos || 0 };
 }
@@ -57701,13 +57751,21 @@ regraDescarte: pesq.regraTexto, metodo: pesq.regra ? pesq.regra.metodo : "", org
 });
 return { fontes: fontes, outraUnidade: outraUnidade };
 }
+function registroPesquisa(pesq, opts) {
+opts = opts || {};
+var st = pesq.referencia.stats, usadas = arr(opts.chaves);
+return { termo: s(pesq.params && pesq.params.q), uf: s(pesq.params && pesq.params.uf), desde: s(pesq.params && pesq.params.desde), ate: s(pesq.params && pesq.params.ate),
+consultadoEm: pesq.consultadoEm, url: pesq.url, metodo: pesq.referencia.metodo || (pesq.regra ? pesq.regra.metodo : ""), valorReferencia: pesq.referencia.valor,
+regraDescarte: pesq.regraTexto, coletadas: arr(pesq.itens).length, usadas: arr(pesq.mantidos).length, descartadas: arr(pesq.descartados).length, desmarcadasManual: pesq.desmarcadas || 0,
+minimo: st.minimo, mediana: st.mediana, media: st.media, maximo: st.maximo, unidade: s(opts.unidade), fator: typeof opts.fator === "number" ? opts.fator : 1, fontesChaves: usadas };
+}
 function mesclarFontes(existentes, novas) {
 var tem = {}, out = arr(existentes).slice(), add = 0, repetidas = 0;
 out.forEach(function (f) { if (f && f.origem && f.origem.chave) tem[f.origem.chave] = 1; });
 arr(novas).forEach(function (f) { if (f.origem && tem[f.origem.chave]) { repetidas++; return; } tem[f.origem.chave] = 1; out.push(f); add++; });
 return { fontes: out, adicionadas: add, repetidas: repetidas };
 }
-global.PrecosPub = { fontesParaProcesso: fontesParaProcesso, mesclarFontes: mesclarFontes, chaveFonte: chaveFonte, ENDPOINT: ENDPOINT, REGRA_PADRAO: REGRA_PADRAO, TTL_MS: TTL_MS, INTERVALO_MIN_MS: INTERVALO_MIN_MS,
+global.PrecosPub = { registroPesquisa: registroPesquisa, fontesParaProcesso: fontesParaProcesso, mesclarFontes: mesclarFontes, chaveFonte: chaveFonte, ENDPOINT: ENDPOINT, REGRA_PADRAO: REGRA_PADRAO, TTL_MS: TTL_MS, INTERVALO_MIN_MS: INTERVALO_MIN_MS,
 montarUrl: montarUrl, lerResposta: lerResposta, normalizarItem: normalizarItem, estatistica: estatistica, consultar: consultar, aplicarRegra: aplicarRegra,
 precoReferencia: precoReferencia, filtrar: filtrar, atasVigentes: atasVigentes, montarPesquisa: montarPesquisa, comparar: comparar,
 relatorioHtml: relatorioHtml, construirXlsx: construirXlsx, addMeses: addMeses, moeda: moeda, brDeIso: brDeIso, isoDe: isoDe,
@@ -57739,7 +57797,7 @@ return r;
 function gravarRegra(r) { try { global.localStorage.setItem(CHREGRA, JSON.stringify(r)); } catch (e) {} }
 function novoEstado() {
 var h = new Date(), a = new Date(h.getFullYear() - 1, h.getMonth(), h.getDate());
-return { params: { q: "", uf: "", desde: iso(a), ate: iso(h), limite: 50 }, regra: regraSalva(), proc: "", obj: "", consulta: null, falha: "", visao: "mapa", ocupado: false };
+return { params: { q: "", uf: "", desde: iso(a), ate: iso(h), limite: 50 }, regra: regraSalva(), proc: "", obj: "", consulta: null, falha: "", visao: "mapa", ocupado: false, desmarcadas: {}, alvo: null };
 }
 var E = novoEstado();
 function lerForm() {
@@ -57751,17 +57809,20 @@ if (isFinite(b) && b >= 0) E.regra.baixo = b;
 if (isFinite(a) && a > 0) E.regra.alto = a;
 E.regra.metodo = val("pp-metodo") || E.regra.metodo;
 }
-function pesquisaAtual() { return E.consulta ? PP.montarPesquisa(E.consulta, E.regra) : null; }
+function pesquisaAtual() { return E.consulta ? PP.montarPesquisa(E.consulta, E.regra, undefined, Object.keys(E.desmarcadas)) : null; }
 function render() { try { if (global.App && global.App.render) global.App.render(); } catch (e) {} }
 var UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
 function fmtN(v) { return typeof v === "number" ? v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "—"; }
 function dataBR(i) { return PP.brDeIso(i); }
 function link(u) { return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">abrir</a>' : "—"; }
+function botaoAmostra(i, usada) {
+return '<button type="button" class="btn sm' + (usada ? "" : " ghost") + '" data-gacao="pp-marcar" data-k="' + esc(PP.chaveFonte(i)) + '" aria-pressed="' + (usada ? "true" : "false") + '" title="' + (usada ? "Tirar esta amostra do cálculo" : "Voltar com esta amostra") + '">' + (usada ? "Usada" : "Tirada") + "</button>";
+}
 function tabelaItens(lista, comMotivo) {
-var h = '<div style="overflow:auto;max-height:46vh"><table class="tbl" style="font-size:12px"><thead><tr><th>Descrição</th><th>Un.</th><th class="num">Valor unit.</th><th>Data</th><th>Órgão</th><th>Local</th><th>Fornecedor</th><th>Tipo</th><th>Fonte</th>' + (comMotivo ? "<th>Motivo</th>" : "") + "</tr></thead><tbody>";
+var h = '<div style="overflow:auto;max-height:46vh"><table class="tbl" style="font-size:12px"><thead><tr>' + (comMotivo ? "" : "<th>Amostra</th>") + '<th>Descrição</th><th>Un.</th><th class="num">Valor unit.</th><th>Data</th><th>Órgão</th><th>Local</th><th>Fornecedor</th><th>Tipo</th><th>Fonte</th>' + (comMotivo ? "<th>Motivo</th>" : "") + "</tr></thead><tbody>";
 lista.forEach(function (x) {
 var i = comMotivo ? x.item : x;
-h += "<tr><td>" + esc(i.descricao) + "</td><td>" + esc(i.unidade) + '</td><td class="num">' + fmtN(i.valor) + "</td><td>" + dataBR(i.data) + "</td><td>" + esc(i.orgao) + "</td><td>" + esc(i.municipio ? i.municipio + "/" + i.uf : i.uf) + "</td><td>" + esc(i.fornecedor) + "</td><td>" + esc(i.tipo) + "</td><td>" + link(i.link) + "</td>" + (comMotivo ? "<td>" + esc(x.motivo) + "</td>" : "") + "</tr>";
+h += "<tr>" + (comMotivo ? "" : "<td>" + botaoAmostra(i, true) + "</td>") + "<td>" + esc(i.descricao) + "</td><td>" + esc(i.unidade) + '</td><td class="num">' + fmtN(i.valor) + "</td><td>" + dataBR(i.data) + "</td><td>" + esc(i.orgao) + "</td><td>" + esc(i.municipio ? i.municipio + "/" + i.uf : i.uf) + "</td><td>" + esc(i.fornecedor) + "</td><td>" + esc(i.tipo) + "</td><td>" + link(i.link) + "</td>" + (comMotivo ? "<td>" + esc(x.motivo) + (x.manual ? " " + botaoAmostra(i, false) : "") + "</td>" : "") + "</tr>";
 });
 return h + "</tbody></table></div>";
 }
@@ -57791,14 +57852,17 @@ var corpo = '<div class="cpl-form" id="pp-form">' +
 '<div class="field"><label>Preço de referência pela</label><select id="pp-metodo">' + [["mediana", "Mediana"], ["media", "Média"], ["menor", "Menor valor"]].map(function (o) { return "<option value=\"" + o[0] + "\"" + (o[0] === r.metodo ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></div></div>" +
 '<p class="muted" style="font-size:12px;margin:2px 0 8px">Padrão: fora de 0,5× a 2× a mediana de todos os preços coletados, em uma única passada. A mediana é a base do art. 23; ajuste a faixa se o objeto pedir.</p>' +
 '<div class="cpl-acoes"><button type="button" class="btn primary" data-gacao="pp-consultar"' + (E.ocupado ? " disabled" : "") + ">" + (E.ocupado ? "Consultando…" : "Consultar preços públicos") + "</button> " +
-(E.consulta ? '<button type="button" class="btn" data-gacao="pp-recalcular">Aplicar a regra de novo (sem nova consulta)</button>' : "") + "</div>";
+'<button type="button" class="btn" data-gacao="pp-atas"' + (E.ocupado ? " disabled" : "") + ' title="Consulta atas de registro de preços do banco e mostra as vigentes, com órgão gerenciador, valor e link do PNCP. Só consulta: não cria processo.">Procurar ata para aderir</button> ' +
+(E.consulta ? '<button type="button" class="btn" data-gacao="pp-recalcular">Aplicar a regra de novo (sem nova consulta)</button>' : "") +
+(E.ocupado ? ' <span class="muted" role="status" aria-live="polite">Consultando o banco de preços públicos… aguarde (até 25 s).</span>' : "") + "</div>";
+if (E.alvo) corpo = '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Pesquisa do item <b>' + esc(E.alvo.item) + "</b> do processo — o termo veio da descrição do item; edite se precisar. Marque abaixo quais amostras entram e use «Usar no processo».</p>" + corpo;
 h += M.secao({ titulo: "Consulta", corpoHtml: corpo });
 if (E.falha) h += M.aviso({ tom: "alerta", titulo: "Não foi possível consultar agora.", texto: E.falha });
 if (!pesq) return h;
 var st = pesq.referencia.stats;
 h += M.kpis([
 { rotulo: "Preços coletados", valor: String(pesq.itens.length), sub: "consulta de " + dataBR(s(pesq.consultadoEm).slice(0, 10)) },
-{ rotulo: "Usados / descartados", valor: pesq.mantidos.length + " / " + pesq.descartados.length, sub: "regra " + s(pesq.regra.baixo).replace(".", ",") + "× a " + s(pesq.regra.alto).replace(".", ",") + "× a mediana" },
+{ rotulo: "Usados / descartados", valor: pesq.mantidos.length + " / " + pesq.descartados.length, sub: (pesq.desmarcadas ? pesq.desmarcadas + " tirado(s) à mão; " : "") + "regra " + s(pesq.regra.baixo).replace(".", ",") + "× a " + s(pesq.regra.alto).replace(".", ",") + "× a mediana" },
 { rotulo: "Preço de referência (" + (pesq.referencia.metodo || "") + ")", valor: pesq.referencia.valor == null ? "—" : "R$ " + fmtN(pesq.referencia.valor), sub: st.n ? "faixa R$ " + fmtN(st.minimo) + " a R$ " + fmtN(st.maximo) : "sem preços usados", tom: st.n ? "pos" : "alerta" }
 ]);
 if (pesq.estatisticaServico && pesq.estatisticaServico.mediana != null && Math.abs(pesq.estatisticaServico.mediana - (pesq.medianaBase || 0)) > 0.02) {
@@ -57819,17 +57883,31 @@ h += '<div class="cpl-acoes" style="margin-top:10px"><button type="button" class
 h += '<p class="muted" style="font-size:12px">Fonte: serviço público do CertamePRO — <a href="' + esc(pesq.url) + '" target="_blank" rel="noopener">' + esc(pesq.url) + "</a>. Consultado em " + dataBR(s(pesq.consultadoEm).slice(0, 10)) + (E.consulta.deCache ? " (guardado neste computador por até 1 h)" : "") + ".</p>";
 return h;
 }
-var acoes = {
-"pp-consultar": function () {
+function consultarAgora(visao) {
 lerForm(); gravarRegra(E.regra);
 if (E.ocupado) return;
 E.ocupado = true; E.falha = ""; render();
 PP.consultar(E.params).then(function (r) {
 E.ocupado = false;
-if (r.ok) { r.params = { q: E.params.q, uf: E.params.uf, desde: E.params.desde, ate: E.params.ate, limite: E.params.limite }; E.consulta = r; E.falha = ""; E.visao = "mapa"; }
+if (r.ok) { r.params = { q: E.params.q, uf: E.params.uf, desde: E.params.desde, ate: E.params.ate, limite: E.params.limite }; E.consulta = r; E.falha = ""; E.visao = visao || "mapa"; E.desmarcadas = {}; }
 else E.falha = r.motivo || r.erro || "Falha desconhecida.";
 render();
-});
+}, function (e) { E.ocupado = false; E.falha = "Falha inesperada na consulta (" + (e && e.message ? e.message : e) + "). O resto do CPLPRO segue funcionando."; render(); });
+}
+function prepararItem(o) {
+o = o || {};
+E.params.q = s(o.q); if (o.uf != null) E.params.uf = s(o.uf).toUpperCase();
+E.alvo = o.item ? { proc: s(o.proc), item: s(o.item), unidade: s(o.unidade) } : null;
+if (o.objeto != null) E.obj = s(o.objeto); if (o.processo != null) E.proc = s(o.processo);
+E.consulta = null; E.falha = ""; E.visao = "mapa"; E.desmarcadas = {};
+}
+var acoes = {
+"pp-consultar": function () { consultarAgora("mapa"); },
+"pp-atas": function () { consultarAgora("atas"); },
+"pp-marcar": function (ds) {
+lerForm(); var k = ds && ds.k; if (!k) return;
+if (E.desmarcadas[k]) delete E.desmarcadas[k]; else E.desmarcadas[k] = 1;
+render();
 },
 "pp-recalcular": function () { lerForm(); gravarRegra(E.regra); render(); },
 "pp-visao": function (ds) { lerForm(); E.visao = ds && ds.v === "atas" ? "atas" : "mapa"; render(); },
@@ -57896,7 +57974,7 @@ cel.innerHTML = '<span style="color:' + (c.alerta ? "#b91c1c" : "#166534") + '">
 });
 });
 }
-global.PrecosPubUI = { html: html, pesquisa: function () { lerForm(); return pesquisaAtual(); }, abrirOrcamento: abrirOrcamento, _estado: function () { return E; }, _reset: function () { E = novoEstado(); } };
+global.PrecosPubUI = { termoDoItem: function (d) { return termoDoItem(d); }, prepararItem: prepararItem, consultarAgora: consultarAgora, alvo: function () { return E.alvo; }, html: html, pesquisa: function () { lerForm(); return pesquisaAtual(); }, abrirOrcamento: abrirOrcamento, _estado: function () { return E; }, _reset: function () { E = novoEstado(); } };
 if (typeof module !== "undefined" && module.exports) module.exports = global.PrecosPubUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
