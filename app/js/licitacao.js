@@ -265,6 +265,114 @@
     return false;
   }
 
+  /* ---------------- READEQUAR AO LANCE: a conta (ver Licitacao.readequarAoLance) ----------------
+     Tudo em CENTAVOS INTEIROS para somar e comparar: float acumulado erra o centavo que decide se a proposta passa do lance. */
+  var LANCE_MAX_AJUSTE = 99;      /* centavos: nenhum item muda mais que isto em relação ao que o fator puro daria */
+  var LANCE_MAX_PASSOS = 20000;
+  function _lcCt(x) { return Math.round(Number(x) * 100); }
+  function _lcDc(n) { return Math.round(n) / 100; }
+  /* O que o MOTOR do orçamento (Orcamento.calcular) faz com um custo unitário `c` e a quantidade `q`: preço usado e total do item.
+     É a mesma conta de calcular(), linha a linha — a conferência final compara com o próprio calcular(). */
+  function _lcEstado(ctx, q, c) {
+    var a = ctx.a, cu = a.unitario(c, ctx.modo), pu = a.unitario(c * ctx.f, ctx.modo);
+    var usado = ctx.exato ? cu * ctx.f : pu;
+    return { c: c, pu: usado, total: a.valor(q * usado, ctx.modo) };
+  }
+  /* Custo unitário (até 4 casas) cujo preço com BDI, no modo do orçamento, é EXATAMENTE `T`. Só fora do arred2puexato. */
+  function _lcCustoParaPU(ctx, T) {
+    if (!(T > 0)) return null;
+    var c0 = Math.round((T + (ctx.trunca ? 0.005 : 0)) / ctx.f * 1e4) / 1e4, k, s, c;
+    for (k = 0; k <= 400; k++) {
+      for (s = 0; s < 2; s++) {
+        c = Math.round((c0 + (s ? -k : k) * 1e-4) * 1e4) / 1e4;
+        if (c > 0 && _lcCt(ctx.a.unitario(c * ctx.f, ctx.modo)) === _lcCt(T)) return c;
+      }
+    }
+    return null;
+  }
+  function _lcAplicarFator(ctx, b, fator) {
+    var st, c;
+    if (!ctx.exato) {
+      var T = _lcDc(_lcCt(ctx.a.unitario(b.pu0 * fator, ctx.modo)));
+      if (!(T > 0)) T = 0.01;     /* preço unitário zero não é proposta */
+      c = _lcCustoParaPU(ctx, T);
+      if (c === null) return null;
+      st = _lcEstado(ctx, b.q, c);
+    } else {
+      var puro = b.pu0 * fator, alvoT = _lcCt(ctx.a.valor(b.q * puro, ctx.modo)), c0 = Math.round(puro / ctx.f * 100) / 100, melhor = null, k, cc, ss, dd;
+      for (k = -2; k <= 2; k++) {
+        cc = Math.round((c0 + k * 0.01) * 100) / 100;
+        if (!(cc > 0)) continue;
+        ss = _lcEstado(ctx, b.q, cc); dd = Math.abs(_lcCt(ss.total) - alvoT);
+        if (!melhor || dd < melhor.d) melhor = { s: ss, d: dd };
+      }
+      if (!melhor) return null;
+      st = melhor.s;
+    }
+    return { etapaId: b.etapaId, itemId: b.itemId, numero: b.numero, q: b.q, opcional: b.opcional, ref: b.ref, custo: b.custo, pu0: b.pu0, total0: b.total0,
+      c: st.c, pu: st.pu, total: st.total, totalFator: st.total, mexeu: 0 };
+  }
+  function _lcSoma(linhas) {
+    var t = 0, i;
+    for (i = 0; i < linhas.length; i++) if (!linhas[i].opcional) t += _lcCt(linhas[i].total);
+    return t;
+  }
+  /* Menor mudança de preço que MOVE o total do item na direção `dir` (+1/-1): { c, pu, total, d (centavos) } ou null. */
+  function _lcPasso(ctx, l, dir) {
+    var k, c, pu, st, d;
+    for (k = 1; k <= 5; k++) {
+      if (ctx.exato) c = _lcDc(_lcCt(l.c) + dir * k);
+      else {
+        pu = _lcDc(_lcCt(l.pu) + dir * k);
+        if (!(pu > 0)) return null;
+        c = _lcCustoParaPU(ctx, pu);
+        if (c === null) return null;
+      }
+      if (!(c > 0)) return null;
+      st = _lcEstado(ctx, l.q, c);
+      d = _lcCt(st.total) - _lcCt(l.total);
+      if (d * dir > 0) return { c: c, pu: st.pu, total: st.total, d: d };
+    }
+    return null;
+  }
+  function _lcPermitido(l, mv, dir) {
+    if (Math.abs(_lcCt(mv.total) - _lcCt(l.totalFator)) > LANCE_MAX_AJUSTE) return false;
+    if (dir > 0 && l.ref !== null && mv.pu > l.ref + 0.005) return false;                                            /* nunca acima do preço do órgão */
+    if (dir < 0 && l.custo !== null && mv.pu < l.custo - 0.005 && l.pu >= l.custo - 0.005) return false;           /* o acerto de centavos não leva item abaixo do custo */
+    return true;
+  }
+  /* Acerta os centavos (regra no topo de readequarAoLance). Devolve os passos dados. Muda `linhas`. */
+  function _lcAcertar(ctx, linhas, alvo) {
+    var cache = {}, passos = [], el = [], n, i;
+    function mv(i, d) {
+      var k = i + "|" + d;
+      if (!(k in cache)) { var m0 = _lcPasso(ctx, linhas[i], d); cache[k] = (m0 && _lcPermitido(linhas[i], m0, d)) ? m0 : null; }
+      return cache[k];
+    }
+    function maior(b, c) { return (c.d > b.d || (c.d === b.d && (c.t > b.t || (c.t === b.t && c.i < b.i)))) ? c : b; }
+    function menor(b, c) { return (c.d < b.d || (c.d === b.d && (c.t > b.t || (c.t === b.t && c.i < b.i)))) ? c : b; }
+    for (i = 0; i < linhas.length; i++) if (!linhas[i].opcional) el.push(i);
+    for (n = 0; n < LANCE_MAX_PASSOS; n++) {
+      var r = alvo - _lcSoma(linhas), cands = [], pick = null, j, m;
+      if (r === 0) break;
+      if (r > 0) {
+        for (j = 0; j < el.length; j++) { m = mv(el[j], 1); if (m && m.d <= r) cands.push({ d: m.d, t: _lcCt(linhas[el[j]].total), i: el[j], m: m }); }
+        if (!cands.length) break;
+        pick = cands.reduce(maior);
+      } else {
+        for (j = 0; j < el.length; j++) { m = mv(el[j], -1); if (m) cands.push({ d: -m.d, t: _lcCt(linhas[el[j]].total), i: el[j], m: m }); }
+        if (!cands.length) break;
+        var bastam = cands.filter(function (c) { return c.d >= -r; });
+        pick = bastam.length ? bastam.reduce(menor) : cands.reduce(maior);
+      }
+      var l = linhas[pick.i];
+      l.c = pick.m.c; l.pu = pick.m.pu; l.total = pick.m.total; l.mexeu++;
+      passos.push({ numero: l.numero, centavos: pick.m.d });
+      delete cache[pick.i + "|1"]; delete cache[pick.i + "|-1"];
+    }
+    return passos;
+  }
+
   var Licitacao = {
     LIM_INEXEQUIVEL: LIM_INEXEQUIVEL,
     LIM_GARANTIA: LIM_GARANTIA,
@@ -501,6 +609,8 @@
       lic.dataBase = s(bloco.data_base);
       lic.precosIncluemBdi = bloco.precos_incluem_bdi === true;
       lic.devolverPara = s(bloco.devolver_para);
+      /* campo PROPOSTO ao CertamePRO (docs/LANCE-READEQUADO.md): o último lance do certame. Ausente no pacote de hoje; quando vier, a tela de readequar já abre com ele. */
+      if (bloco.ultimo_lance != null && num(bloco.ultimo_lance) > 0) lic.ultimoLance = num(bloco.ultimo_lance);
       /* link para voltar à tela do certame depois de devolver (só http/https;
          qualquer outro esquema, como javascript:, é descartado) */
       lic.urlCertame = /^https?:\/\//i.test(s(bloco.url_certame)) ? s(bloco.url_certame) : "";
@@ -1363,6 +1473,126 @@
       return { ok: true, pct: d, incidencia: cat, fator: fator, efetivo: base > 0 ? (1 - depois / base) * 100 : 0, itens: alvos.length, semComposicao: semComp, semReferencia: semRef,
         auxDescontadas: Object.keys(nAux).length, auxSemComposicao: auxSem, auxDivergentes: auxDiv, auxCiclo: auxCiclo, baseRecusada: ctx.baseRecusada || "",
         totalAntes: antesTotal, totalDepois: depois };
+    },
+
+    /* ------------------------------------------------------------------
+     * 4a) READEQUAR AO LANCE
+     * Depois da disputa a proposta tem de ser entregue AJUSTADA ao último lance, com planilha, cronograma, BDI e encargos
+     * (motivo nº 1 de desclassificação numa ata real). É o porte, número por número, da regra do CertamePRO
+     * (Licitacoes/app/modulos/readequada.py, Disputa 2 item 1, 22/11/2026), para a PROPOSTA COMPLETA sair no valor do lance:
+     *   1. fator = lance / total da proposta atual. Todo preço unitário COM BDI de todos os itens é multiplicado pelo MESMO fator e
+     *      arredondado pelo modo de arredondamento do orçamento (BDI e encargos ficam como estão).
+     *   2. o arredondamento deixa o total um pouco acima ou abaixo do lance. Os centavos que faltam (ou sobram) são acertados item a item,
+     *      em passos de R$ 0,01 no preço unitário (no modo arred2puexato, no custo do item, que é o que o motor aceita): primeiro desce
+     *      o que passou do lance, depois sobe, sempre no passo que mais se aproxima do lance sem passá-lo (de preferência no item de
+     *      maior valor). Nenhum item sobe acima do preço do órgão, nenhum desce abaixo do custo e nenhum muda R$ 0,99 ou mais em relação
+     *      ao que o fator puro daria.
+     *   3. resultado: total <= lance, soma dos itens = total, diferença para o lance a menor possível (o que não fechar vai em aviso).
+     * Não mexe no orçamento recebido: devolve uma CÓPIA com o custo (e a composição, pelo mesmo caminho do desconto linear) já no preço
+     * readequado. Quem grava a cópia é a tela. Só vale com o BDI no preço unitário (com BDI no total não há preço unitário por item).
+     * ⚠ O motor guarda o PREÇO com BDI como função do CUSTO unitário. Fora do modo arred2puexato o custo vai com até 4 casas, e então
+     *   qualquer centavo de preço é alcançável (é como o CertamePRO trabalha). No arred2puexato o motor arredonda o custo a 2 casas ANTES
+     *   de multiplicar pelo BDI, então o item só anda em degraus de q x 0,01 x (1+BDI): item de quantidade grande não fecha centavo e
+     *   fica onde o degrau mais próximo do fator puro o deixa; os centavos são acertados nos itens de quantidade pequena.
+     * ------------------------------------------------------------------ */
+    readequarAoLance: function (orc, lance, opts) {
+      opts = opts || {};
+      var self = this, Orc = O(), a = A();
+      var erro = function (m) { return { ok: false, erro: m }; };
+      if (!orc || !Orc || !a) return erro("O orçamento não foi carregado.");
+      if (!this.ativo(orc)) return erro("Este orçamento não está em modo licitação.");
+      var cfg = Orc.garantirConfig(orc), modo = a.normalizar(cfg.arredondamento), exato = modo === "arred2puexato";
+      if (modo === "nenhum") return erro("O modo \"Não arredondar\" não fecha centavo no lance. Escolha um modo de arredondamento no orçamento antes de readequar.");
+      if (cfg.bdiIncidencia === "final") return erro("Este orçamento aplica o BDI no preço final, não em cada preço unitário: a readequação por item não vale nele.");
+      var lanceN = Math.round(num(lance) * 100) / 100;
+      if (!(lanceN > 0)) return erro("Informe o valor do último lance (maior que zero).");
+      var pct = orc.bdi ? num(orc.bdi.percentual) : 0, f = 1 + pct / 100;
+      var ctx = { a: a, modo: modo, exato: exato, f: f, trunca: (modo === "truncar2" || modo === "arred2truncpu") };
+
+      /* a base: uma linha por item com quantidade e preço; os demais ficam como estão */
+      var calc = Orc.calcular(orc), base = [], semBase = 0;
+      (calc.linhas || []).forEach(function (L) {
+        var it = L.item;
+        if (!it || it.qtdPendente || !(num(it.quantidade) > 0) || !(num(L.precoUnit) > 0)) { semBase++; return; }
+        var ref = self.refDoItem(orc, it);
+        var s0 = _lcEstado(ctx, L.quantidade, num(it.custoUnitario));
+        base.push({ etapaId: L.etapaId, itemId: L.itemId, numero: L.numero, q: L.quantidade, opcional: !!L.opcional,
+          ref: ref && ref.comBdi > 0 ? ref.comBdi : null, custo: a.unitario(num(it.custoUnitario), modo), c0: num(it.custoUnitario),
+          pu0: s0.pu, total0: s0.total });
+      });
+      if (!base.some(function (b) { return !b.opcional; })) return erro("O orçamento não tem item com quantidade e preço para readequar.");
+      var atual = _lcDc(base.reduce(function (t, b) { return b.opcional ? t : t + _lcCt(b.total0); }, 0));
+      var totalEngine = this.totalProposta(orc);
+      if (Math.abs(atual - totalEngine) > 0.015)
+        return erro("A soma dos itens (" + fmt(atual) + ") não fecha com o total do orçamento (" + fmt(totalEngine) + "): confira o orçamento antes de readequar.");
+      if (lanceN > atual + 0.005)
+        return erro("O lance (" + fmt(lanceN) + ") é maior que a proposta atual (" + fmt(atual) + "): a readequação só reduz os preços. Confira o valor do lance.");
+      var alvo = _lcCt(lanceN), fator = lanceN / atual, linhas = [], passos = [], tentativa, soma;
+      for (tentativa = 0; tentativa < 30; tentativa++) {
+        linhas = [];
+        for (var i = 0; i < base.length; i++) {
+          var l = _lcAplicarFator(ctx, base[i], fator);
+          if (!l) return erro("Não foi possível calcular o preço do item " + base[i].numero + " no lance informado.");
+          linhas.push(l);
+        }
+        passos = _lcAcertar(ctx, linhas, alvo);
+        soma = _lcSoma(linhas);
+        if (soma <= alvo) break;
+        fator = fator * (alvo / soma) * (1 - 2e-7);   /* ainda passou do lance (item travado): baixa um pouco o fator e refaz */
+      }
+      var totalNovo = _lcDc(_lcSoma(linhas));
+      if (totalNovo > lanceN + 0.005) return erro("Não foi possível fechar a proposta no lance: o total ficaria em " + fmt(totalNovo) + ". Confira o orçamento.");
+
+      /* a CÓPIA: o original não muda */
+      var copia = Orc.copiarDe(orc, { numero: opts.numero || ((orc.numero || "ORC") + "-LANCE"), nome: opts.nome || ((orc.nome || "Orçamento") + " (readequada ao lance)"),
+        manterCliente: true, manterObra: true });
+      var idx = {};
+      (copia.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { idx[it.id] = it; }); });
+      var plano = [], faltou = null;
+      linhas.forEach(function (l) {
+        var itc = idx[l.itemId];
+        if (!itc) { faltou = l.numero; return; }
+        plano.push({ etapaId: l.etapaId, itemId: l.itemId, numero: l.numero, custo: l.c, item: itc });
+      });
+      if (faltou) return erro("Não achei o item " + faltou + " na cópia do orçamento.");
+      var moCoef = this._moCoefOpt(copia, opts), regMO = this._escalarPlano(copia, plano, moCoef);
+      var lic = this.cfg(copia);
+      /* o desfazer do desconto da origem restauraria custos de um retrato que já não vale nesta cópia */
+      delete lic.descontoLinear; delete lic.descontoItens;
+      lic.devolverPara = "";      /* a cópia NUNCA volta sozinha ao certame: o orçamento de lá é o original */
+      lic.ultimoLance = lanceN;
+      lic.readequadaAoLance = { lance: lanceN, fator: fator, totalAnterior: atual, totalNovo: totalNovo, origemId: orc.id || "", origemNumero: orc.numero || "",
+        em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString() };
+
+      /* CONFERÊNCIA: o que o motor calcula na cópia tem de ser exatamente o que a regra decidiu, item a item e no total */
+      var calcC = Orc.calcular(copia), porId = {};
+      (calcC.linhas || []).forEach(function (L) { porId[L.itemId] = L; });
+      var diverge = null;
+      linhas.forEach(function (l) {
+        var L = porId[l.itemId];
+        if (!L || _lcCt(L.precoTotal) !== _lcCt(l.total) || (!exato && _lcCt(L.precoUnit) !== _lcCt(l.pu))) { if (!diverge) diverge = l.numero; }
+      });
+      if (diverge) return erro("O motor do orçamento calculou o item " + diverge + " diferente da regra da readequação. Nada foi gerado; avise o suporte.");
+      var totalCopia = this.totalProposta(copia);
+      if (Math.abs(totalCopia - totalNovo) > 0.005) return erro("O total da cópia (" + fmt(totalCopia) + ") não fechou com o da regra (" + fmt(totalNovo) + "). Nada foi gerado.");
+
+      var itensSaida = [], acima = [], abaixo = [];
+      linhas.forEach(function (l) {
+        itensSaida.push({ numero: l.numero, quantidade: l.q, opcional: l.opcional, precoAtual: l.pu0, precoNovo: l.pu, totalAtual: l.total0, totalNovo: l.total,
+          totalPeloFator: l.totalFator, ajustado: l.mexeu > 0, ajuste: _lcDc(_lcCt(l.total) - _lcCt(l.totalFator)) });
+        var puRef = exato ? Math.round(l.pu * 100) / 100 : l.pu;
+        if (l.ref != null && puRef > l.ref + 0.005) acima.push(l.numero);
+        if (l.custo != null && l.pu < l.custo - 0.005) abaixo.push(l.numero);
+      });
+      var diferenca = Math.round((lanceN - totalNovo) * 100) / 100, avisos = [], nums = {};
+      passos.forEach(function (p) { nums[p.numero] = 1; });
+      if (abaixo.length) avisos.push(abaixo.length + " item(ns) ficaram com preço unitário abaixo do custo (itens " + abaixo.slice(0, 20).join(", ") + "): confira se a empresa aceita vender abaixo do custo.");
+      if (acima.length) avisos.push(acima.length + " item(ns) ficaram acima do preço do órgão (itens " + acima.slice(0, 20).join(", ") + "): o órgão pode desclassificar preço unitário acima do orçado.");
+      if (diferenca >= 0.01) avisos.push("O total ficou " + fmt(diferenca) + " abaixo do lance (" + fmt(lanceN) + "): não há como fechar esses centavos sem passar do preço do órgão ou do custo de algum item" + (exato ? ", ou sem mexer em item de quantidade grande (neste modo o item anda em degraus maiores que um centavo)" : "") + ".");
+      return { ok: true, copia: copia, relatorio: { modo: modo, lance: lanceN, totalAtual: atual, fator: fator, descontoPct: Math.round((1 - fator) * 1e8) / 1e6,
+        totalNovo: totalNovo, diferencaParaOLance: diferenca, itens: itensSaida, passos: passos, ajustados: Object.keys(nums).sort(), acimaDaReferencia: acima,
+        abaixoDoCusto: abaixo, avisos: avisos, itensSemPreco: semBase, moCoeficiente: moCoef, moCoef: regMO,
+        somaConfere: _lcDc(itensSaida.reduce(function (t, x) { return x.opcional ? t : t + _lcCt(x.totalNovo); }, 0)) === totalNovo } };
     },
 
     /* ------------------------------------------------------------------

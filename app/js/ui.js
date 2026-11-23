@@ -4179,6 +4179,7 @@
         if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
         acoes += bt("lic-desconto-itens", "Desconto por item…", "Um percentual por item (e um padrão) sobre os preços de referência do órgão");
         if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
+        acoes += bt("lic-readequar", "Readequar ao lance…", "Cria uma cópia do orçamento no preço do último lance (mesmo fator em todos os itens, centavos acertados item a item) e gera a proposta completa nela. O orçamento do certame não muda.");
         if (typeof LicitacaoDocs !== "undefined") acoes += bt("lic-pacote", "Gerar pacote da proposta", "Carta, resumo, planilha, analítico, composições, curva ABC, cronograma, BDI e encargos no timbrado da empresa (PDF). Confere antes se falta algum dado.");
         acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
         if (typeof LicitacaoAuto !== "undefined") acoes += bt("lic-orcar-auto", "Orçar sozinho", "Aplica o preset, refaz o preço pelas bases que o edital exige, calcula o BDI e devolve ao CertamePRO, sem clique. Pede confirmação.");

@@ -71353,6 +71353,7 @@ case "margem-abrir": if (typeof MargemUI !== "undefined") MargemUI.abrir(this); 
 case "fechar-desfazer": this.fecharDesfazer(); break;
 case "lic-desconto": this.licitacaoDesconto(); break;
 case "lic-pacote": this.licitacaoPacote(); break;
+case "lic-readequar": this.licitacaoReadequar(); break;
 case "orc-ref": if (typeof OrcRefUI !== "undefined") OrcRefUI.abrir(this.orcAtual); break;
 case "orc-precospub": if (typeof PrecosPubUI !== "undefined") PrecosPubUI.abrirOrcamento(this); break;
 case "orc-reajuste": if (typeof ReajusteUI !== "undefined") ReajusteUI.abrirOrcamento(this); break;
@@ -77835,6 +77836,80 @@ if (incSel) incSel.addEventListener("change", function () { moVis(); prev(); });
 if (moChkEl) moChkEl.addEventListener("change", prev);
 basePronta.then(function () { if (UI.el("lic-desc-prev")) prev(); });
 try { inp.focus(); } catch (e) {}
+}
+},
+licitacaoReadequar: function () {
+var self = this, orc = this.orcAtual;
+if (!orc || typeof Licitacao === "undefined") return;
+if (this._trialBloqueado()) { this._avisoTrial(); return; }
+var lic = Licitacao.cfg(orc) || {}, total = Licitacao.totalProposta(orc);
+var numeroNovo = function () {
+var usados = {}, base = String(orc.numero || "ORC").replace(/-L\d+$/, ""), k = 1;
+try { Store.listarOrcamentos(Auth.empresaId()).forEach(function (o) { usados[String(o.numero || "")] = true; }); } catch (eN) {}
+while (usados[base + "-L" + k]) k++;
+return base + "-L" + k;
+};
+var ult = null;
+var conta = function (lance) {
+if (ult && ult.lance === lance) return ult.r;
+var r = Licitacao.readequarAoLance(orc, lance, { numero: numeroNovo() });
+ult = { lance: lance, r: r };
+return r;
+};
+var pre = Util.num(lic.ultimoLance) > 0 ? Util.fmtNum(lic.ultimoLance, 2) : "";
+UI.modal("Readequar ao lance",
+'<p style="font-size:13px;margin-top:0">A proposta atual é de <b>' + Util.esc(Util.fmtMoeda(total)) + '</b>. Informe o <b>último lance</b>: o sistema cria uma <b>cópia</b> do orçamento com todos os preços ' +
+'unitários (com BDI) multiplicados pelo mesmo fator (lance ÷ total) e os centavos acertados item a item, sem passar do preço do órgão nem do lance. BDI e encargos ficam iguais. ' +
+'O orçamento do certame <b>não muda</b> e a cópia <b>não é devolvida</b> ao CertamePRO sozinha.</p>' +
+'<div class="field"><label>Último lance (R$)</label><input id="lic-lance" type="text" inputmode="decimal" placeholder="Ex.: 850.000,00" value="' + Util.esc(pre) + '"></div>' +
+'<div id="lic-lance-prev" class="muted" style="font-size:13px;min-height:54px">Informe o valor do lance para ver o resultado.</div>',
+[
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Gerar a cópia e a proposta", classe: "primary", onClick: function () {
+var lance = Math.round(Util.num((UI.el("lic-lance") || {}).value) * 100) / 100;
+var r = conta(lance);
+if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+var copia = r.copia, rel = r.relatorio, eid = Auth.empresaId();
+try {
+var lim = Auth.limite("limiteOrcamentos"), qtd = Store.listarOrcamentos(eid).length;
+if (lim && qtd >= lim) { UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — a readequação é um orçamento novo.", "erro"); return; }
+} catch (eL) {}
+if (!Store.salvarOrcamento(eid, copia)) { UI.toast("Não consegui gravar a cópia readequada (armazenamento cheio ou outra janela gravou por cima). Nada foi alterado.", "erro"); return; }
+UI.fecharModal();
+self._avisouTravado = null;
+self.abrirOrcamento(copia.id);
+var av = rel.avisos.length ? "<ul style=\"font-size:13px\">" + rel.avisos.map(function (t) { return "<li>" + Util.esc(t) + "</li>"; }).join("") + "</ul>" : "";
+UI.modal("Cópia readequada criada",
+'<p style="font-size:13px;margin-top:0">O orçamento <b>' + Util.esc(copia.numero) + '</b> está aberto, com a proposta em <b>' + Util.esc(Util.fmtMoeda(rel.totalNovo)) + '</b> (lance de ' +
+Util.esc(Util.fmtMoeda(rel.lance)) + '). O original continua em <b>' + Util.esc(String(orc.numero || "")) + '</b>.</p>' + av +
+'<p class="muted" style="font-size:12.5px">Falta só gerar a proposta completa (carta com o valor por extenso, planilha, resumo, cronograma com os mesmos percentuais, BDI e encargos). ' +
+'Para o CertamePRO, entregue o PDF dela na aba da proposta do certame: esta cópia não é devolvida automaticamente.</p>',
+[
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Gerar a proposta completa", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } }
+]);
+} }
+]);
+var inp = UI.el("lic-lance"), timer = null;
+var prev = function () {
+var box = UI.el("lic-lance-prev"); if (!box) return;
+var v = Math.round(Util.num(inp.value) * 100) / 100;
+if (!(v > 0)) { box.textContent = "Informe o valor do lance para ver o resultado."; return; }
+box.textContent = "Calculando…";
+setTimeout(function () {
+var b2 = UI.el("lic-lance-prev"); if (!b2) return;
+var r = conta(v);
+if (!r.ok) { b2.textContent = r.erro; return; }
+var rel = r.relatorio, h = "Proposta: <b>" + Util.esc(Util.fmtMoeda(rel.totalAtual)) + "</b> → <b>" + Util.esc(Util.fmtMoeda(rel.totalNovo)) + "</b> (desconto de " +
+Util.esc(Util.fmtNum(rel.descontoPct, 4)) + "%). " + rel.ajustados.length + " item(ns) com acerto de centavos.";
+if (rel.diferencaParaOLance >= 0.01) h += "<br>Ficam <b>" + Util.esc(Util.fmtMoeda(rel.diferencaParaOLance)) + "</b> abaixo do lance.";
+rel.avisos.forEach(function (t) { h += "<br><b>" + Util.esc(t) + "</b>"; });
+b2.innerHTML = h;
+}, 30);
+};
+if (inp) {
+inp.addEventListener("input", function () { if (timer) clearTimeout(timer); timer = setTimeout(prev, 350); });
+if (pre) prev();
 }
 },
 licitacaoPacote: function (auto) {
