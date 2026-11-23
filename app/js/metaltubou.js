@@ -6,7 +6,8 @@
  * verificada com a envoltória ELU da barra e, se reprovar, CORRIGIDA pelo motor (a correção mais leve que passa, recalculada).
  *
  * Geometria (conferida no modelo da tesoura-leve): o eixo ey do U é a normal do plano da treliça e a alma (bw) fica ⊥ ao plano —
- * o tubo, no plano, chega de topo na FACE EXTERNA DA ALMA (a alma olha para a outra coluna; os enrijecedores ficam dentro do U).
+ * o tubo, no plano, chega de topo na FACE INTERNA DA ALMA, entre as abas (23/11/2026, Estância Montalvão: a alma do U fica para FORA
+ * da coluna e as abas para dentro — js/metalporticos.js giroU; antes a alma olhava para a outra coluna e o tubo chegava na face externa).
  *
  * VERIFICAÇÕES DA PONTA SOLDADA DIRETO (opção A):
  *   1. Solda de filete no contorno do tubo — ABNT NBR 8800:2008, 6.2.5 / Tabela 8: Fw,Rd = 0,60·Aw·fw/γw2 (Aw = 0,707·dw·Lw,

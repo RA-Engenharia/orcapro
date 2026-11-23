@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.443",
+versao: "1.2.445",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -73340,6 +73340,15 @@ if (recusou) semUfBase.push(cod);
 return null;
 }
 var descTrocadas = 0, descSemBase = [];
+function soLetras(x) { return semAcento(s(x)).toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+function lidaEstragada(t, oficial) {
+if (/R\$\s*\d/.test(t)) return true;
+if (/[A-Za-zÀ-ÿ]{16,}/.test(t)) return true;
+var a = soLetras(t), b = soLetras(oficial);
+if (a.length >= 10 && b.indexOf(a) === 0) return true;
+if (b.length >= 10 && a.indexOf(b) === 0) return true;
+return false;
+}
 function descPelaBase(cod, lida, ehInsumo) {
 var t = s(lida);
 if (!baseOk || !cod) return t;
@@ -73347,6 +73356,7 @@ var reg = ehInsumo ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(co
 if (!reg || !s(reg.descricao)) return t;
 var p = parecido(t, reg.descricao);
 if (p >= LIM_PARECIDO) { if (s(reg.descricao) !== t) descTrocadas++; return s(reg.descricao); }
+if (t && lidaEstragada(t, reg.descricao)) { descTrocadas++; return s(reg.descricao); }
 if (p < LIM_PARECIDO && !t) return s(reg.descricao);
 descSemBase.push(cod + " (\"" + t + "\" x \"" + s(reg.descricao) + "\")");
 return t;
@@ -73605,7 +73615,7 @@ var p = tot.comBdi > 0 ? o.I.pt / tot.comBdi * 100 : 0;
 acum += o.I.pt;
 var ac = tot.comBdi > 0 ? acum / tot.comBdi * 100 : 0;
 return { numero: o.I.numero, codigo: o.I.codigo, descricao: o.I.descricao, fonte: o.I.fonte, unidade: o.I.unidade, quantidade: o.I.quantidade,
-pu: o.I.pu, pt: o.I.pt, pct: p, acum: ac, classe: ac <= 50.0001 ? "A" : (ac <= 80.0001 ? "B" : "C") };
+pu: o.I.pu, pt: o.I.pt, pct: p, acum: ac, classe: (ac - p) < 49.9999 ? "A" : ((ac - p) < 79.9999 ? "B" : "C") };
 });
 var crono = null, cr = leitura && leitura.cronograma, elaborado = false, cronoSemPrazo = false;
 var temCr = !!(cr && Array.isArray(cr.etapas) && cr.etapas.length);

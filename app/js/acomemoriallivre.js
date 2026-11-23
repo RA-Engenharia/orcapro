@@ -308,7 +308,7 @@
 
     /* 6. combinações */
     sec("combinacoes", "Combinações de ações", "<p>Combinações últimas normais e de serviço (raras e quase permanentes) com os γf e ψ da NBR 8800:2008, Tabelas 1 e 2 (os da NBR 8681); as últimas levam as forças nocionais de 0,3 % das cargas gravitacionais (4.9.7.1.1) nas direções x e z.</p>" +
-      tabela(["Id", "Tipo", "Combinação"], arr(r.combinacoes).map(function (c) { return [esc(c.id), esc(c.tipo), t(c.descricao || c.nome, "combinação") + (c.nocional ? ' <span class="nota">(nocional ' + (c.nocional.dir && c.nocional.dir[0] ? "x" : "z") + ")</span>" : "")]; }), { legenda: leg("Combinações"), cls: "compacta" }));
+      tabela(["Id", "Tipo", "Combinação"], arr(r.combinacoes).map(function (c) { return [esc(c.id), esc(c.tipo), t(c.descricao || c.nome, "combinação") + (c.nocional ? ' <span class="nota">(nocional ' + (c.nocional.dir && c.nocional.dir[0] ? (c.nocional.dir[0] > 0 ? "+x" : "−x") : (c.nocional.dir && c.nocional.dir[2] < 0 ? "−z" : "+z")) + ")</span>" : "")]; }), { legenda: leg("Combinações"), cls: "compacta" }));
 
     /* 7. análise + equilíbrio */
     var eq = arr(r.casos).map(function (c) {

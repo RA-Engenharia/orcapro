@@ -541,7 +541,10 @@
       d.ligDim && !d.ligs.length ? { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: DIMENSIONADOS PELO CÁLCULO (NBR 8800:2008 - QUADRO DAS LIGAÇÕES E MEMORIAL). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", attr: ' data-dimensionada="notas"' }
         : { t: "PARAFUSOS, CHUMBADORES, CHAPAS E PLACAS DE BASE: A DIMENSIONAR (O CÁLCULO DAS BARRAS NÃO OS DIMENSIONA). FURO-PADRÃO = Ø + 1,5 mm (NBR 8800); PLACA DE BASE COM FURO ALARGADO E ARRUELA DE CHAPA.", cor: d.ligs.length ? null : VERMELHO },
       "SOLDA: ELETRODO E70XX (AWS A5.1); FILETE CONTÍNUO COM A PERNA DO DETALHE, NUNCA MENOR QUE A MÍNIMA DA NBR 8800; SIMBOLOGIA AWS A2.4; SOLDADORES E PROCEDIMENTOS QUALIFICADOS (AWS D1.1)." + (temTubo ? " NÓS DE TUBO SOLDADOS EM TODO O CONTORNO, PONTAS RECORTADAS NO ENCONTRO (NBR 16239)." : ""),
-      "PINTURA: ACABAMENTO AZUL-AÇO ACETINADO (COR PADRÃO DO MÓDULO METÁLICO)." + (temTubo ? " TUBOS COM AS PONTAS VEDADAS." : ""), { t: "PREPARO DE SUPERFÍCIE E SISTEMA DE PINTURA CONFORME A AGRESSIVIDADE DO AMBIENTE DA OBRA - [a preencher].", cor: VERMELHO },
+      "PINTURA: ACABAMENTO AZUL-AÇO ACETINADO (COR PADRÃO DO MÓDULO METÁLICO)." + (temTubo ? " TUBOS COM AS PONTAS VEDADAS." : ""), /* 23/11/2026 (nota 6 com fonte): ABRACO RT-PAC-001 (2026), itens 2, 5.1 e 6.2 — preparo pela ABNT NBR 7348, grau Sa 2½ da ISO 8501-1,
+         ambiente pela ISO 12944-2; inspeção de pintura pela ABNT NBR 14847 (citada na ET-PRO-23 do CNPEM). A classe do ambiente e as
+         espessuras NÃO são escolhidas aqui: dependem da obra e da tinta (sem valor inventado) */
+      "PREPARO DE SUPERFÍCIE: JATEAMENTO ABRASIVO GRAU Sa 2 1/2 (ISO 8501-1), CONFORME ABNT NBR 7348. SISTEMA DE PINTURA PELA CLASSE DE CORROSIVIDADE DO AMBIENTE DA OBRA (ISO 12944-2) E ESPESSURAS CONFORME A ESPECIFICAÇÃO DO FABRICANTE DA TINTA. INSPEÇÃO DA PINTURA: ABNT NBR 14847.",
       "TOLERÂNCIAS DE FABRICAÇÃO E DE MONTAGEM: AS DA ABNT NBR 8800:2008, SEÇÃO DE FABRICAÇÃO, MONTAGEM E CONTROLE DE QUALIDADE (CONFERIR O ITEM NO TEXTO DA NORMA).",
       "MARCA = PEÇA IGUAL (MESMO PAPEL, PERFIL E COMPRIMENTO). CONJUNTOS: CL = COLUNA TRELIÇADA, TS = TESOURA. COMPRIMENTO PELO EIXO (NÓ A NÓ); O DE CORTE SAI DO DESENHO DE FABRICAÇÃO.",
       "GRAUTE NÃO RETRÁTIL SOB AS PLACAS DE BASE (25 mm), DEPOIS DO NIVELAMENTO E DO PRUMO.",
@@ -649,7 +652,9 @@
     var defs, TRm = dep("AcoPranchasTrelica", "./acopranchastrelica.js");
     if (TRm && TRm.detectar(d)) {
       /* GALPÃO TRELIÇADO (coluna treliçada + tesoura): o jogo de escritório — js/acopranchastrelica.js */
-      TRm.preparar(d); defs = TRm.defs(d);
+      TRm.preparar(d); d.foto3d = typeof opcoes.foto3d === "function";   /* 23/11/2026: a folha da volumetria 3D só com a cena do BIM aberta */
+      if (!d.foto3d) avisos.push("Perspectiva 3D (volumetria): a folha sai só com o 3D do BIM aberto (a imagem é a foto da própria cena, BIM.fotoIso).");
+      defs = TRm.defs(d);
     } else {
       defs = [{ id: "locacao", titulo: "LOCAÇÃO DOS PILARES E DOS CHUMBADORES", fn: folhaLocacao }];
       d.niveis.forEach(function (nv) { defs.push({ id: "nivel-" + nv.id, titulo: "PLANTA DO NÍVEL " + nivelTxt(nv.cota), fn: function (c) { return folhaNivel(c, nv); } }); });
@@ -681,9 +686,13 @@
     var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00";
     /* carimbo: dado da OBRA que falta sai "[a preencher]" (visível) — nunca o endereço do escritório no lugar do da obra */
     function oObra(v) { return txt(v).trim() || "[a preencher]"; }
+    /* 23/11/2026 (Estância Montalvão): proprietário, contratante e local vêm da obra (js/metalcalclivreui.js carimboObra); sem o dado o
+       campo fica VAZIO para preencher à mão (não "[a preencher]" dentro do carimbo) e a empresa do projeto nunca entra como proprietária */
+    var nomeEmp = String((empObj && empObj.nome) || emp || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    function semEmpresa(v) { var t = txt(v).trim(); return t && nomeEmp && t.toUpperCase().replace(/[^A-Z0-9]/g, "") === nomeEmp ? "" : t; }
     var pr = P.normalizar({ id: "acopranchaslivre", nome: "Estrutura metálica - projeto executivo", formato: formato, orientacao: "paisagem", origem: "metalica",
-      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: bloq.length ? "" : txt(opcoes.responsavel), registro: bloq.length ? "" : txt(opcoes.registro), titulo: bloq.length ? "" : txt(opcoes.tituloProfissional), obra: oObra(opcoes.obra), proprietario: oObra(opcoes.proprietario),
-                 contratante: oObra(opcoes.contratante || opcoes.proprietario), local: oObra(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
+      carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: bloq.length ? "" : txt(opcoes.responsavel), registro: bloq.length ? "" : txt(opcoes.registro), titulo: bloq.length ? "" : txt(opcoes.tituloProfissional), obra: oObra(opcoes.obra), proprietario: semEmpresa(opcoes.proprietario),
+                 contratante: semEmpresa(opcoes.contratante || opcoes.proprietario), local: txt(opcoes.local).trim(), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO EXECUTIVO", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
     /* o carimbo RA sem a empresa, o RT ou o logo sai com o bloco do escritório em branco: avisa (a tela passa Empresa.dados()) */
     if (!empObj || !txt(empObj.nome).trim()) avisos.push("Carimbo sem a razão social da empresa (cadastro da conta): o bloco do escritório sai em branco.");

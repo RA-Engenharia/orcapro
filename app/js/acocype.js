@@ -1003,7 +1003,7 @@
 
     /* ---------------------------------------------------------- 8 combinações */
     var linCb = combs.map(function (c) {
-      var flags = []; if (c.segundaOrdem) flags.push("2ª ordem"); if (c.nocional) flags.push("nocional " + (c.nocional.dir && c.nocional.dir[0] ? "X OrçaPRO (= Y CYPE)" : "Z OrçaPRO (= X CYPE)"));
+      var flags = []; if (c.segundaOrdem) flags.push("2ª ordem"); if (c.nocional) flags.push("nocional " + (c.nocional.dir && c.nocional.dir[0] ? (c.nocional.dir[0] < 0 ? "−" : "+") + "X OrçaPRO (= Y CYPE)" : (c.nocional.dir && c.nocional.dir[2] < 0 ? "−" : "+") + "Z OrçaPRO (= X CYPE)"));
       return [esc(c.id), esc(c.tipo), esc(c.nome || ""), esc(c.descricao || ""), esc(textoFatores(c.fatores, nomeH, casos)), esc(flags.join("; ")) || "—"];
     });
     secao("<a id=\"combinacoes\"></a>8. Combinações (as do OrçaPRO, para conferir)",

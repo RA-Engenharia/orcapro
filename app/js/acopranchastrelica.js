@@ -787,6 +787,15 @@
     return { x0: x0, B: B, L: Lz, xF: xF, xN: xN, hxF: hxF, hxN: hxN, hz: hz, ch: [chF, chN], d: dCh, e: e };
   }
 
+  /* 23/11/2026 (Estância Montalvão, print do Rogério): a prática da metalúrgica — dorso (alma) dos dois U para FORA, abas para DENTRO */
+  var NOTA_U = "COLUNA EM 2 U: ALMA (DORSO) DOS DOIS U VOLTADA PARA FORA DA COLUNA E ABAS PARA DENTRO, UMA DE FRENTE PARA A OUTRA; TRAVEJAMENTO, DIAGONAIS E CHAPAS DE NÓ ENTRAM ENTRE AS ABAS E SÃO SOLDADOS POR DENTRO (FACE EXTERNA LIMPA).";
+  /* 23/11/2026 (revisão de cálculo): o ponto de trabalho do travejamento é o CG do U — a cota xg da face externa da alma vai na nota
+     (contorno de parede fina: alma bw·t em t/2 e as duas abas (bf − t)·t no meio delas) */
+  function notaU(m) {
+    var q = dimSec(m).s || {}, bw = num(q.bw, 0), bf = num(q.bf, 0), t = num(q.t, 0); if (!(bw > 0 && bf > 0 && t > 0)) return NOTA_U;
+    var A1 = bw * t, A2 = 2 * (bf - t) * t, xg = (A1 * t / 2 + A2 * (t + (bf - t) / 2)) / (A1 + A2);
+    return NOTA_U + " LINHAS DE TRABALHO DO TRAVEJAMENTO NO CG DE CADA U: " + Math.round(xg) + " mm DA FACE EXTERNA DA ALMA (A LARGURA DA COLUNA NAS COTAS É ENTRE OS CG).";
+  }
   /* ================================================================ 06 — DETALHES TÍPICOS */
   function secaoDesenho(D, m, cx, cy, s, o) {
     o = o || {};
@@ -920,6 +929,10 @@
     /* faixa da chapa no sentido normal à principal: ch.hg = projeção das soldas + a altura da principal (js/metalchapano.js); na dupla cantoneira a chapa entra entre as abas e sai hg - aba além da face; no U (aba no plano) parte da face de trás */
     var hyP = dimSec(prin).hy, cIn = -wP / 2, cOut = ch ? ch.hg - wP / 2 : 0;
     if (ch && hyP <= wP) { cOut = wP / 2 + Math.max(0, ch.hg - hyP); cIn = cOut - ch.hg; }
+    /* 23/11/2026 (Estância Montalvão): no U da coluna a alma fica para FORA e as abas para DENTRO — a chapa entra entre as abas e
+       parte da face INTERNA da alma (face de trás + t), não da face externa do pilar */
+    var dsP = dimSec(prin), ehUP = ch && (dsP.forma === "U" || dsP.forma === "Ue");
+    if (ehUP) { cIn = -wP / 2 + num(dsP.s.t, 2.65); cOut = cIn + ch.hg; }
     function L2(a, b) { return [up[0] * a + np[0] * b, up[1] * a + np[1] * b]; }
     var pts = [];
     pc.forEach(function (q) { var Lc = Math.min(q.L, pP.indexOf(q) >= 0 ? R : Math.max(R * 0.85, ch ? hip(ch.Lg / 2, ch.hg) + 90 : 0)), w = larguraVista(q.m, [0, 0, 1]) / 2; [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (s2) { pts.push([q.u[0] * Lc * (s2[0] > 0 ? 1 : 0) + s2[1] * w, q.u[1] * Lc * (s2[0] > 0 ? 1 : 0) + s2[1] * w]); }); });
@@ -1004,6 +1017,8 @@
     [[bf, G.xF, G.hxF], [bn, G.xN, G.hxN]].forEach(function (q, i) {
       barraDet(D, F, [q[1], 0], [q[1], YT], 2 * q[2], { quebra: true });
       itens.push({ p: F(q[1] + (i ? q[2] * 0.5 : -q[2] * 0.5), YT * 0.82), l: [rots[i]] });
+      /* 23/11/2026: a face interna da ALMA do U (a alma fica do lado de FORA da coluna): a linha mostra a orientação na elevação */
+      var dq = dimSec(q[0]); if (dq.forma === "U" || dq.forma === "Ue") { var sOut = (q[1] === G.xF ? 1 : -1) * (G.xF <= G.xN ? -1 : 1), xa = q[1] + sOut * (q[2] - num(dq.s.t, 2.65)), a0 = F(xa, 0), a1 = F(xa, YT * 0.97); D.linha(a0[0], a0[1], a1[0], a1[1], "MET-PERFIL"); }
     });
     var ja = {};
     ms.forEach(function (m) {
@@ -1114,7 +1129,9 @@
     var x0c = bf ? bf.a[0] : 0, wc = bn ? bn.a[0] - x0c : 0.6, yTopo = bf ? Math.max(bf.a[1], bf.b[1]) : 6;
     /* 1 — base da coluna */
     var vPC = ligVar(d, "placaColuna"), gPC = vPC[0] && bf && bn ? placaColGeo(bf, bn, vPC[0].l) : null;
-    if (gPC) detBaseColuna(D, c, celula(0), cw, chh, ms, bf, bn, gPC, vPC[0].l, ["PLACA ÚNICA SOB OS BANZOS, 1 CHUMBADOR POR BANZO E SOLDA DO BANZO NA PLACA: DIMENSIONADOS (PLANTA NO DETALHE 1A).", "GRAUTE NÃO RETRÁTIL 25 mm (20 A 50 mm) SOB A PLACA, DEPOIS DO NIVELAMENTO."], vPC);
+    /* 23/11/2026 (Estância Montalvão): a orientação dos U da coluna escrita no detalhe — a metalúrgica monta pelo desenho */
+    var ehUcol = bf && (dimSec(bf).forma === "U" || dimSec(bf).forma === "Ue");
+    if (gPC) detBaseColuna(D, c, celula(0), cw, chh, ms, bf, bn, gPC, vPC[0].l, ["PLACA ÚNICA SOB OS BANZOS, 1 CHUMBADOR POR BANZO E SOLDA DO BANZO NA PLACA: DIMENSIONADOS (PLANTA NO DETALHE 1A).", "GRAUTE NÃO RETRÁTIL 25 mm (20 A 50 mm) SOB A PLACA, DEPOIS DO NIVELAMENTO."].concat(ehUcol ? [notaU(bf)] : []), vPC);
     else {
     var rb = regiao(0, 1, "BASE DA COLUNA TRELIÇADA",[x0c - 0.25, -0.12, x0c + wc + 0.25, 0.7], gPC
       ? { dim: ["PLACA ÚNICA SOB OS BANZOS, 1 CHUMBADOR POR BANZO E SOLDA DO BANZO NA PLACA: DIMENSIONADOS (VER O DETALHE 1A).", "GRAUTE NÃO RETRÁTIL 25 mm (20 A 50 mm) SOB A PLACA."], tipo: "placaColuna", vs: vPC }
@@ -1152,7 +1169,7 @@
     /* 3 — nó coluna-tesoura (joelho) */
     var nbJ = noChapaDe(d, ["BF", "BN"], function (P) { return P[1] >= yTopo - 1.6; }), enJ = null;
     if (nbJ) arr(d.r.ligDim && d.r.ligDim.modelo && d.r.ligDim.modelo.enrijecedores).forEach(function (q) { if (q.no === nbJ.o.no) enJ = q; });
-    var n3 = nbJ && noP(nbJ) ? { dim: linhasNo(d, nbJ).concat([enJ ? "2 ENRIJECEDORES " + mmBr(enJ.t * 1000, 1) + " x " + mmBr(enJ.h * 1000, 0) + " x " + mmBr(enJ.comprimento * 1000, 0) + " mm (ASTM A36) DENTRO DO " + enJ.U + ", NAS BORDAS DA CHAPA; SOLDA " + enJ.soldaAlma.dw + " mm NA ALMA E " + enJ.soldaAbas.dw + " mm NAS ABAS (DETALHE 11)." : "ALMA DO U SEM ENRIJECEDOR NESTE NÓ (A ALMA RESISTE SOZINHA)."]), tipo: "noChapa", vs: [{ l: { nome: "Nó " + nbJ.o.no }, razao: nbJ.rz }] } : null;
+    var n3 = nbJ && noP(nbJ) ? { dim: linhasNo(d, nbJ).concat([enJ ? "2 ENRIJECEDORES " + mmBr(enJ.t * 1000, 1) + " x " + mmBr(enJ.h * 1000, 0) + " x " + mmBr(enJ.comprimento * 1000, 0) + " mm (ASTM A36) DENTRO DO " + enJ.U + ", NAS BORDAS DA CHAPA; SOLDA " + enJ.soldaAlma.dw + " mm NA ALMA E " + enJ.soldaAbas.dw + " mm NAS ABAS (DETALHE 11)." : "ALMA DO U SEM ENRIJECEDOR NESTE NÓ (A ALMA RESISTE SOZINHA)."]).concat(ehUcol ? [notaU(bf)] : []), tipo: "noChapa", vs: [{ l: { nome: "Nó " + nbJ.o.no }, razao: nbJ.rz }] } : null;
     if (n3 && detNo(D, c, celula(2), cw, chh, 3, "NÓ COLUNA - TESOURA (JOELHO)", noP(nbJ), msNo(noP(nbJ)), nbJ, n3)) { /* em escala */ }
     else regiao(2, 3, "NÓ COLUNA - TESOURA (JOELHO)", [x0c - 0.25, yTopo - 1.55, x0c + wc + 0.55, yTopo + 0.3], nbJ
       ? { dim: linhasNo(d, nbJ).concat([enJ ? "2 ENRIJECEDORES " + mmBr(enJ.t * 1000, 1) + " x " + mmBr(enJ.h * 1000, 0) + " x " + mmBr(enJ.comprimento * 1000, 0) + " mm (ASTM A36) DENTRO DO " + enJ.U + ", NAS BORDAS DA CHAPA; SOLDA " + enJ.soldaAlma.dw + " mm NA ALMA E " + enJ.soldaAbas.dw + " mm NAS ABAS (DETALHE 11)." : "ALMA DO U SEM ENRIJECEDOR NESTE NÓ (A ALMA RESISTE SOZINHA)."]), tipo: "noChapa", vs: [{ l: { nome: "Nó " + nbJ.o.no }, razao: nbJ.rz }] }
@@ -1562,6 +1579,71 @@
     return { escala: "SEM ESCALA" };
   }
 
+  /* ================================================================ 09 — PERSPECTIVA 3D (VOLUMETRIA) — 23/11/2026
+     Pedido do Rogério (Estância Montalvão): "a folha 09 sai só em arame; quero a volumetria 3D de verdade, perfis em volume,
+     sombreado, azul-aço, como no BIM". A imagem é a FOTO DA PRÓPRIA CENA do BIM (opcoes.foto3d = BIM.fotoIso: câmera ortográfica,
+     fundo branco, sem grade — o mesmo caminho das pranchas do hidro e da arquitetura); nada é desenhado por fora. Uma vista geral
+     isométrica e duas ampliadas (o pilar com a base e o joelho coluna-tesoura) da 1ª coluna. Resolução: ≥ 200 dpi no tamanho
+     impresso (DPI_3D), até o teto de 4096 px do BIM.fotoIso (acima disso a vista encolhe na folha, nunca a resolução).
+     DXF/DWG: a imagem NÃO entra (o js/pranchasdxf.js só leva linha, texto e polígono) — a folha avisa. Sem o 3D aberto (Node,
+     teste) a folha não sai e o aviso diz por quê. */
+  var DPI_3D = 200, ELEV_ISO = Math.atan(1 / Math.sqrt(2)), PX_MAX = 4096;
+  function argsIso3d(b, az, largPx) {
+    var A = az * Math.PI / 180, cE = Math.cos(ELEV_ISO), sE = Math.sin(ELEV_ISO), sA = Math.sin(A), cA = Math.cos(A);
+    var V = [cE * sA, sE, cE * cA], R = [cA, 0, -sA], U = [-sE * sA, cE, -sE * cA], us = [], vs = [];
+    [b.x0, b.x1].forEach(function (x) { [b.y0, b.y1].forEach(function (y) { [b.z0, b.z1].forEach(function (z) { us.push(R[0] * x + R[1] * y + R[2] * z); vs.push(-(U[0] * x + U[1] * y + U[2] * z)); }); }); });
+    var u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), v0 = Math.min.apply(null, vs), v1 = Math.max.apply(null, vs), mg = Math.max(u1 - u0, v1 - v0) * 0.03;
+    u0 -= mg; u1 += mg; v0 -= mg; v1 += mg;
+    var T = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2];
+    return { R: R, U: U, V: V, T: T, uT: R[0] * T[0] + R[1] * T[1] + R[2] * T[2], vT: -(U[0] * T[0] + U[1] * T[1] + U[2] * T[2]), u0: u0, u1: u1, v0: v0, v1: v1, largura: largPx,
+      min: [b.x0, b.y0, b.z0], max: [b.x1, b.y1, b.z1], instalacoes: false, razao: (u1 - u0) / (v1 - v0),
+      /* sem as telhas da cobertura e do fechamento (categorias do BimFoco): a folha mostra a ESTRUTURA em volume — com elas a foto era
+         só a caixa cinza do galpão (primeira prova, 23/11) */
+      ocultar: { cats: ["coberturas", "paredes", "forros"] } };
+  }
+  /* a vista na célula (mm de papel): o maior retângulo com a razão da foto; a largura em px dá ≥ DPI_3D (ou encolhe a vista) */
+  function vista3d(c, cel, b, az, titulo, numero, avisos) {
+    var D = c.D, A = AP(), T = D.E.T, a0 = argsIso3d(b, az, 1000), r = a0.razao, wD = cel.w, hD = cel.h - 14;
+    var w = Math.min(wD, hD * r), h = w / r, px = Math.ceil(w / 25.4 * DPI_3D);
+    if (px > PX_MAX) { px = PX_MAX; w = Math.min(w, PX_MAX / DPI_3D * 25.4); h = w / r; }
+    var f = null; try { f = c.op.foto3d(argsIso3d(b, az, px)); } catch (e) { f = { ok: false, erro: e && e.message }; }
+    if (!f || !f.ok || !f.url) { avisos.push("Perspectiva 3D (" + titulo + "): a foto do BIM falhou (" + ((f && f.erro) || "sem imagem") + ")."); return null; }
+    A.tituloVista(D, cel.x, cel.y, titulo, "SEM ESCALA", numero);
+    var x = cel.x + (cel.w - w) / 2, y = cel.y + 12;
+    D.add('<image href="' + f.url + '" x="' + n2(x) + '" y="' + n2(y) + '" width="' + n2(w) + '" height="' + n2(h) + '" preserveAspectRatio="xMidYMid meet" data-foto3d="' + numero + '" data-px="' + px + '" data-dpi="' + Math.round(px / (w / 25.4)) + '"/>');
+    D.ret(x, y, w, h, "MET-FINA");
+    return { w: w, h: h, px: px, dpi: Math.round(px / (w / 25.4)) };
+  }
+  function n2(v) { return String(Math.round(v * 1000) / 1000); }
+  function folhaPerspectiva3d(c) {
+    var D = c.D, d = c.d, a = c.area, T = D.E.T, A = AP(), cx = d.caixa || {}, av = c.avisos;
+    var ys = []; d.membros.forEach(function (m) { ys.push(m.a[1], m.b[1]); });
+    var yMax = Math.max.apply(null, ys), yMin = Math.min(0, Math.min.apply(null, ys));
+    var bG = { x0: cx.x0 - 0.3, x1: cx.x1 + 0.3, y0: yMin - 0.1, y1: yMax + 0.5, z0: cx.z0 - 0.3, z1: cx.z1 + 0.3 };
+    /* a 1ª coluna (menor z, menor x): os banzos BF/BN dela — a caixa do pilar com a base e a do joelho */
+    var col = d.membros.filter(function (m) { return m.cls.pre === "BF" || m.cls.pre === "BN"; });
+    var zc = col.length ? Math.min.apply(null, col.map(function (m) { return m.a[2]; })) : cx.z0, c1 = col.filter(function (m) { return Math.abs(m.a[2] - zc) < 0.05; });
+    var xs = c1.map(function (m) { return m.a[0]; }), xmin = xs.length ? Math.min.apply(null, xs) : cx.x0, xmax = xs.length ? Math.max.apply(null, xs) : cx.x0 + 0.6;
+    if (xmax - xmin > 3) xmax = xmin + 0.8;
+    var yTop = c1.length ? Math.max.apply(null, c1.map(function (m) { return Math.max(m.a[1], m.b[1]); })) : yMax;
+    /* o recorte de cima da ampliada da base num NÍVEL DO TRAVEJAMENTO (um horizontal da coluna): cortar no meio de uma diagonal deixava
+       um toco solto acima da aba (revisão do print, 23/11) */
+    var nivs = d.membros.filter(function (m) { return Math.abs(m.a[1] - m.b[1]) < 0.01 && Math.abs(m.a[2] - zc) < 0.05 && Math.min(m.a[0], m.b[0]) >= xmin - 0.01 && Math.max(m.a[0], m.b[0]) <= xmax + 0.01 && m.a[1] > 1 && m.a[1] < 2.6; }).map(function (m) { return m.a[1]; });
+    var yCorte = nivs.length ? Math.max.apply(null, nivs.filter(function (y) { return y <= 2.0; }).concat([Math.min.apply(null, nivs)])) + 0.06 : 1.9;
+    var bBase = { x0: xmin - 0.45, x1: xmax + 0.45, y0: -0.15, y1: yCorte, z0: zc - 0.5, z1: zc + 0.5 };
+    var bJoelho = { x0: xmin - 0.45, x1: xmax + 1.4, y0: yTop - 1.6, y1: yTop + 0.9, z0: zc - 0.5, z1: zc + 0.5 };
+    var hNotas = 16, gap = 8, wG = a.w * 0.62, hU = a.h - c.reservaBaixo - hNotas - 6;
+    var rG = vista3d(c, { x: a.x + 4, y: a.y + 2, w: wG - 8, h: hU }, bG, 225, "PERSPECTIVA 3D - VOLUMETRIA DO MODELO", 1, av);
+    var xD = a.x + wG + gap, wDt = a.w - wG - gap - 4, hD = (hU - gap) / 2;
+    var rB = vista3d(c, { x: xD, y: a.y + 2, w: wDt, h: hD }, bBase, 225, "AMPLIADA - PILAR E PLACA DE BASE", 2, av);
+    var rJ = vista3d(c, { x: xD, y: a.y + 2 + hD + gap, w: wDt, h: hD }, bJoelho, 225, "AMPLIADA - JOELHO (COLUNA x TESOURA)", 3, av);
+    var dpis = [rG, rB, rJ].filter(Boolean).map(function (q) { return q.dpi; });
+    D.textos(a.x + 4, a.y + a.h - c.reservaBaixo - hNotas + 2, [
+      "IMAGENS DO MODELO 3D (BIM): PERFIS EM VOLUME COM A COR DO ACABAMENTO; SEM ESCALA, ILUSTRATIVAS - AS MEDIDAS VALEM NAS DEMAIS FOLHAS." + (dpis.length ? " RESOLUÇÃO NA FOLHA: " + Math.min.apply(null, dpis) + " dpi OU MAIS." : ""),
+      "NO DXF/DWG ESTA FOLHA SAI SEM AS IMAGENS (SÓ MOLDURA, TÍTULOS E CARIMBO): AS IMAGENS FICAM NO PDF/SVG."], T.nota, { wmax: a.w - 8 });
+    return { escala: "SEM ESCALA", fotos: dpis.length };
+  }
+
   /* ================================================================ AS FOLHAS */
   function defs(d) {
     var PF = (AP() && AP().PADRAO_ACO && AP().PADRAO_ACO.folhas) || [];   /* o jogo de folhas do galpão (PADRAO_ACO.folhas): mesmo título onde a folha é a mesma */
@@ -1578,6 +1660,8 @@
     if (ligDimDe(d)) L.push({ id: "ligacoes", titulo: "LIGAÇÕES DIMENSIONADAS - DETALHES E QUADRO", formato: "A1", fn: folhaLigacoes });
     L.push({ id: "materiais", titulo: tit(5, "LISTA DE MATERIAIS"), formato: "A1", fn: folhaMateriais });
     L.push({ id: "isometrica", titulo: "PERSPECTIVA ISOMÉTRICA E SEQUÊNCIA DE MONTAGEM", formato: "A2", fn: folhaIsometrica });
+    /* 23/11/2026: a volumetria 3D (foto da cena do BIM) numa folha própria A1 — só com o 3D aberto (opcoes.foto3d) */
+    if (d.foto3d) L.push({ id: "perspectiva3d", titulo: "PERSPECTIVA 3D - VOLUMETRIA E AMPLIADAS", formato: "A1", fn: folhaPerspectiva3d });
     void tem;
     return L;
   }

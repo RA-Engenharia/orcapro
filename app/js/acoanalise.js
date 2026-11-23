@@ -963,7 +963,7 @@
     var saida = { ok: true, combinacoes: {}, avisos: M.avisos.slice(), nGL: M.nGL, banda: M.banda, nNos: M.nos.length, nElem: M.elems.length };
     for (var i = 0; i < combs.length; i++) {
       var cb = combs[i], R = resolverCombinacao(M, casos, cb, op);
-      if (!R.ok) { saida.combinacoes[cb.id] = { ok: false, motivo: R.motivo }; saida.ok = false; saida.motivo = cb.id + ": " + R.motivo; continue; }
+      if (!R.ok) { saida.combinacoes[cb.id] = { ok: false, motivo: R.motivo }; saida.ok = false; if (!saida.motivo) saida.motivo = cb.id + ": " + R.motivo; continue; }   /* 22/11 (nocionais ±X/±Z): a PRIMEIRA que cai (antes a última sobrescrevia: o −X do mecanismo saía como ELU4 −Z) */
       var res = resultados(M, R, op); res.ok = true;
       if (!R.convergiu) { res.aviso = "não convergiu em " + R.iteracoes + " iterações"; saida.avisos.push(cb.id + ": " + res.aviso); }
       if (res.travados.length) saida.avisos.push(cb.id + ": " + res.travados.length + " grau(s) de liberdade sem rigidez travado(s) (ex.: rotação de nó com todas as barras rotuladas)");

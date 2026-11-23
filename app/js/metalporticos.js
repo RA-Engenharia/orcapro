@@ -751,6 +751,24 @@
     var tl = Math.max(tolLeitor(p.viga, p.montanteColuna), tolLeitor(p.banzo, p.montanteColuna)) + 0.02;
     return r6(Math.max(p.larguraColuna, Math.ceil(2 * tl / 0.05 - 1e-9) * 0.05));
   }
+  /* 23/11/2026 (Estância Montalvão): o banzo da coluna treliçada plana em U (laminado ou formado a frio) com a ALMA para FORA da
+     coluna e as ABAS para DENTRO, uma de frente para a outra — o travejamento entra entre as abas e solda por dentro (prática de
+     metalúrgica, pedido do Rogério). s = sentido (±x do mundo) para onde a alma olha; o mesmo giro do qTesouraLeve (giroU). Perfil
+     que não é U (W, tubo): sem giro, como antes.
+     EIXO NO CG (23/11/2026, revisão de cálculo — corrige o comentário anterior, que dizia "a favor"): com a linha de cálculo no
+     centro da CAIXA, o CG do U ficava a e = bf/2 − xg para fora dela (~24 mm no U 250 × 100 × 4,75, ~20 mm no U 200 × 75 × 2,65).
+     O braço GLOBAL maior era a favor, mas em CADA nó do travejamento a força entregue ao banzo (ΔN) chegava excêntrica: momento
+     ΔN·e no eixo de menor inércia, que o modelo não via (no Pedido Gabriel PD 8 com solar a razão do banzo ia de ~1,00 a ~1,08).
+     Agora a barra é lançada com eixoCG (js/metalcriar.js): a LINHA que o cálculo lê passa pelo CG do U e o sólido anda e para
+     dentro; as linhas de trabalho do travejamento encontram o banzo no CG (o ponto de trabalho que a prancha cota) — o nó não
+     tem excentricidade e o modelo é o que se fabrica. larguraColuna = distância entre os CG dos dois U. */
+  /* ANTES × DEPOIS (revisão de cálculo, 23/11/2026) — coluna-trelicada padrão com banzoColuna U 250 × 100 × 4,75, vento de Castanhal:
+     sem giro (master: o eixo FRACO do U no plano do pórtico, abas para ±z) o banzo de dentro P10 reprovava a 6,11 (flexo-compressão);
+     com o giro (abas no plano: o eixo FRACO do U fica no plano do pórtico — a rigidez no plano vem do binário A·d² entre os CG dos
+     dois U e cada U só flamba entre os nós do travejamento; o eixo FORTE fica fora do plano, onde o banzo vence o vão entre escoras)
+     + eixo no CG: 0,90. Peso do modelo igual (18.615 kg); a tipologia segue
+     "reprovado" por OUTRAS barras com esses perfis de partida — o otimizador/"Calcular e corrigir" é que fecha */
+  function giroBanzoU(p, s) { var q = perfilCat(p.banzoColuna); return q && (q.forma === "U" || (q.forma === "frio" && (q.tipoFrio === "U" || q.tipoFrio === "Ue"))) ? (s < 0 ? 270 : 90) : 0; }
   /* ---------------------------------------------------------------- coluna treliçada */
   function qColunaTrel(Q, p) {
     var B = p.vao, H = p.peDireito, i = p.inclinacao / 100, bc = p.larguraColuna, xc = B / 2, yc = H + i * xc, hp = p.painelColuna;
@@ -770,8 +788,8 @@
         return;
       }
       Q.P("BO" + ld[0], xo, 0); Q.P("EO" + ld[0], xo, H); Q.P("BI" + ld[0], xi, 0); Q.P("EI" + ld[0], xi, ytI);
-      Q.M("BO" + ld[0], "EO" + ld[0], pecaPilar(p, p.banzoColuna, { base: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], nome: "Coluna treliçada " + (ld[0] === "L" ? "esquerda" : "direita") + " — banzo de fora" }));
-      Q.M("BI" + ld[0], "EI" + ld[0], pecaPilar(p, p.banzoColuna, { base: "rotulada", fim: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], nome: "Coluna treliçada " + (ld[0] === "L" ? "esquerda" : "direita") + " — banzo de dentro" }));
+      Q.M("BO" + ld[0], "EO" + ld[0], pecaPilar(p, p.banzoColuna, { base: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], eixoCG: true, giro: giroBanzoU(p, -ld[2]), nome: "Coluna treliçada " + (ld[0] === "L" ? "esquerda" : "direita") + " — banzo de fora" }));
+      Q.M("BI" + ld[0], "EI" + ld[0], pecaPilar(p, p.banzoColuna, { base: "rotulada", fim: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], eixoCG: true, giro: giroBanzoU(p, ld[2]), nome: "Coluna treliçada " + (ld[0] === "L" ? "esquerda" : "direita") + " — banzo de dentro" }));
       /* travejamento: horizontais a cada painel e uma diagonal por painel, alternando (zigue-zague) */
       var nP = Math.max(2, Math.round(H / hp)), h = H / nP;
       /* 21/11/2026 (PADROES-METALICA-BR.md, item 3): o 1º nível era a 0,30 m do chão — o painel da base ficava baixo e a diagonal
@@ -878,7 +896,12 @@
        dentro (o travejamento solda nas abas; centro de gravidade no eixo da coluna). Antes os dois saíam com giro 90 (almas para −x:
        seção assimétrica). giroU(s): s = sentido (±x do mundo) para onde a ALMA do U olha — 90 → −x, 270 → +x (js/metalpeca.js: alma
        em −bf/2 da seção). O giro de 180° não muda Ix, Iy nem rz da barra: o cálculo da treliça (cada banzo uma barra) não muda */
-    function giroU(s) { return s < 0 ? 90 : 270; }
+    /* 23/11/2026 (Estância Montalvão, print do Rogério): o giro estava TROCADO — com 90 o eixo local A do js/metalpeca.js vai para
+       −x do mundo e a alma (a = −bf/2) caía em +x: as duas almas ficavam viradas para DENTRO da coluna (uma de frente para a outra) e
+       as abas para fora, o contrário da metalúrgica. O teste [A] não pegava porque lia o lado da alma pela MÉDIA dos vértices do
+       contorno (o U tem mais vértices nas abas). Agora: s = −1 (alma para −x) → 270; s = +1 → 90 (conferido pela posição da alma no
+       sólido, tools/test-metal-geometria-nos.js [A]) */
+    function giroU(s) { return s < 0 ? 270 : 90; }
     var colLev = {};
     lados.forEach(function (ld) {
       var X = function (k) { return ld[1] + ld[2] * dx * k; };
@@ -918,8 +941,8 @@
         colLev[ld[0]] = { o: { a: ceT.cadeias("O", "P"), b: ceT.cadeias("O", "N") }, i: { a: ceT.cadeias("I", "P"), b: ceT.cadeias("I", "N") }, xi: xiR, diafragmas: ceT.diafragmas, niveis: nivT.length };
       } else {
       pt("BO" + ld[0], ld[1], 0); pt("BI" + ld[0], xiR, 0);
-      M("BO" + ld[0], nomT(ld[0], 0), pecaPilar(p, p.banzoColuna, { base: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], aco: acoDe(p, p.banzoColuna), giro: giroU(-ld[2]), nome: "Coluna treliçada " + lado + " — banzo de fora" }));
-      M("BI" + ld[0], topI, pecaPilar(p, p.banzoColuna, { base: "rotulada", fim: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], aco: acoDe(p, p.banzoColuna), giro: giroU(ld[2]), nome: "Coluna treliçada " + lado + " — banzo de dentro" }));
+      M("BO" + ld[0], nomT(ld[0], 0), pecaPilar(p, p.banzoColuna, { base: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], aco: acoDe(p, p.banzoColuna), eixoCG: true, giro: giroU(-ld[2]), nome: "Coluna treliçada " + lado + " — banzo de fora" }));
+      M("BI" + ld[0], topI, pecaPilar(p, p.banzoColuna, { base: "rotulada", fim: "rotulada" }, { papel: "Banzo da coluna", grupo: "banzoColuna", coluna: ld[0], aco: acoDe(p, p.banzoColuna), eixoCG: true, giro: giroU(ld[2]), nome: "Coluna treliçada " + lado + " — banzo de dentro" }));
       /* o painel da BASE em X (do pé de cada banzo ao 1º nível do outro): a reação horizontal de cada chumbador entra numa
          diagonal — sem ela o trecho do banzo entre o chão e o 1º travejamento leva o cortante da coluna por flexão (revisão 20/11) */
       var xbR = pend[topI][0];
@@ -1463,7 +1486,7 @@
        na peça nova do mesmo tipo e lugar — nada se perde. opG.edicoes = MetalElemento.edicoesDe(caixas, porticoId) */
     var El = MEl(), ED = opG.edicoes || null;
     M.barras.forEach(function (b) {
-      var o = { ferr: b.ferr, just: b.just, giro: b.giro || 0, papel: b.papel, aco: b.aco, nome: b.nome };
+      var o = { ferr: b.ferr, just: b.just, giro: b.giro || 0, eixoCG: !!b.eixoCG, papel: b.papel, aco: b.aco, nome: b.nome };
       if (b.perfil) o.perfil = b.perfil; else o.cat = b.cat;
       var edB = El && b.elem ? El.edicaoDaBarra(b, ED) : null;
       if (edB && edB.mud) { if (edB.mud.cat && catOk(edB.mud.cat)) { o.cat = edB.mud.cat; delete o.perfil; } else if (edB.mud.cat) delete edB.mud.cat; if (edB.mud.aco) o.aco = edB.mud.aco; if (edB.mud.giro != null) o.giro = num(edB.mud.giro, o.giro); }
@@ -1629,7 +1652,7 @@
              
               banzo: "2L 76,2 x 6 (serie pol) ArcelorMittal ch 8", diagonal: "2L 63,5 x 4,5 (serie pol) ArcelorMittal ch 8",   /* 21/11 (ângulo 35°–60°): a alma passou a 1 painel por terça (41°, era 2 a 62°) e a diagonal de 2,04 m em 2L 50,8×4,5 reprovava a 1,02 no PD 8 com solar */
               montante: "2L 44,45 x 3,17 (serie pol) ArcelorMittal ch 8",
-              travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,66", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
+              travejamento: "L 50,8 x 4,76 (serie pol) ArcelorMittal", terca: "Ue 300 x 85 x 25 x 1,90", tercaBorda: "Ue 300 x 85 x 25 x 2,28", tercaCumeeira: "Ue 300 x 85 x 25 x 3,00", banzoColuna: "U 250 x 100 x 4,75",
               escora: "TQ 100 x 100 x 2 Tuper", escoraColuna: "TQ 130 x 130 x 5 VMB", escoraColunaBorda: "TQ 130 x 130 x 5 VMB", tapamento: "TR 180 x 130 x 6,4 VMB",   /* REVISÃO 1.2.438: a TQ 80×4,5 só passava porque a travessa fora das faixas de borda não recebia o vento da parede (razão 1,93 e flecha 4,8× L/120 com o Ce da zona) — volta a TQ 130×5 */
               barraCorrente: "BR 1/2\" (D 12,70 mm) Gerdau", barraCv: "BR 1/2\" (D 12,70 mm) Gerdau", maoFrancesa: "L 63,5 x 4,76 (serie pol) ArcelorMittal", ligMaoFrancesa: "parafusada",   /* 21/11: L 63,5×4,5 reprovava a 1,009 nos oitões do PD 8 com solar com a alma de 1 painel por terça */
              

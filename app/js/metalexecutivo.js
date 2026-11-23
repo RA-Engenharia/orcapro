@@ -69,7 +69,9 @@
     [/^Coluna de tapamento/, "CT", "TAPAMENTO"], [/^Travessa/, "TL", "TAPAMENTO"]
   ];
   function marcaDe(papel) { for (var i = 0; i < MARCAS.length; i++) if (MARCAS[i][0].test(txt(papel))) return { m: MARCAS[i][1], conj: MARCAS[i][2] }; return { m: "X", conj: "OUTROS" }; }
-  function curto(nome) { return txt(nome).replace(/\s*\(serie pol\)/i, "").replace(/\s+(Gerdau|ArcelorMittal|Usiminas|VMB|Tuper|AISC)\b.*$/i, "").trim(); }
+  /* 22/11/2026: o aço do tubo com costura passou a "NBR 8261 Gr A (quadrado/retangular)" (deb9112a) e estourava a coluna AÇO
+     do quadro (36 mm), cruzando a linha da tabela. Só a ESCRITA na folha encurta; norma e grau seguem inteiros. */
+  function curto(nome) { return txt(nome).replace(/\s*\(serie pol\)/i, "").replace(/\s+(Gerdau|ArcelorMittal|Usiminas|VMB|Tuper|AISC)\b.*$/i, "").replace(/\s*\(quadrado\/retangular\)/i, " (ret.)").replace(/\s*\(circular\)/i, " (circ.)").trim(); }
 
   /* ================================================================ SEÇÃO (catálogo) → medidas e massa */
   var _sec = {};

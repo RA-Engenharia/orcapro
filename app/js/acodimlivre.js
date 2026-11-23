@@ -318,7 +318,7 @@
        que caiu) — o resultado é REPROVADO, com as razões das barras (1ª ordem: limite inferior) e a falha de instabilidade
        global, nunca "não calculou" para perfil fraco. Se nem a 1ª ordem fecha, é mecanismo de verdade: segue a recusa abaixo.
        O resultado de 1ª ordem NUNCA aprova: instab2a soma falha. */
-    var instab2a = null;
+    var instab2a = null, problemas2a = [];
     if (!res.ok && /flambagem global/.test(String(res.motivo || ""))) {
       var res1 = A.analisar(G.modelo, { combinacoes: elu.map(function (c) { return { id: c.id, fatores: c.fatores, nocional: c.nocional, segundaOrdem: false }; }).concat(els.map(function (c) { return { id: c.id, fatores: c.fatores }; })).concat(casos.map(function (c) { var f = {}; f[c.id] = 1; return { id: "caso_" + c.id, fatores: f }; })), estacoes: 7 });
       if (res1.ok) { instab2a = res.motivo; res = res1; }
@@ -500,6 +500,17 @@
     if (instab2a) {
       /* a falha já entrou pela estabilidade global (estabGlobal.ok = false) */
       avisos.push("REPROVA: a análise de 2ª ordem não converge (" + instab2a + ") — a carga de cálculo passa da carga crítica de flambagem global (λcr < 1 nessa combinação). As razões das barras abaixo são de 1ª ordem (limite inferior): contraventar, engastar as bases ou aumentar os perfis.");
+      /* 22/11/2026: desde o refazer em 1ª ordem (20/11) o piso rotulado sem X no plano cai AQUI (REPROVADO, λcr ≈ 0) e não mais
+         na recusa acima — o veredito não muda (já reprova), mas a CAUSA e o botão "Contraventar o plano do piso" se perdiam.
+         Mesmo critério da recusa (SIMULAÇÃO S3 + REVISÃO M4: só com base rotulada); só texto e solução, nenhum número muda. */
+      var horiz2 = G.membros.filter(function (m) { return m.papelLivre === "diagonal" && Math.abs(m.X[1]) < 0.2; }).length,
+          vigasRot2 = G.membros.filter(function (m) { return (m.papelLivre === "viga" || m.papelLivre === "terca") && m.pontas.ini.tipo === "rotulada" && m.pontas.fim.tipo === "rotulada"; }).length,
+          basesRot2 = arr(G.bases).filter(function (b) { return b.tipo !== "engastada"; }).length;
+      if (!horiz2 && vigasRot2 >= 3 && basesRot2 > 0) {
+        var txP = "Provável causa da instabilidade global: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas.";
+        avisos.push(txP);
+        problemas2a = [{ tipo: "estabilidade", texto: txP, solucoes: [{ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }], no: null, pecas: [], mecanismo: false }];
+      }
       G.decisoes.push({ tema: "Instabilidade global (2ª ordem)", decisao: "REPROVADO: 2ª ordem instável — " + instab2a, motivo: "a 1ª ordem fecha (estrutura geometricamente estável), então é carga acima da crítica e não mecanismo; razões de 1ª ordem só para orientar a troca de perfis" });
     }
     /* #49 d) (16/10/2026, revisor da 1.2.148) — Mj,Ed GRAVADO × ANÁLISE DE AGORA: a ligação desenhada guarda os esforços com que
@@ -572,7 +583,7 @@
       if (!v.sugestao) v.sugestao = "Nenhum perfil da família " + String(m.secao.nome).split(" ")[0] + " resolve: perfil maior/soldado, travar mais a barra ou reduzir o vão.";
     });
     return {
-      ok: true, tipo: "livre", aprovado: falhas === 0, falhas: falhas, instavel2a: instab2a, modelo: G, casos: casos, combinacoes: combs, analise: res,
+      ok: true, tipo: "livre", aprovado: falhas === 0, falhas: falhas, instavel2a: instab2a, problemasEstabilidade: problemas2a, modelo: G, casos: casos, combinacoes: combs, analise: res,
       deslocabilidade: { razao: razaoDesl, classe: classe }, estabilidadeGlobal: estabGlobal, escadaTrava: escTrava, membros: resultadosM, grupos: grupos, contravento: null, servico: servico, reacoes: reacoes,
       peso: peso, pesoGrupos: pesoG, pesoTotal: peso, taxa: areaT > 0 ? peso / areaT : null, areaCarregada: areaT, cargasResumo: CG.resumo,
       vento: CG.resumo.vento ? CG.resumo.vento.resultado : null, ventoCasos: CG.resumo.vento ? CG.resumo.vento.casos : null,

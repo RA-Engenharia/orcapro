@@ -99,6 +99,24 @@
      de quando foi calculado. Mover ou esticar uma peça (e o que acompanhou) muda a assinatura: o resultado passa a
      DESATUALIZADO — nunca é mostrado nem exportado como se valesse para o modelo de agora. */
   function assinaturaAgora() { var BV = global.BimVinculos, M = MU(), st = null; try { st = M && M.estado ? M.estado() : null; } catch (e) { st = null; } return BV && BV.assinatura && st ? BV.assinatura(st) : null; }
+  /* PESO TOTAL DA ESTRUTURA (22/11/2026): perfis + chapas/placas/enrijecedores + fixação (parafusos e chumbadores) — o MESMO
+     levantamento do orçamento (MetalOrc.levantar sobre o modelo). "Aço dos perfis" é só o das barras calculadas. Guardado por
+     resultado (o levantamento numera o modelo inteiro). Desatualizado → não mostra (o modelo não é o do cálculo). */
+  function pesoTotal(r) {
+    if (!r || velho()) return null;
+    if (r._pesoTot !== undefined) return r._pesoTot;
+    var MO = global.MetalOrc, st = MU() && MU().estado ? MU().estado() : null, lv = null;
+    try { lv = MO && MO.levantar && st ? MO.levantar(st) : null; } catch (e) { lv = null; }
+    if (!lv || !lv.ok) { r._pesoTot = null; return null; }
+    var kgP = 0, kgC = 0; arr(lv.perfis).forEach(function (x) { kgP += Number(x.kg) || 0; }); arr(lv.chapas).forEach(function (x) { kgC += Number(x.kg) || 0; });
+    r._pesoTot = { total: lv.kgTotal, perfis: kgP, chapas: kgC, fixacao: (Number(lv.kgParafusos) || 0) + (Number(lv.kgChumbadores) || 0), semPeso: arr(lv.semPeso).length };
+    return r._pesoTot;
+  }
+  function pesoTotalHtml(r) {
+    var p = pesoTotal(r); if (!p || !(p.total > 0)) return "";
+    var det = "perfis " + fmt(p.perfis, 0) + " kg + chapas/placas/enrijecedores " + fmt(p.chapas, 0) + " kg + fixação " + fmt(p.fixacao, 0) + " kg" + (p.semPeso ? " · " + p.semPeso + " peça(s) sem peso" : "");
+    return '<div class="ml-kpi" data-ml-kpi="peso-total" title="' + esc("Peso total = " + det + " (o mesmo levantamento do orçamento)") + '"><small>Peso total da estrutura</small><b>' + fmt(p.total, 0) + ' kg</b><span class="ml-nota" data-ml="peso-total-det">' + esc(det) + "</span></div>";
+  }
   function velho() { var r = U.r; if (!r || !r._assin) return false; var a = assinaturaAgora(); return a != null && a !== r._assin; }
   var MSG_VELHO = "DESATUALIZADO — o modelo mudou depois deste cálculo (peças movidas, esticadas ou fundação deslocada): recalcule antes de usar o resultado.";
   function barrarVelho() { if (!velho()) return false; toast(MSG_VELHO, "aviso", 9000); status(MSG_VELHO); return true; }
@@ -474,6 +492,7 @@
     if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
     h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? (tudoDimensionado(r) ? "barras, nós e ligações atendem — conferir e assinar pelo responsável técnico" : "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)") : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
       '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
+      pesoTotalHtml(r) +
       '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
       '<div class="ml-kpi"><small>Modelo</small><b>' + r.modelo.membros.length + ' barras</b><span class="ml-nota">' + r.modelo.modelo.nos.length + " nós · " + r.combinacoes.length + " combinações · " + fmt(r.tempoMs / 1000, 1) + " s</span></div></div>";
     U.probExtra = {};
@@ -880,8 +899,23 @@
   function opcoesPranchas() {
     var em = {}, logo = null, o = obra() || {}; try { if (global.Empresa && Empresa.dados) em = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {}
     var vt = estado().vento || {};
-    return { empresa: em && em.nome ? em : "", responsavel: em.responsavel || "", registro: em.crea || "", tituloProfissional: em.titulo || "", obra: o.nome || "", proprietario: o.clienteNome || o.cliente || "", contratante: o.clienteNome || o.cliente || "",
-             local: [o.endereco, o.cidade].filter(Boolean).join(", ") || vt.endereco || "", codigo: "EST-MET", revisao: "R00", data: hojeBR(), formato: "A1", logo: logo, ligacoes: U.ultimasLigacoesCompletas || null, caixas: caixas(), fundacoes: fundacoesModelo() };
+    var cb = carimboObra(o, em);
+    return { empresa: em && em.nome ? em : "", responsavel: em.responsavel || "", registro: em.crea || "", tituloProfissional: em.titulo || "", obra: o.nome || "", proprietario: cb.cliente, contratante: cb.cliente,
+             local: cb.local || vt.endereco || "", foto3d: global.BIM && global.BIM.fotoIso ? function (x) { return global.BIM.fotoIso(x); } : undefined, codigo: "EST-MET", revisao: "R00", data: hojeBR(), formato: "A1", logo: logo, ligacoes: U.ultimasLigacoesCompletas || null, caixas: caixas(), fundacoes: fundacoesModelo() };
+  }
+  /* 23/11/2026 (Estância Montalvão: o carimbo saía "PROPRIETÁRIO / CONTRATANTE: RA ENGENHARIA ESPECIAL LTDA" e "LOCAL: [a preencher]"):
+     o MESMO caminho do concreto (js/concui.js ctxCarimbo) e da madeira — a obra do OrçaPRO (Store "obras"): o cliente é o clienteNome
+     dela (ou o cadastro do clienteId, quando a obra antiga não guardou o nome) e o local é o `local` (o campo do cadastro da obra) ou o
+     endereço + cidade. Sem cliente, o campo fica VAZIO para preencher à mão — e a própria empresa do projeto (a RA) nunca entra como
+     proprietária/contratante. */
+  function carimboObra(o, em) {
+    o = o || {}; em = em || {};
+    var cli = String(o.clienteNome || o.cliente || "").trim();
+    if (!cli && o.clienteId) { try { var c = Store.obter(Auth.empresaId(), "clientes", o.clienteId); cli = String((c && (c.nome || c.razaoSocial)) || "").trim(); } catch (e) { cli = ""; } }
+    var norm = function (v) { return String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); };
+    if (cli && em.nome && norm(cli) === norm(em.nome)) cli = "";
+    var local = String(o.local || "").trim() || [o.endereco, o.cidade].filter(Boolean).join(", ");
+    return { cliente: cli, local: local };
   }
   function fundacoesModelo() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return (st && st.fundacoes) || []; } catch (e) { return []; } }
   function pranchas() {

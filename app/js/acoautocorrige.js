@@ -148,6 +148,14 @@
     return mesma.concat(l.filter(function (n) { return mesma.indexOf(n) < 0; })).slice(0, 40);
   }
   function sig(o) { return o.tipo + ":" + o.peca + "→" + o.para; }
+  /* 22/11/2026 (nocionais ±X/±Z): a assinatura da solução do mecanismo leva ONDE ela mexe (as pontas das diagonais novas e as peças
+     trocadas). Antes era só o id: completar o X no plano z = 0 e, na volta seguinte, no plano z = 4 parecia "a mesma correção de
+     novo" e o laço parava com uma diagonal sem par. A mesma solução no MESMO lugar continua sendo repetição. */
+  function sigMec(s) {
+    var q = arr(s && s.novas).map(function (n) { return [n.a, n.b].map(function (p) { return arr(p).map(function (v) { return Math.round(num(v, 0) * 1000); }).join(","); }).sort().join("~"); });
+    var t = arr(s && s.trocas).map(function (x) { return String(x.peca) + ">" + txt(x.para); });
+    return "mecanismo:" + (s && s.id) + (q.length || t.length ? "@" + q.concat(t).sort().join("|") : "");
+  }
 
   function diamDe(id) {   /* "M20" → 20; 7/8" ou 1.1/8" (polegada) → mm */
     var x = txt(id).replace(/"/g, "").trim(), m = /^M(\d+)/.exec(x), v = 0, ok = false; if (m) return +m[1];
@@ -192,7 +200,7 @@
     /* MECANISMO (a análise não fecha) */
     if (!r || r.ok !== true) {
       var pr = arr(r && r.problemas)[0], R0 = RS();
-      var sols = pr ? arr(pr.solucoes).filter(function (s) { return R0 && R0.TESTAVEIS[s.id] && !proib["mecanismo:" + s.id]; }) : [];
+      var sols = pr ? arr(pr.solucoes).filter(function (s) { return R0 && R0.TESTAVEIS[s.id] && !proib[sigMec(s)]; }) : [];
       if (pr && sols.length) {
         var e0 = copia(ent); e0.otimizar = false;
         var z = io.resolver ? io.resolver(e0, sols) : R0.resolver(e0, sols, { limiteMs: 60000 });   // aco:ok 60 s para testar as soluções
@@ -202,7 +210,7 @@
           var est = R0.estadoDe(s); if (est) L.estado = est;
           arr(s.trocas).forEach(function (t) { L.trocas.push({ peca: String(t.peca), para: t.para }); });
           L.solId = s.id;
-          itens.push({ tipo: "mecanismo", texto: "Mecanismo: " + String(s.texto).split(" — ")[0] + " (testada: a análise fecha" + (z.porque ? "; " + String(z.porque).split(".")[0] : "") + ")", sig: "mecanismo:" + s.id, pecas: arr(pr.pecas) });
+          itens.push({ tipo: "mecanismo", texto: "Mecanismo: " + String(s.texto).split(" — ")[0] + " (testada: a análise fecha" + (z.porque ? "; " + String(z.porque).split(".")[0] : "") + ")", sig: sigMec(s), pecas: arr(pr.pecas) });
         }
       }
       return { lote: L, itens: itens };
@@ -214,7 +222,7 @@
     if (!r.aprovado && R1 && R1.diagonaisSemPar && !proib["x-incompleto"]) {
       var semPar = []; try { semPar = R1.diagonaisSemPar(r.modelo); } catch (eS) { semPar = []; }
       if (semPar.length) {
-        var sm = R1.solucoesMecanismo(r.modelo, "").solucoes.filter(function (s) { return R1.LOCAIS[s.id] && !proib["mecanismo:" + s.id]; });
+        var sm = R1.solucoesMecanismo(r.modelo, "").solucoes.filter(function (s) { return R1.LOCAIS[s.id] && !proib[sigMec(s)]; });
         var e1 = copia(ent); e1.otimizar = false;
         var z1 = sm.length ? (io.resolver ? io.resolver(e1, sm) : R1.resolver(e1, sm, { limiteMs: 60000 })) : null;   // aco:ok 60 s para testar as soluções
         var s1 = z1 && z1.proposta ? sm.filter(function (q) { return q.id === z1.proposta; })[0] : null;
@@ -222,7 +230,7 @@
           if (arr(s1.novas).length) L.novas = copia(s1.novas);
           arr(s1.trocas).forEach(function (t) { L.trocas.push({ peca: String(t.peca), para: t.para }); porPeca[String(t.peca)] = true; });
           L.solId = s1.id;
-          itens.push({ tipo: "mecanismo", texto: "X incompleto (" + semPar.length + " diagonal(is) de barra redonda sem par): " + String(s1.texto).split(" — ")[0].split(". ")[0], sig: "mecanismo:" + s1.id, pecas: semPar.map(function (d) { return d.peca; }) });
+          itens.push({ tipo: "mecanismo", texto: "X incompleto (" + semPar.length + " diagonal(is) de barra redonda sem par): " + String(s1.texto).split(" — ")[0].split(". ")[0], sig: sigMec(s1), pecas: semPar.map(function (d) { return d.peca; }) });
         }
       }
     }

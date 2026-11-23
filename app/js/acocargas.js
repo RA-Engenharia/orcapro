@@ -122,7 +122,12 @@
     }
     function rotEsc(esc) { return esc.length ? " [" + esc.map(function (q) { return q.id; }).join(", ") + "]" : ""; }
     /* ---- ELU ---- */
-    var dirsGrav = op.nocionalDirecoes || [[1, 0, 0], [0, 0, 1]];
+    /* NOCIONAIS NOS DOIS SENTIDOS (22/11/2026, NBR 8800:2008, 4.9.7): a imperfeição geométrica equivalente vai no sentido
+       MAIS DESFAVORÁVEL. Em estrutura assimétrica (contraventamento só de tração, barra redonda) o +X não cobre o −X: o
+       modelo do test-metal-mecanismo-resolver só vira mecanismo em −X. Padrão = ±X e ±Z; quem passa nocionalDirecoes
+       (madeira) mantém o que passou. docs/alumetal/NOCIONAIS.md */
+    var dirsGrav = op.nocionalDirecoes || [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    function rotDir(dg) { return Math.abs(dg[0]) > 0.5 ? (dg[0] > 0 ? "+X" : "−X") : (dg[2] > 0 ? "+Z" : "−Z"); }
     /* 1) variável de uso/cobertura principal, sem vento — forças nocionais em cada direção */
     Q.forEach(function (q) {
       dirsGrav.forEach(function (dg, k) {
@@ -131,7 +136,7 @@
           G.forEach(function (g) { fat[g.id] = gf(g, false); d.push(f2(gf(g, false)) + "·" + g.id); });
           fat[q.id] = gq(q); d.push(f2(gq(q)) + "·" + q.id);
           Qlivres.concat(esc).forEach(function (q2) { if (q2 !== q) { fat[q2.id] = gq(q2) * psi(q2, "psi0"); d.push(f2(gq(q2) * psi(q2, "psi0")) + "·" + q2.id); } });
-          add(q.nome + " principal" + (dirsGrav.length > 1 ? " (nocional " + (dg[0] ? "X" : "Z") + ")" : "") + rotEsc(esc), "ELU", fat, d.join(" + "), dg);
+          add(q.nome + " principal" + (dirsGrav.length > 1 ? " (nocional " + (dirsGrav.length > 2 ? rotDir(dg) : (dg[0] ? "X" : "Z")) + ")" : "") + rotEsc(esc), "ELU", fat, d.join(" + "), dg);
         });
       });
     });

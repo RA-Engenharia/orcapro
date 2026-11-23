@@ -688,6 +688,15 @@
     }
 
     var descTrocadas = 0, descSemBase = [];
+    function soLetras(x) { return semAcento(s(x)).toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+    function lidaEstragada(t, oficial) {
+      if (/R\$\s*\d/.test(t)) return true;                                   /* preço grudado na descrição */
+      if (/[A-Za-zÀ-ÿ]{16,}/.test(t)) return true;                             /* palavras coladas pela leitura */
+      var a = soLetras(t), b = soLetras(oficial);
+      if (a.length >= 10 && b.indexOf(a) === 0) return true;                    /* cortado no fim, com espaços trocados */
+      if (b.length >= 10 && a.indexOf(b) === 0) return true;                    /* oficial + lixo no fim */
+      return false;
+    }
     function descPelaBase(cod, lida, ehInsumo) {
       var t = s(lida);
       if (!baseOk || !cod) return t;
@@ -695,6 +704,9 @@
       if (!reg || !s(reg.descricao)) return t;
       var p = parecido(t, reg.descricao);
       if (p >= LIM_PARECIDO) { if (s(reg.descricao) !== t) descTrocadas++; return s(reg.descricao); }
+      /* 23/11/2026 (Morada Nova): leitura estragada da planilha do órgão vira o nome OFICIAL da tabela pelo código.
+         "SERVENTE R$54,D9" (valor grudado), "CAMINHAOTANOUEBOCOICHP" (palavras coladas), "LONA C APLICAÇÃO DE ILHOS ESE ... IMPRESSA C" (cortado). */
+      if (t && lidaEstragada(t, reg.descricao)) { descTrocadas++; return s(reg.descricao); }
       if (p < LIM_PARECIDO && !t) return s(reg.descricao);
       descSemBase.push(cod + " (\"" + t + "\" x \"" + s(reg.descricao) + "\")");
       return t;
@@ -1012,7 +1024,8 @@
       acum += o.I.pt;
       var ac = tot.comBdi > 0 ? acum / tot.comBdi * 100 : 0;
       return { numero: o.I.numero, codigo: o.I.codigo, descricao: o.I.descricao, fonte: o.I.fonte, unidade: o.I.unidade, quantidade: o.I.quantidade,
-        pu: o.I.pu, pt: o.I.pt, pct: p, acum: ac, classe: ac <= 50.0001 ? "A" : (ac <= 80.0001 ? "B" : "C") };
+        /* a classe é pelo acumulado ANTES do item: o item que cruza 50% é A (o maior item de 74% era impresso como B) */
+        pu: o.I.pu, pt: o.I.pt, pct: p, acum: ac, classe: (ac - p) < 49.9999 ? "A" : ((ac - p) < 79.9999 ? "B" : "C") };
     });
 
     /* ---- cronograma físico-financeiro ---- */

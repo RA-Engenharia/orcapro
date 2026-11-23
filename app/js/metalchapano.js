@@ -134,7 +134,13 @@
         var Vg = 0.6 * CH.fy * tg * Lg / GA1 / 1000, Ng = CH.fy * tg * Lg / GA1 / 1000, ri = Math.sqrt(Math.pow(Sx / Vg, 2) + Math.pow(Sy / Ng, 2));
         var vp = [{ nome: "Solda chapa → " + princ.secao.nome + " (2 × " + dwp + " mm × " + Lg + " mm)", item: "NBR 8800 6.2.5", resistencia: Math.round(Math.min(Rw, Rmb) * 10) / 10, solicitante: Math.round(R * 10) / 10, razao: R / Math.min(Rw, Rmb) },
                   { nome: "Chapa — seção ao longo da peça principal (cisalhamento + normal)", item: "NBR 8800 5.4.3 / 5.2.2", resistencia: null, solicitante: null, razao: ri }];
-        o.chapa = { tg: tg, Lg: Lg, hg: Math.round(hg + num(sp.a, num(sp.bw, num(sp.d, 100))) ), dwPrincipal: dwp, Sx: Math.round(Sx * 10) / 10, Sy: Math.round(Sy * 10) / 10, verificacoes: vp };
+        /* 23/11/2026 (Estância Montalvão): no U da coluna a chapa entra ENTRE as abas e solda na face INTERNA da alma (a alma fica
+           para fora): a faixa dela no plano vai da face interna da alma (bf − t) até a ponta das soldas. Antes somava a ALTURA do U
+           (bw, a dimensão FORA do plano) — com o U 200 × 75 a chapa do joelho saía com 260 mm em vez de ~133 */
+        /* revisão adversarial 23/11: só o U/Ue do BANZO DA COLUNA (alma fora do plano, giro 90/270) — Z, cartola ou U com a alma no plano
+           seguem a regra antiga (hg + a dimensão da peça) */
+        var ehU = sp.bf > 0 && sp.bw > 0 && !(sp.a > 0) && (sp.forma === "U" || (sp.forma === "frio" && !/^(Z|Z90|Cr|L)$/.test(String(sp.tipoFrio || "U")))) && /banzo de (fora|dentro)|Banzo da coluna/i.test(String(princ.nome || "") + " " + String(princ.papelLivre || ""));
+        o.chapa = { tg: tg, Lg: Lg, hg: Math.round(hg + (ehU ? num(sp.bf, 75) - num(sp.t, num(sp.tw, 3)) : num(sp.a, num(sp.bw, num(sp.d, 100))))), naAlmaU: ehU || undefined, dwPrincipal: dwp, Sx: Math.round(Sx * 10) / 10, Sy: Math.round(Sy * 10) / 10, verificacoes: vp };
         vp.forEach(function (q) { if (q.razao > o.razao) { o.razao = q.razao; o.governante = q.nome; } });
       } else if (chapaBarras.length) o.chapa = { tg: tg, Lg: Math.max(100, Math.ceil(foot / 10) * 10), hg: Math.round(hg + 50), verificacoes: [] };
       if (o.chapa) out.pesoChapas += 7850e-9 * o.chapa.tg * o.chapa.Lg * o.chapa.hg;

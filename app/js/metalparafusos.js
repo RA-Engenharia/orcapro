@@ -238,8 +238,11 @@
   }
 
   /* e = { no, barraId (U), P (m), dir (unitário, do nó para a outra ponta do tubo), t, Lg, hg (m), solda { dw, Lw mm }, parafusos { n, id, classe, passo, borda mm },
-     tubo } — a chapa fica na face EXTERNA da alma (a = −bf/2), centrada no nó ao longo do U, no plano do tubo; pontas no mesmo nó do mesmo
-     U dividem a mesma chapa (a maior). Parafusos: na linha do tubo, a partir de c0 + borda da face, eixo ⊥ ao plano, aperto = largura do tubo */
+     tubo } — 23/11/2026 (Estância Montalvão): a alma do U fica para FORA da coluna e as abas para DENTRO (js/metalporticos.js giroU);
+     o tubo chega pelo lado das abas, ENTRE elas, e a chapa solda na face INTERNA da alma (a = −bf/2 + t), no plano do tubo, saindo
+     para dentro (+A) — o acabamento de fora fica limpo. Antes ela ficava na face EXTERNA (a = −bf/2), por fora do pilar. Centrada no
+     nó ao longo do U; pontas no mesmo nó do mesmo U dividem a mesma chapa (a maior). Parafusos: na linha do tubo, a partir de
+     c0 + borda da face interna da alma, eixo ⊥ ao plano, aperto = largura do tubo */
   function gussetsTuboU(g, Mod, cx, M, Nn, criar, out, lista) {
     var porB = {}; Mod.barras.forEach(function (b) { porB[b.id] = b; });
     out.contagem.gussetTuboU = 0; out.parafusos.tuboU = 0;
@@ -247,12 +250,12 @@
     lista.forEach(function (e) {
       var host = e.barraId ? cx(porB[e.barraId]) : null, mb = host ? M.membro(host) : null;
       if (!mb || !e.P || !mb.perfil || mb.perfil.forma !== "frio") { out.avisos.push("Chapa do tubo no nó " + e.no + ": a coluna (" + (e.barraId || "?") + ") não foi achada no modelo — não desenhada."); return; }
-      var pf = mb.perfil, bf = num(pf.bf, 0.05), te = num(e.t, 0.008), P = V3(e.P), d = unit(V3(e.dir)), rel = sub(P, mb.Pref), xN = dot(rel, mb.X), aN = dot(rel, mb.A), bN = dot(rel, mb.B);
-      if (dot(d, mb.A) > -0.05) { out.avisos.push("Chapa do tubo no nó " + e.no + ": o tubo não chega pela face externa da alma do " + e.U + " — não desenhada (conferir o detalhe)."); return; }
-      var ex = mb.X, ey = mul(mb.A, -1), ez = unit(cross(ex, ey)), k = e.barraId + "|" + e.no + "|" + Math.round(bN * 1000);
+      var pf = mb.perfil, bf = num(pf.bf, 0.05), tU = num(pf.t, 0.003), te = num(e.t, 0.008), P = V3(e.P), d = unit(V3(e.dir)), rel = sub(P, mb.Pref), xN = dot(rel, mb.X), aN = dot(rel, mb.A), bN = dot(rel, mb.B);
+      if (dot(d, mb.A) < 0.05) { out.avisos.push("Chapa do tubo no nó " + e.no + ": o tubo não chega pelo lado das abas do " + e.U + " (alma virada para o tubo) — não desenhada (conferir o detalhe)."); return; }
+      var aF = -bf / 2 + tU, ex = mb.X, ey = mb.A, ez = unit(cross(ex, ey)), k = e.barraId + "|" + e.no + "|" + Math.round(bN * 1000);
       if (!feitas[k]) {
         var Lg = num(e.Lg, 0.1), hg = num(e.hg, 0.1), x0 = Math.max(0, Math.min(mb.L + num(mb.xOff, 0) - Lg, xN - Lg / 2));
-        var O = add(add(add(add(mb.Pref, mul(mb.X, x0)), mul(mb.A, -bf / 2)), mul(mb.B, bN)), mul(ez, -te / 2));
+        var O = add(add(add(add(mb.Pref, mul(mb.X, x0)), mul(mb.A, aF)), mul(mb.B, bN)), mul(ez, -te / 2));
         var c = M.chapa({ origem: O, ex: ex, ey: ey, t: te, ret: { L: Lg, B: hg }, papel: "Chapa de ligação do tubo na alma do U", aco: "ASTM A36", lig: "tuboU:" + e.no, soldadaEm: host.id,
           nome: "Chapa " + r1(te * 1000) + " mm do tubo — nó " + e.no, solda: { tipo: "filete", perna: num(e.solda && e.solda.dw, 3), lados: "ambos", comprimento: Math.round(2 * num(e.solda && e.solda.Lw, Lg * 1000)) / 1000, campo: false } });
         if (c.erro) { out.avisos.push("Chapa do tubo no nó " + e.no + ": " + c.erro); return; }
@@ -261,7 +264,7 @@
         feitas[k] = true;
       }
       var pa = e.parafusos || {}, Pp = Nn.parafuso(pa.id || "M12"); if (!Pp) return;
-      var dface = aN + bf / 2, Pw = add(P, mul(d, dface / Math.max(0.2, -dot(d, mb.A)))), aperto = 0.05;
+      var Pw = add(P, mul(d, (aF - aN) / Math.max(0.2, dot(d, mb.A)))), aperto = 0.05;   /* o ponto da linha do tubo na face interna da alma */
       var tuboHost = e.tuboBarraId ? cx(porB[e.tuboBarraId]) : null; if (tuboHost && tuboHost.metal && tuboHost.metal.perfil) aperto = num(tuboHost.metal.perfil.b, num(tuboHost.metal.perfil.d, 0.05));
       for (var i = 0; i < num(pa.n, 2); i++) {
         var dist = (C0_TUBOU + num(pa.borda, 20) + i * num(pa.passo, 40)) / 1000, Pb = add(Pw, mul(d, dist));

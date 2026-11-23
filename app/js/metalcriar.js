@@ -214,6 +214,13 @@
     if (o.espelhar) { O = add(O, mul(X, Ls)); X = mul(X, -1); }
     var c = B.perfil({ origem: O, ex: X, ey: e.Y, perfil: perfil, L: Ls, papel: o.papel || F.papel, ifc: o.ifc || F.ifc, aco: o.aco || F.aco, nome: o.nome });
     if (c.erro) return c;
+    /* EIXO NO CG (23/11/2026, revisão de cálculo da coluna de 2 U): com o.eixoCG a LINHA clicada (a que o cálculo lê) passa pelo
+       CENTRO DE GRAVIDADE da seção, não pelo centro da caixa — no U o CG fica a bf/2 − xg do meio, do lado da alma. O sólido anda
+       o quanto falta para o CG cair na linha (medido no próprio contorno desenhado). Sem o.eixoCG nada muda. */
+    if (o.eixoCG) {
+      var dcg = desvioCG(c, a2, X);
+      if (dcg && len(dcg) > 1e-5) { O = sub(O, dcg); c = B.perfil({ origem: O, ex: X, ey: e.Y, perfil: perfil, L: Ls, papel: o.papel || F.papel, ifc: o.ifc || F.ifc, aco: o.aco || F.aco, nome: o.nome }); if (c.erro) return c; }
+    }
     var vert = Math.abs(dot(e.X, UP)) > 0.999;
     var th = vert ? angPlano(e.Y) : angPlano(e.X);
     if (vert && Math.abs(e.Y[1]) > 0.999) th = 0;
@@ -221,11 +228,24 @@
     /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a ponta marcada "Livre (balanço)" e a carga de serviço declarada do balanço */
     var livre = o.livre && (o.livre.a || o.livre.b) ? { a: !!o.livre.a || undefined, b: !!o.livre.b || undefined } : null;
     if (livre) { if (!livre.a) delete livre.a; if (!livre.b) delete livre.b; }
-    c.metal.cria = criaDe(c, o.ferr || F.id, a, b, { giro: num(o.giro, 0), just: o.just || F.just || "centro", lado: o.lado || "centro", espelhar: !!o.espelhar, nivel: o.nivel || null, recuo: rec, vp: o.vp ? clone(o.vp) : null,
+    c.metal.cria = criaDe(c, o.ferr || F.id, a, b, { eixoCG: o.eixoCG ? true : null, giro: num(o.giro, 0), just: o.just || F.just || "centro", lado: o.lado || "centro", espelhar: !!o.espelhar, nivel: o.nivel || null, recuo: rec, vp: o.vp ? clone(o.vp) : null,
       livre: livre, servico: o.servico && typeof o.servico === "object" ? clone(o.servico) : null, balanco: o.balanco && typeof o.balanco === "object" ? clone(o.balanco) : null });
     /* as pontas que o cálculo trata como rótula (a emenda sobre o pilar): metal.calc, lido pelo js/acomodelolivre.js */
     if (o.vp && o.vp.calc) c.metal.calc = clone(o.vp.calc);
     return c;
+  }
+  /* o vetor (⊥ ao eixo X) do ponto P0 da linha até o centro de área da seção desenhada, na face z0 do sólido */
+  function desvioCG(c, P0, X) {
+    var B = M(), A = 0, C = [0, 0, 0];
+    try {
+      B.solidos(c).forEach(function (s) {
+        var q = s.poli.map(function (v) { return s.ponto(v[0], v[1], s.z0); }), a0 = q[0];
+        for (var i = 1; i + 1 < q.length; i++) { var u = sub(q[i], a0), w = sub(q[i + 1], a0), cr = cross(u, w), ar = dot(cr, X) / 2; A += ar; for (var k = 0; k < 3; k++) C[k] += ar * (a0[k] + q[i][k] + q[i + 1][k]) / 3; }
+      });
+    } catch (e) { return null; }
+    if (!(Math.abs(A) > 1e-12)) return null;
+    var G = [C[0] / A, C[1] / A, C[2] / A], d = sub(G, P0);
+    return sub(d, mul(X, dot(d, X)));
   }
   function recuoDe(r) {
     if (!r || typeof r !== "object") return null;
@@ -309,7 +329,7 @@
   function linhaAtual(c) {
     var B = M(), w = criaMundo(c);
     if (w) return { a: w.a, b: w.b, giro: num(w.cr.giro, 0), just: w.cr.just || "centro", lado: w.cr.lado || "centro", espelhar: !!w.cr.espelhar, ferr: w.cr.ferr, nivel: w.cr.nivel || null, recuo: recuoDe(w.cr.recuo), vp: w.cr.vp || null,
-      livre: w.cr.livre || null, servico: w.cr.servico || null, balanco: w.cr.balanco || null };
+      livre: w.cr.livre || null, servico: w.cr.servico || null, balanco: w.cr.balanco || null, eixoCG: !!w.cr.eixoCG };
     var q = B.quadro(c), L = num(c.metal.L, 0), a = q.O, b = add(q.O, mul(q.X, L));
     return { a: a, b: b, giro: giroDe(a, b, q.Y), just: "centro", lado: "centro", espelhar: false, ferr: null, nivel: null, legado: true };
   }
@@ -336,7 +356,7 @@
       if (mud.cat != null && !cat) return { erro: "Perfil não encontrado no catálogo: " + mud.cat + "." };
       novo = barra(a, b, { ferr: li.ferr || (vert ? "pilar" : "viga"), cat: cat, perfil: cat ? null : m.perfil, giro: mud.giro != null ? num(mud.giro, 0) : li.giro,
         just: mud.just || li.just, lado: mud.lado || li.lado, espelhar: mud.espelhar != null ? !!mud.espelhar : li.espelhar, papel: m.papel, ifc: c.ifc, aco: mud.aco || m.aco, nivel: mud.nivel !== undefined ? mud.nivel : li.nivel,
-        recuo: li.recuo, vp: li.vp, livre: mud.livre !== undefined ? mud.livre : li.livre, servico: mud.servico !== undefined ? mud.servico : li.servico, balanco: li.balanco });
+        recuo: li.recuo, vp: li.vp, eixoCG: li.eixoCG, livre: mud.livre !== undefined ? mud.livre : li.livre, servico: mud.servico !== undefined ? mud.servico : li.servico, balanco: li.balanco });
       if (novo.erro) return novo;
       if (li.legado) delete novo.metal.cria.ferr;
       /* furos e cortes que a peça já tinha (máquina) continuam a partir do início */

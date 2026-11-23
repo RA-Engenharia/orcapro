@@ -284,7 +284,12 @@
     var peso = o.peso != null ? o.peso : Math.round(0.022 * h * 1000) / 1000;
     this.s.push('<text x="' + n(x) + '" y="' + n(yb) + '" font-size="' + n(h) + '"' + (anc !== "start" ? ' text-anchor="' + anc + '"' : "") +
       (rot ? ' transform="rotate(' + n(rot) + " " + n(x) + " " + n(yb) + ')"' : "") + (o.cor ? ' fill="' + o.cor + '"' : "") +
-      (peso > 0 ? ' stroke="' + (o.cor || PRETO) + '" stroke-width="' + n(peso) + '"' : "") + (o.attr || "") + ">" + esc(s) + "</text>");
+      /* 23/11/2026 (Estância Montalvão: "PPLLAANNTTAA" ao copiar o texto do PDF): o stroke do SVG no <text> faz o Chrome imprimir o
+         texto DUAS vezes (uma passada de preenchimento e outra de contorno) — o PDF ficava com cada texto duplicado e a busca não
+         achava. Corrigido de novo em 23/11 (o Rogério: "letras muito apagadas"): o -webkit-text-stroke é IGNORADO no SVG impresso
+         (o texto saía só com o traço fino da RomanS, cinza). Agora font-weight bold: o Chrome engrossa o traço num objeto de texto
+         SÓ (testado: PDF com o texto uma vez e escuro como o antigo); o DXF não lê o peso */
+      (peso > 0 ? ' font-weight="bold"' : "") + (o.attr || "") + ">" + esc(s) + "</text>");
     var x0 = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), a = rot * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
     var q = [[x0, -0.76 * h], [x0 + w, -0.76 * h], [x0 + w, 0.18 * h], [x0, 0.18 * h]].map(function (p) { return [x + p[0] * c - p[1] * sn, yb + p[0] * sn + p[1] * c]; });
     this.tb.push([Math.min(q[0][0], q[1][0], q[2][0], q[3][0]), Math.min(q[0][1], q[1][1], q[2][1], q[3][1]), Math.max(q[0][0], q[1][0], q[2][0], q[3][0]), Math.max(q[0][1], q[1][1], q[2][1], q[3][1])]);

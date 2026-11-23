@@ -277,9 +277,10 @@
     var g = G(), bw = num(o.U.bw, 100), tU = num(o.U.t, 3), h = num(o.U.bf, 50) - tU, F = Math.abs(num(o.F, 0)), ult = null;
     for (var i = 0; i < T_ENR.length; i++) {
       var te = T_ENR[i], M = F / 2 * bw / 4 / 1000, MRd = te * h * h / 4 * CHAPA.fy / g.a1 / 1e6, VRd = 0.6 * CHAPA.fy * h * te / g.a1 / 1000;
-      /* REVISÃO 21/11: a chapa de nó fica do lado de FORA da alma e o enrijecedor do lado de dentro — não há solda entre os dois; a
-         força passa chapa de nó → alma → enrijecedor pelo cordão enrijecedor–alma (comprimento bw − 2·tU, metal-base = a alma do U).
-         Antes: "solda chapa de nó → enrijecedor" com o comprimento h e a espessura da chapa de nó (cordão que não existe) */
+      /* REVISÃO 21/11, atualizada 23/11/2026 (Estância Montalvão): a alma do U fica para FORA da coluna e a chapa de nó entra ENTRE as
+         abas, soldada na face INTERNA da alma; os dois enrijecedores ficam também do lado de dentro, nas bordas da chapa (x_nó ± Lg/2).
+         A conta NÃO supõe solda chapa–enrijecedor (a favor da segurança): a força passa chapa de nó → alma → enrijecedor pelo cordão
+         enrijecedor–alma (comprimento bw − 2·tU, metal-base = a alma do U). Antes (21/11) a chapa ficava por fora da alma */
       var Lw1 = bw - 2 * tU, dw1 = Math.max(3, Math.min(dwMin(Math.min(te, tU)), Math.floor(Math.min(te, tU)))), w1 = 2 * soldaMm(dw1, num(o.fy, 250), tU) * Lw1;
       var dw2 = Math.max(3, Math.min(dwMin(Math.min(te, tU)), Math.floor(Math.min(te, tU)))), w2 = 2 * soldaMm(dw2, num(o.fy, 250), tU) * h;
       var vs = [verif("Enrijecedor à flexão no plano (" + br(te, 1) + " × " + br(h, 0) + " mm, vão " + br(bw, 0) + " mm)", "modelo do projetista: viga biapoiada nas abas, F⊥/2 no meio; momento plástico t·h²/4·fy/γa1 (" + IT("gamas") + ")",
