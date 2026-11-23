@@ -1986,6 +1986,8 @@
     // Sempre presente — sem dado, sai placeholder explícito ([...]), nunca vazio.
     var resp = deps.responsavel || {};
     var ri = rc + checks.length + 2;
+    /* 23/11/2026: certame "Documentos sem identificação": sem responsável técnico, empresa nem campo de assinatura */
+    if (!resp.semIdentificacao) {
     wr.mergeCells('A' + ri + ':B' + ri);
     wr.getCell('A' + ri).value = 'RESPONSÁVEL TÉCNICO PELO ORÇAMENTO';
     wr.getCell('A' + ri).font = { bold: true, color: { argb: navy } };
@@ -1999,6 +2001,7 @@
     wr.getCell('A' + (ri + 6)).value = '___________________________________';
     wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + _regRt;
     wr.getCell('A' + (ri + 7)).font = { size: 9, color: { argb: muted } };
+    }
 
     /* MODO LICITAÇÃO — identificação do certame e assinatura da EMPRESA
        (representante legal), no fim do Resumo: as linhas de cima têm fórmulas
@@ -2015,11 +2018,13 @@
       if (_idl.valorEstimado > 0) lin(li0 + 5, 'Valor estimado pelo órgão', _idl.valorEstimado, MOEDA);
       if (_idl.dataBase) lin(li0 + 6, 'Data-base do órgão', _idl.dataBase);
       var la = li0 + 8;
+      if (!resp.semIdentificacao) {
       wr.getCell('A' + la).value = '___________________________________';
       wr.getCell('A' + (la + 1)).value = (resp.nome || empresa || '[EMPRESA]') + (resp.cnpj ? ' — CNPJ ' + resp.cnpj : '');
       wr.getCell('A' + (la + 2)).value = 'Representante legal: ' + ((resp.representante != null ? resp.representante : resp.responsavel) || '[nome do representante legal]');
       wr.getCell('A' + (la + 3)).value = (resp.cidade || '[cidade]') + ', ____ de ______________ de ________';
       [1, 2, 3].forEach(function (k) { wr.getCell('A' + (la + k)).font = { size: 9, color: { argb: muted } }; });
+      }
     }
 
     // ===================== FASE 2: impressão + proteção =====================
@@ -2137,16 +2142,20 @@
             var _resp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null;
             /* Licitante sem `nome` NUNCA cai na conta: a planilha sai com o marcador [PREENCHER: razão social]. `certame: true` faz a
                planilha imprimir "Responsável técnico"/"Registro" como vieram, sem "Engenheiro Civil" nem "CREA" fixos. */
-            if (_ec) _resp = { nome: _ec.nome || "[PREENCHER: razão social]", cnpj: _ec.cnpj, responsavel: _ec.rtNome, titulo: "", crea: _ec.rtCrea, contato: _ec.telefone, cidade: "",
+            /* 23/11/2026: certame "Documentos sem identificação": a planilha não leva nome, CNPJ, RT nem contato (nem marcador para preencher) */
+            var _anon = !!(_ec && _ec._semIdentificacao === true);
+            if (_anon) _resp = { nome: "", cnpj: "", responsavel: "", titulo: "", crea: "", contato: "", cidade: "", representante: "",
+              regimeTributario: _resp ? _resp.regimeTributario : "", certame: true, semIdentificacao: true };
+            else if (_ec) _resp = { nome: _ec.nome || "[PREENCHER: razão social]", cnpj: _ec.cnpj, responsavel: _ec.rtNome, titulo: "", crea: _ec.rtCrea, contato: _ec.telefone, cidade: "",
               representante: _ec.socioNome, regimeTributario: _resp ? _resp.regimeTributario : "", certame: true };
             var deps = {
               num: Util.num,
               fmtNum: Util.fmtNum,
-              empresa: _ec ? (_ec.nome || "[PREENCHER: razão social]")
+              empresa: _anon ? "" : _ec ? (_ec.nome || "[PREENCHER: razão social]")
                 : ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") || ((Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "") || "",
               credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
               /* autor do arquivo: no certame com licitante é o licitante (ou vazio), nunca a empresa da conta */
-              creator: _ec ? (_ec.nome || " ") : ((typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : ""),
+              creator: _anon ? " " : _ec ? (_ec.nome || " ") : ((typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : ""),
               abc: (typeof Orcamento.curvaABC === "function") ? Orcamento.curvaABC(orc) : null,
               /* ⚠ SEM o 2º argumento: ele trava o nº de colunas e acumula na
                  última tudo que passar. `orc.cronogramaMeses` é campo DERIVADO

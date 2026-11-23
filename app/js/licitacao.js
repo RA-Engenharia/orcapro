@@ -387,7 +387,8 @@
     /* Empresa do certame: o pacote trouxe `licitante` com algum dado? */
     temLicitante: function (orc_ou_lic) {
       var l = orc_ou_lic && orc_ou_lic.config ? this.cfg(orc_ou_lic) : orc_ou_lic;
-      return !!(l && l.licitante && typeof l.licitante === "object" && CAMPOS_LICITANTE.some(function (k) { return s(l.licitante[k]); }));
+      /* licitante "sem identificação" (CertamePRO): tem licitante, só que anônimo. NUNCA cai na empresa da conta. */
+      return !!(l && l.licitante && typeof l.licitante === "object" && (l.licitante.semIdentificacao === true || CAMPOS_LICITANTE.some(function (k) { return s(l.licitante[k]); })));
     },
     /* Timbrado do licitante, por CNPJ. Guarda no máximo TIMBRADO_MAX_CNPJS empresas (a mais antiga sai).
        Imagem inválida ou grande demais NÃO entra e é contada em `recusadas`. Imagem ausente no pacote
@@ -681,7 +682,13 @@
       if (bloco.licitante && typeof bloco.licitante === "object" && !Array.isArray(bloco.licitante)) {
         var lt = {}, algum = false;
         CAMPOS_LICITANTE.forEach(function (k) { var v = s(bloco.licitante[k]); lt[k] = v; if (v) algum = true; });
-        if (algum) {
+        /* 23/11/2026: certame "Documentos sem identificação": licitante sem nenhum dado e sem timbrado (o guardado por CNPJ não é usado) */
+        if (bloco.licitante.semIdentificacao === true) {
+          CAMPOS_LICITANTE.forEach(function (k) { lt[k] = ""; });
+          lt.semIdentificacao = true;
+          lic.licitante = lt;
+          lic.licitanteTimbrado = null;
+        } else if (algum) {
           lic.licitante = lt;
           var temK = function (k) { return Object.prototype.hasOwnProperty.call(bloco.licitante, k); };
           var temChavesTimb = { topo: temK("timbradoTopo"), fundo: temK("timbradoFundo"), pagina: temK("timbradoPagina") };

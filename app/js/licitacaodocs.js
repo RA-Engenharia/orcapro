@@ -468,8 +468,14 @@
       timbradoPagina: s(emp.timbradoPagina),
       timbradoMargens: emp.timbradoMargens || null,
       certame: emp._certame === true,
+      semIdentificacao: emp._semIdentificacao === true,
       faltando: faltando
     };
+    /* 23/11/2026 (Rogério): "sem identificação é sem identificação mesmo". Nenhum dado da empresa no documento nem cobrado como pendência. */
+    if (r.semIdentificacao) {
+      CAMPOS_EMP.forEach(function (k) { r[k] = ""; });
+      r.timbradoTopo = ""; r.timbradoFundo = ""; r.timbradoPagina = ""; r.timbradoMargens = null; r.faltando = [];
+    }
     return r;
   }
 
@@ -488,6 +494,12 @@
     o.timbradoTopo = tb.topo; o.timbradoFundo = tb.fundo;
     /* papel timbrado de página inteira (A4 com logo e rodapé): fundo de cada folha, com as margens que ele deixa livres */
     o.timbradoPagina = s(tb.pagina); o.timbradoMargens = tb.pagina ? (tb.margens || null) : null;
+    if (l.semIdentificacao === true) {
+      /* o timbrado guardado por CNPJ NÃO entra: a chave do certame manda */
+      o._semIdentificacao = true;
+      CAMPOS_EMP.forEach(function (k) { o[k] = ""; });
+      o.timbradoTopo = ""; o.timbradoFundo = ""; o.timbradoPagina = ""; o.timbradoMargens = null;
+    }
     return o;
   }
 
@@ -915,7 +927,7 @@
     var tbs = lic.licitanteTimbrado;
     if (emp.certame && tbs && tbs.guardou === false) pend.preencher.push("timbrado: o navegador não conseguiu guardar a imagem (armazenamento cheio). Ela vale só até fechar esta página; importe o pacote de novo antes de gerar o documento.");
     if (emp.certame && tbs && tbs.descartados > 0) pend.dados.push("Timbrado: para guardar o desta empresa, " + tbs.descartados + " timbrado(s) de outra(s) empresa(s) mais antigo(s) foi(ram) removido(s) deste navegador. Importe o pacote da outra empresa de novo se for usá-la.");
-    if (emp.certame && !emp.timbradoTopo && !emp.timbradoPagina) {
+    if (emp.certame && !emp.semIdentificacao && !emp.timbradoTopo && !emp.timbradoPagina) {
       /* três causas diferentes, três avisos: despejado do navegador depois (a importação o guardou), recusado por tamanho, ou nunca veio */
       var motTb = (tbs && tbs.topo === true) ? "foi removido deste navegador por falta de espaço; importe o pacote de novo"
         : ((tbs && tbs.recusadas > 0) ? "passou do limite de tamanho e não foi guardado" : "não veio no pacote");
@@ -1460,13 +1472,14 @@
       inicio: esc(cb.prazoInicio)
     };
     h += '<div class="ld-tit">Proposta de Preços</div>';
-    h += '<p class="ld-p">' + campo(e.cidade, "cidade da empresa") + ', ' + esc(cb.dataCurta) + '.</p>';
+    var anon = e.semIdentificacao === true;
+    h += '<p class="ld-p">' + (anon ? esc(cb.dataCurta) : campo(e.cidade, "cidade da empresa") + ', ' + esc(cb.dataCurta)) + '.</p>';
     h += '<p class="ld-p" style="margin-bottom:1mm"><b>À<br>Comissão Permanente de Licitação<br>' + vars.cidade + '<br>REF.: ' + vars.edital + '<br>Objeto: ' + vars.objeto + '</b></p>';
     h += '<p class="ld-p">Prezados Senhores,</p>';
     h += '<p class="ld-p">' + subst('Apresentamos a V. Sas. Nossa proposta para execução dos serviços objeto do Edital do certame em epígrafe, pelo valor global de {valor}, com prazo de execução de {prazo}, contados a partir da emissão da Ordem de Serviço pela CONTRATANTE.', vars) + '</p>';
     h += '<p class="ld-p">Concordamos integralmente e sem qualquer restrição com as condições desta licitação em referência, bem assim com as condições de contratação, estabelecidas na minuta do contrato que nos foi fornecida com o edital, e que nos submetemos às disposições regulamentares e legais sobre esta licitação, especialmente a Lei Federal nº 14.133 de 2021 e suas posteriores alterações.</p>';
     h += '<p class="ld-p">Comprometemo-nos a nos manifestarmos acerca da concordância da prorrogação e revalidação da proposta, caso seja necessário, antes de 10 (dez) dias do vencimento da mesma, por igual e sucessivo período, cientes que a falta de manifestação nos libera, excluindo-nos deste certame licitatório.</p>';
-    h += '<p class="ld-p">Caso nos seja adjudicado o objeto da presente licitação, nos comprometemos a assinar o Contrato no prazo determinado no documento de convocação, indicando para esse fim o(a) Sr.(a) ' + campo(e.socioNome, "nome do sócio administrador") + ', portador(a) da Carteira de Identidade nº ' + campo(e.socioRg, "identidade e órgão expedidor do sócio") + ' e CPF nº ' + campo(e.socioCpf, "CPF do sócio") + ', como representante legal desta empresa.</p>';
+    if (!anon) h += '<p class="ld-p">Caso nos seja adjudicado o objeto da presente licitação, nos comprometemos a assinar o Contrato no prazo determinado no documento de convocação, indicando para esse fim o(a) Sr.(a) ' + campo(e.socioNome, "nome do sócio administrador") + ', portador(a) da Carteira de Identidade nº ' + campo(e.socioRg, "identidade e órgão expedidor do sócio") + ' e CPF nº ' + campo(e.socioCpf, "CPF do sócio") + ', como representante legal desta empresa.</p>';
     h += '<p class="ld-p">' + subst('Informamos que o prazo de validade da nossa proposta é de {validade}, {contagem}.', vars) + '</p>';
     h += '<p class="ld-p">Declaramos que:</p>';
     var decl = [
@@ -1482,6 +1495,7 @@
       "Cumprimos a reserva de cargos para pessoa com deficiência e para reabilitado da Previdência Social, prevista no art. 93 da Lei nº 8.213/1991."
     ];
     decl.forEach(function (t, k) { h += '<p class="ld-d">' + String.fromCharCode(97 + k) + ")&nbsp;&nbsp;" + t + '</p>'; });
+    if (!anon) {
     h += '<p class="ld-dados" style="margin-top:2.5mm"><b>Razão social:</b> ' + campo(e.nome, "razão social") + '</p>';
     h += '<p class="ld-dados"><b>CNPJ Nº:</b> ' + campo(e.cnpj, "CNPJ") + '</p>';
     h += '<p class="ld-dados"><b>Inscrição municipal:</b> ' + campo(e.inscricaoMunicipal, "inscrição municipal") + '</p>';
@@ -1489,8 +1503,9 @@
     h += '<p class="ld-dados"><b>Fone:</b> ' + campo(e.telefone, "telefone") + ' . <b>E-mail:</b> ' + campo(e.email, "e-mail") + '</p>';
     h += '<p class="ld-dados"><b>Dados Bancários:</b> Banco ' + campo(e.banco, "banco") + ', Agência nº ' + campo(e.agencia, "agência") +
       ', Conta Corrente nº ' + campo(e.conta, "conta corrente") + ', em nome de ' + campo(e.nome, "razão social") + ', CNPJ nº ' + campo(e.cnpj, "CNPJ") + '</p>';
+    }
     h += '<p class="ld-p" style="margin-top:2.5mm">' + subst('Finalizando, declaramos que assumimos inteira responsabilidade pela execução dos serviços objeto deste Edital e que serão executados conforme exigência editalícia e contratual' + (cb.prazoInicio ? ', e que serão iniciados dentro do prazo de até {inicio} dias consecutivos, contados a partir da data de recebimento da Ordem de Serviço' : '') + '.', vars) + '</p>';
-    h += '<div style="display:flex;gap:14mm;margin-top:9mm;text-align:center;font-size:8.4pt">' +
+    if (!anon) h += '<div style="display:flex;gap:14mm;margin-top:9mm;text-align:center;font-size:8.4pt">' +
       '<div style="flex:1;border-top:.7pt solid #222;padding-top:1mm"><b>' + campo(e.nome, "razão social") + '</b><br>' + campo(e.socioNome, "nome do sócio administrador") + '<br>' + campo(e.socioCargo, "cargo do sócio") + '</div>' +
       '<div style="flex:1;border-top:.7pt solid #222;padding-top:1mm"><b>' + campo(e.rtNome, "nome do responsável técnico") + '</b><br>Responsável Técnico<br>' + rtRegistro(e) + '</div></div>';
     return '<section class="ld-sec" data-tipo="carta" data-titulo="Carta proposta">' + h + '</section>';
@@ -1822,6 +1837,13 @@
 
   function tplTimbrado(d) {
     var e = d.emp, cb = d.cab;
+    if (e.semIdentificacao === true) {
+      var idA = '<div class="ld-id"><b>REF.:</b> ' + esc(cb.refCab) + '<br><b>CIDADE:</b> ' + esc(cb.cidade) + '<br><b>Data de Abertura:</b> ' + campo(cb.abertura, "data de abertura da sessão") + '<br><b>OBJETO:</b> ' + campo(cb.objeto, "objeto") + '</div>';
+      return '<template class="ld-tpl" data-n="hd-big"><div class="ld-hd big"></div></template>' +
+        '<template class="ld-tpl" data-n="hd-std"><div class="ld-hd">' + idA + '</div></template>' +
+        '<template class="ld-tpl" data-n="rod"><div class="ld-rod"><div class="pag">Página {{pag}} de {{tot}}</div></div></template>' +
+        '<template class="ld-tpl" data-n="wm"></template>';
+    }
     var logo = !e.timbradoTopo ? '<span class="ld-p0">[PREENCHER: timbrado (logo)]</span>'
       : (urlCss(e.timbradoTopo) ? '<div class="ld-logo ld-logo-bg ld-bg-topo"></div>' : '<img class="ld-logo" src="' + esc(e.timbradoTopo) + '" alt="">');
     var wm = !e.timbradoFundo ? '' : (urlCss(e.timbradoFundo) ? '<div class="ld-wm ld-wm-bg ld-bg-fundo"></div>' : '<img class="ld-wm" src="' + esc(e.timbradoFundo) + '" alt="">');
