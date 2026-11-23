@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.442",
+versao: "1.2.443",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -73913,7 +73913,7 @@ var CSS = [
 ".ld-fonte{display:none}",
 ".ld-pg{page:ld;position:relative;width:210mm;height:297mm;overflow:hidden;background:#fff;margin:0 auto 10px;page-break-after:always;break-after:page;box-shadow:0 2px 14px rgba(0,0,0,.35)}",
 ".ld-pg:last-child{page-break-after:auto;break-after:auto}",
-".ld-wm{position:absolute;left:50%;top:50%;width:115mm;height:115mm;margin:-57mm 0 0 -57mm;object-fit:contain;opacity:.07;z-index:0}",
+".ld-wm{position:absolute;left:50%;top:50%;width:115mm;height:115mm;margin:-57mm 0 0 -57mm;object-fit:contain;opacity:.15;z-index:0}",
 ".ld-hd{position:absolute;left:12mm;right:12mm;top:var(--ld-hd-top,8mm);height:var(--ld-hd-h,26mm);display:flex;align-items:center;justify-content:space-between;z-index:2}",
 ".ld-id{font-size:7.4pt;line-height:1.3;max-width:132mm}.ld-id b{font-weight:700}",
 ".ld-id-peq .ld-id{font-size:7pt}",
@@ -74409,7 +74409,7 @@ function nova(tipo, idx) {
 n++;
 var pg = doc.createElement("div");
 var t = tipo === "carta" ? (idx === 0 ? "cartaA" : "cartaB") : "corpo";
-pg.className = "ld-pg"; pg.setAttribute("data-t", t);
+pg.className = "ld-pg"; pg.setAttribute("data-t", t); pg.setAttribute("data-sec", String(secN));
 var cab = tpl["hd-std"];
 pg.innerHTML = (tp ? (tpl.tpbg || "") : (tpl.wm || "")) + (cab || "") + '<div class="ld-corpo"></div>' + (tpl.ass || "") + (tpl.rod || "").replace("{{pag}}", String(n));
 saida.appendChild(pg);
@@ -74425,7 +74425,9 @@ c.appendChild(doc.createElement("tbody"));
 return c;
 }
 var erros = [];
+var secN = 0;
 [].slice.call(fonte.children).forEach(function (sec) {
+secN++;
 var tipo = sec.getAttribute("data-tipo"), idx = 0, P1 = nova(tipo, idx++);
 var corpo = P1.corpo;
 var contRot = "";
@@ -74565,10 +74567,16 @@ erros.push("um bloco (" + String(b.textContent || "").replace(/\s+/g, " ").trim(
 raiz.removeChild(fonte);
 [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { t.parentNode.removeChild(t); });
 [].slice.call(saida.querySelectorAll(".pag")).forEach(function (el) { el.innerHTML = el.innerHTML.replace("{{tot}}", String(n)); });
-var asss = [].slice.call(saida.querySelectorAll(".ld-pg")).filter(function (pg) {
-var t = pg.getAttribute("data-t"); return t !== "cartaA" && t !== "cartaB";
-}).map(function (pg) { return pg.querySelector(".ld-ass"); }).filter(Boolean);
-asss.slice(0, -1).forEach(function (a) { a.parentNode.removeChild(a); });
+var ultimaDaSec = {};
+[].slice.call(saida.querySelectorAll(".ld-pg")).forEach(function (pg) {
+var t = pg.getAttribute("data-t");
+if (t === "cartaA" || t === "cartaB") return;
+var a = pg.querySelector(".ld-ass");
+if (!a) return;
+var k = pg.getAttribute("data-sec") || "0";
+if (ultimaDaSec[k]) ultimaDaSec[k].parentNode.removeChild(ultimaDaSec[k]);
+ultimaDaSec[k] = a;
+});
 [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
 if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
 });
