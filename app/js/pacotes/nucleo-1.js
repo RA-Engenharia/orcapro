@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.440",
+versao: "1.2.441",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -74533,6 +74533,10 @@ erros.push("um bloco (" + String(b.textContent || "").replace(/\s+/g, " ").trim(
 raiz.removeChild(fonte);
 [].slice.call(raiz.querySelectorAll("template.ld-tpl")).forEach(function (t) { t.parentNode.removeChild(t); });
 [].slice.call(saida.querySelectorAll(".pag")).forEach(function (el) { el.innerHTML = el.innerHTML.replace("{{tot}}", String(n)); });
+var asss = [].slice.call(saida.querySelectorAll(".ld-pg")).filter(function (pg) {
+var t = pg.getAttribute("data-t"); return t !== "cartaA" && t !== "cartaB";
+}).map(function (pg) { return pg.querySelector(".ld-ass"); }).filter(Boolean);
+asss.slice(0, -1).forEach(function (a) { a.parentNode.removeChild(a); });
 [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
 if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
 });

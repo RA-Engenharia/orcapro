@@ -2102,6 +2102,12 @@
     /* NUNCA corpo cortado: depois de paginar, toda `.ld-corpo` tem de caber. Se alguma não couber, o gerador acusa (a página e o que sobrou),
        em vez de entregar um documento ao órgão com linha ou total faltando. */
     [].slice.call(saida.querySelectorAll(".pag")).forEach(function (el) { el.innerHTML = el.innerHTML.replace("{{tot}}", String(n)); });
+    /* 23/11/2026 (Rogério): o campo de assinatura vai SÓ na última página do documento, não no pé de todas as folhas.
+       A carta (cartaA/cartaB) tem a assinatura dela no corpo e não conta aqui. */
+    var asss = [].slice.call(saida.querySelectorAll(".ld-pg")).filter(function (pg) {
+      var t = pg.getAttribute("data-t"); return t !== "cartaA" && t !== "cartaB";
+    }).map(function (pg) { return pg.querySelector(".ld-ass"); }).filter(Boolean);
+    asss.slice(0, -1).forEach(function (a) { a.parentNode.removeChild(a); });
     [].slice.call(saida.querySelectorAll(".ld-corpo")).forEach(function (c, k) {
       if (c.scrollHeight > c.clientHeight + 1) erros.push("a folha " + (k + 1) + " tem conteúdo que não cabe (" + (c.scrollHeight - c.clientHeight) + " px a mais)");
     });
