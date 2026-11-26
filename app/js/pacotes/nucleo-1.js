@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.447",
+versao: "1.2.448",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -64856,7 +64856,7 @@ function nivelDoPav(pav, niveis) {
 if (!pav || !niveis || !niveis.length) return null;
 var L = niveis.map(function (n) { return { n: n, t: norm(n.nome), y: num(n.y != null ? n.y : n.elevacao, 0) }; });
 function acha(rx) { var r = L.filter(function (x) { return rx.test(x.t); })[0]; return r ? r.n : null; }
-var pisos = L.filter(function (x) { return !/TERRENO|FUNDA|SONDAG|SUBSOLO|COBERT|RESERVAT|BARRILETE|CAIXA|TELHAD|PLATIBANDA/.test(x.t); }).sort(function (a, b) { return a.y - b.y; });
+var pisos = L.filter(function (x) { return !/TERRENO|FUNDA|SONDAG|SUBSOLO|COBERT|RESERVAT|BARRILETE|CAIXA|TELHAD|PLATIBANDA|BALDRAME|RESPALDO|VIGA|LAJE|FORRO|CUMEEIRA|BEIRAL|CINTA|OSSO|TOPO/.test(x.t); }).sort(function (a, b) { return a.y - b.y; });
 var m, r;
 if (pav === "terreo") return acha(/\bTERREO\b/) || (pisos[0] ? pisos[0].n : null);
 if (pav === "subsolo") return acha(/\bSUBSOLO\b/);
@@ -64981,12 +64981,60 @@ for (k in votos) { qy = (+k % M) - OFF; qx = Math.round((+k - (+k % M)) / M) - O
 var menor = Math.min(A.length, Bp.length), conf = Math.max(0, Math.min(1, (vm - seg) / Math.max(1, vm))) * Math.min(1, vm / (menor * 0.12));
 return { dx: r3(mx * PASSO_VOTO), dy: r3(my * PASSO_VOTO), votos: vm, segundo: seg, confianca: Math.round(conf * 100) / 100, ok: vm >= 12 && vm >= seg * 1.5 && vm >= menor * 0.06 };
 }
+var RX_COTA = /^\s*(?:N\.?\s?A\.?|N\.?\s?O\.?|N[IÍ]VEL|NV\.?|EL\.?)?\s*[:=]?\s*([+\-−±])\s*(\d{1,3})[.,](\d{2,3})\s*m?\s*$/i;
+function cotaDoTexto(txt) {
+var m = RX_COTA.exec(String(txt == null ? "" : txt)); if (!m) return null;
+var v = parseFloat(m[2] + "." + m[3]); if (!isFinite(v)) return null;
+return m[1] === "-" || m[1] === "−" ? -v : v;
+}
+function cotasNivel(dxf, ret) {
+var cont = {}, out = [];
+((dxf && dxf.textos) || []).forEach(function (t) {
+if (!t || !(t.x >= ret.x0 && t.x <= ret.x1 && t.y >= ret.y0 && t.y <= ret.y1)) return;
+var v = cotaDoTexto(t.txt); if (v === null) return;
+var k = v.toFixed(2); cont[k] = (cont[k] || 0) + 1;
+});
+Object.keys(cont).forEach(function (k) { out.push({ v: parseFloat(k), n: cont[k] }); });
+return out.sort(function (a, b) { return b.n - a.n || b.v - a.v; });
+}
+var NOME_PAV = { subsolo: "Subsolo", inferior: "Pav. Inferior", terreo: "Térreo", mezanino: "Mezanino", superior: "Pav. Superior", tipo: "Pavimento tipo", cobertura: "Cobertura" };
+function ordemPav(pav) {
+var m = /^n(\d+)$/.exec(pav || "");
+if (m) return parseInt(m[1], 10);
+return { subsolo: -1, inferior: -0.5, terreo: 0, mezanino: 0.5, superior: 1, tipo: 1.5, cobertura: 99 }[pav];
+}
+function niveisDoDesenho(dxf, regs, niveis, o) {
+o = o || {};
+var pd = num(o.peDireito, 2.8), porPav = {}, peso = { planta: 3, cobertura: 3, layout: 1 };
+(regs || []).forEach(function (r) {
+if (!peso[r.tipo] || !r.pav || ordemPav(r.pav) === undefined) return;
+if (!porPav[r.pav] || peso[r.tipo] > peso[porPav[r.pav].tipo]) porPav[r.pav] = r;
+});
+var nosCortes = {};
+(regs || []).forEach(function (r) { if (r.tipo !== "corte" && r.tipo !== "fachada") return; cotasNivel(dxf, r).forEach(function (c) { var k = c.v.toFixed(2); nosCortes[k] = (nosCortes[k] || 0) + c.n; }); });
+var L = Object.keys(porPav).sort(function (a, b) { return ordemPav(a) - ordemPav(b); }).map(function (pav) {
+var r = porPav[pav], cs = cotasNivel(dxf, r), m = /^n(\d+)$/.exec(pav);
+var esc = cs.slice().sort(function (a, b) { return b.n - a.n || (nosCortes[b.v.toFixed(2)] || 0) - (nosCortes[a.v.toFixed(2)] || 0) || b.v - a.v; })[0];
+var ex = nivelDoPav(pav, niveis);
+return { pav: pav, nome: m ? m[1] + "º pavimento" : NOME_PAV[pav], elevacao: esc ? esc.v : null, origem: esc ? "desenho" : "estimada", candidatos: cs.slice(0, 6), regId: r.id,
+existente: ex ? { id: ex.id, nome: ex.nome, y: num(ex.y != null ? ex.y : ex.elevacao, 0) } : null, difere: null };
+});
+var ant = null;
+L.forEach(function (p, i) {
+if (p.elevacao !== null && ant !== null && p.elevacao <= ant + 0.5) { p.elevacao = null; p.origem = "estimada"; }
+if (p.elevacao === null) p.elevacao = r3(ant === null ? 0 : ant + pd);
+ant = p.elevacao;
+if (p.existente) p.difere = r3(p.elevacao - p.existente.y);
+});
+return L;
+}
 function posicao(refPos, refExt, ext, al) {
 return { dx: r3(refPos.dx + al.dx - refExt.x0 + ext.x0), dy: r3(refPos.dy - al.dy + refExt.y0 - ext.y0) };
 }
 function alinharPeloCanto(refExt, ext) { return { dx: r3(refExt.x0 - ext.x0), dy: r3(refExt.y0 - ext.y0), votos: 0, segundo: 0, confianca: 0, ok: false, canto: true }; }
 var CadSepara = {
 posicao: posicao, alinharPeloCanto: alinharPeloCanto,
+cotaDoTexto: cotaDoTexto, cotasNivel: cotasNivel, niveisDoDesenho: niveisDoDesenho, NOME_PAV: NOME_PAV,
 CEL: CEL, VAO: VAO, LONGA: LONGA, MIN_LINHAS: MIN_LINHAS, MIN_LADO: MIN_LADO, PASSO_VOTO: PASSO_VOTO, ROTULO_TIPO: ROTULO_TIPO,
 norm: norm, decodificar: decodificar, caixaDe: caixaDe, ilhas: ilhas, classificar: classificar, titulos: titulos,
 nivelDoPav: nivelDoPav, regioes: regioes, recortar: recortar, alinhar: alinhar

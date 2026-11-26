@@ -14706,7 +14706,8 @@
       var self = this;
       if (!this._d2Config()) return;
       var st = this._bimVxEst(), pid = plantaId || (/^d2p-/.test(st.ativa) ? st.ativa : this._d2PlantaPadrao());
-      if (!pid) { UI.toast("Abra um modelo primeiro: o vínculo CAD vai numa planta.", "aviso"); return; }
+      /* NÍVEIS DO DESENHO (26/11/2026): obra SEM nível não tem planta para receber o vínculo — antes isto parava aqui com
+         "abra um modelo primeiro". Agora o arquivo é lido assim mesmo: os níveis saem das cotas do próprio desenho. */
       /* ⚠ ACENTO: o conversor entrega DXF 2018 (UTF-8). Lido como latin1, "TÉRREO" virava "TÃ‰RREO": o texto do fundo saía
          com lixo e o título da planta não casava com nível nenhum. CadSepara.decodificar tenta UTF-8 e só então latin1. */
       var dec = function (ab) { return window.CadSepara ? CadSepara.decodificar(ab) : new TextDecoder("latin1").decode(ab); };
@@ -14727,13 +14728,20 @@
         var pacote = { nome: file.name, d: d, pid: pid, semBlocos: function () { if (!this._sb) this._sb = DXF.parse(txt); return this._sb; } };
         /* SEPARAR POR PAVIMENTO (js/cadsepara.js): o arquivo traz mais de um desenho? A pessoa escolhe o que vai em cada nível */
         var regs = []; try { regs = window.CadSepara ? CadSepara.regioes(d, Bim2D.niveis()) : []; } catch (eR) { regs = []; }
-        if (regs.length >= 2) { self._cadSeparar(pacote, regs); return; }
+        if (regs.length >= 2 || (!pid && regs.length)) { self._cadSeparar(pacote, regs); return; }
+        if (!pid) {
+          /* nem nível na obra nem desenho reconhecível: a pessoa cria os níveis e o arquivo já lido volta sozinho (_cadRetomar) */
+          self._cadPendente = pacote; self._cadPendenteEm = Date.now();
+          UI.toast("Esta obra ainda não tem níveis e não achei as plantas no desenho para criá-los. Crie os níveis e salve: o desenho entra em seguida.", "aviso", 9000);
+          self._niveis(); return;
+        }
         self._cadVincularInteiro(pacote);
       })["catch"](function (e) { UI.toast("Não vinculei " + file.name + ": " + e.message, "erro", 9000); });
     },
     /* o desenho inteiro num nível só (o vínculo de sempre) */
     _cadVincularInteiro: function (pacote) {
-      var d = pacote.d, pid = pacote.pid;
+      var d = pacote.d, pid = pacote.pid || this._d2PlantaPadrao();
+      if (!pid) { UI.toast("O desenho inteiro vai numa planta, e esta obra ainda não tem níveis. Use \"Criar os níveis do desenho\" ou crie em Arquitetura › Níveis.", "aviso", 8000); return; }
       /* passou do limite com os blocos? As paredes valem mais que a mobília: fica a leitura sem blocos */
       if (d.segmentos.length > Bim2D.MAX_CAD_SEG) { try { var d2 = pacote.semBlocos(); if (d2 && d2.segmentos && d2.segmentos.length) d = d2; } catch (eB) {} }
       var r = Bim2D.vincularCad(pid, pacote.nome, d);
@@ -14754,6 +14762,19 @@
       var esc = {}; regs.forEach(function (r) { esc[r.id] = r.importar && r.nivelId != null ? String(r.nivelId) : ""; });
       var h = function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
       var f1 = function (v) { return (Math.round(v * 10) / 10).toFixed(1).replace(".", ","); };
+      /* NÍVEIS DO DESENHO: a proposta, o que a pessoa digitou em cada cota e quais níveis existentes ela mandou ajustar.
+         Modelo vazio (nada modelado ainda): ajustar a cota não move nada, então já vem marcado. */
+      var PROP = [], nvEd = {}, nvAj = {}, vazio = true, aceito = {};   /* aceito: a cota que a pessoa JÁ confirmou para o pavimento (não volto a sugerir a do desenho) */
+      try { vazio = !(window.BIM && BIM.editarOps && BIM.editarOps().length); } catch (eV) { vazio = false; }
+      function propor() {
+        /* ⚠ só nível GRAVADO conta como "a obra já tem": sem nenhum gravado o sistema mostra pavimentos automáticos (um "Térreo"
+           em 0,00, ou os do modelo importado) que somem quando o primeiro nível é gravado. Tratar o automático como existente
+           fazia o Térreo nunca ser criado: a obra ficava só com Pav. Superior e Cobertura (pego na e2e, obra vazia). */
+        var grav = {}; try { self._nivLer().forEach(function (n) { grav[String(n.id)] = 1; }); } catch (eG) {}
+        try { PROP = C.niveisDoDesenho(d, regs, NV.filter(function (n) { return grav[String(n.id)]; })); } catch (eP) { PROP = []; }
+        PROP.forEach(function (p) { if (nvEd[p.pav] == null) nvEd[p.pav] = p.elevacao.toFixed(2); if (nvAj[p.pav] == null) nvAj[p.pav] = vazio; });
+      }
+      propor();
       /* a miniatura: no máximo ~9 mil linhas (o desenho inteiro pesaria na tela e não ajuda a escolher) */
       var cx = C.caixaDe(d.segmentos), mg = Math.max(cx.x1 - cx.x0, cx.y1 - cx.y0) * 0.02 + 0.5;
       var vb = [cx.x0 - mg, -(cx.y1 + mg), (cx.x1 - cx.x0) + 2 * mg, (cx.y1 - cx.y0) + 2 * mg];
@@ -14775,7 +14796,27 @@
         regs.forEach(function (r, k) { num[r.id] = k + 1; if (ehPl[r.tipo] || r.manual) pl.push(r); else ou.push(r); });
         var falta = pl.filter(function (r) { return !r.manual && r.pav && r.nivelId == null; });
         var t = "";
-        if (falta.length) t += '<div style="border:1px solid var(--aviso,#c80);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px">A obra não tem nível para: <b>' +
+        /* NÍVEIS DO DESENHO: o que a planta e os cortes dizem de cada pavimento (CadSepara.niveisDoDesenho). Nível que a
+           obra não tem → cria; nível que tem com OUTRA cota → só muda se a pessoa marcar (mudar a cota move o que está preso a ele). */
+        var novos = PROP.filter(function (p) { return !p.existente; }), difs = PROP.filter(function (p) { return p.existente && p.origem === "desenho" && Math.abs(p.difere) > 0.02 && !(aceito[p.pav] != null && Math.abs(p.existente.y - aceito[p.pav]) < 0.005); });
+        if (novos.length || difs.length) {
+          var cota = function (v) { return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2).replace(".", ","); };
+          var campo = function (p) { return '<input type="number" step="0.01" data-cad-nv="' + h(p.pav) + '" value="' + h(nvEd[p.pav]) + '" style="width:78px"> m'; };
+          t += '<div id="cad-sep-niveis" style="border:1px solid var(--linha);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;background:var(--fundo-2,transparent)"><b>Níveis lidos do desenho</b>' +
+            (novos.length ? '<div class="muted" style="font-size:11.5px;margin:2px 0 4px">A obra ainda não tem estes níveis. Confira a cota e crie de uma vez.</div>' : "") +
+            /* obra sem nível GRAVADO usa os pavimentos do modelo importado; ao gravar o primeiro nível eles deixam de valer — a pessoa precisa saber antes */
+            (novos.length && NV.length && !self._nivLer().length ? '<div style="font-size:11.5px;margin:0 0 4px;color:var(--aviso,#a60)">Hoje a obra não tem nível gravado e usa os pavimentos automáticos (' + h(NV.map(function (n) { return n.nome; }).join(", ")) + "). Ao criar, passam a valer os níveis abaixo no lugar deles.</div>" : "") +
+            novos.map(function (p) {
+              var outras = p.candidatos.filter(function (c) { return Math.abs(c.v - p.elevacao) > 0.004; }).slice(0, 3).map(function (c) { return cota(c.v); });
+              return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0"><span style="min-width:104px"><b>' + h(p.nome) + "</b></span>" + campo(p) +
+                '<span class="muted" style="font-size:11.5px">' + (p.origem === "desenho" ? "lido do desenho" + (outras.length ? " (também há " + outras.join(", ") + ")" : "") : "estimado: a planta não traz a cota de nível") + "</span></div>";
+            }).join("") +
+            difs.map(function (p) {
+              return '<label style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0;margin:0"><input type="checkbox" data-cad-aj="' + h(p.pav) + '"' + (nvAj[p.pav] ? " checked" : "") + "> <span>Ajustar <b>" + h(p.existente.nome) + "</b> de " + cota(p.existente.y) + " para</span> " + campo(p) + "</label>";
+            }).join("") +
+            (difs.length ? '<div class="muted" style="font-size:11.5px;margin-top:2px">Ajustar a cota de um nível leva junto o que estiver preso a ele (paredes, lajes, pilares). Desmarcado, o nível fica como está.</div>' : "") +
+            '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" data-cad-criar="1">' + (novos.length ? "Criar os níveis do desenho" : "Ajustar os níveis") + '</button><button class="btn sm" data-cad-niveis="1">Abrir Níveis do projeto…</button></div></div>';
+        } else if (falta.length) t += '<div style="border:1px solid var(--aviso,#c80);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px">A obra não tem nível para: <b>' +
           falta.map(function (r) { return h(r.rotulo); }).join("</b>, <b>") + "</b>. Escolha um nível na lista ao lado do desenho, ou crie o nível que falta e eu volto para esta tela." +
           '<div style="margin-top:6px"><button class="btn sm" data-cad-niveis="1">Criar o nível que falta…</button></div></div>';
         if (!pl.length) t += '<p class="muted" style="font-size:12.5px">Não reconheci título de planta neste arquivo. Escolha o nível de cada desenho abaixo, ou arraste na miniatura para marcar um recorte.</p>';
@@ -14804,10 +14845,56 @@
       var m = bg && bg.querySelector ? bg.querySelector(".modal") : null; if (!m) return;
       function repintar() { var L = document.getElementById("cad-sep-lista"), R = document.getElementById("cad-sep-ret"); if (L) L.innerHTML = corpoLista(); if (R) R.innerHTML = retangulos(); }
       m.addEventListener("change", function (e) {
-        var id = e.target && e.target.getAttribute ? e.target.getAttribute("data-cad-reg") : null; if (!id) return;
-        esc[id] = e.target.value; var R = document.getElementById("cad-sep-ret"); if (R) R.innerHTML = retangulos();
+        var g = e.target && e.target.getAttribute ? e.target : null; if (!g) return;
+        if (g.getAttribute("data-cad-nv")) { nvEd[g.getAttribute("data-cad-nv")] = g.value; return; }
+        if (g.getAttribute("data-cad-aj")) { nvAj[g.getAttribute("data-cad-aj")] = !!g.checked; return; }
+        var id = g.getAttribute("data-cad-reg"); if (!id) return;
+        esc[id] = g.value; var R = document.getElementById("cad-sep-ret"); if (R) R.innerHTML = retangulos();
       });
+      m.addEventListener("input", function (e) { var g = e.target; if (g && g.getAttribute && g.getAttribute("data-cad-nv")) nvEd[g.getAttribute("data-cad-nv")] = g.value; });
+      /* CRIAR / AJUSTAR OS NÍVEIS a partir do desenho, e já distribuir as plantas neles */
+      function criarNiveis() {
+        var N = window.Niveis; if (!N) { UI.toast("Motor de níveis não carregado.", "erro"); return; }
+        if (self._bloqueado && self._bloqueado()) return;   /* RBAC em função, como a tela de níveis */
+        if (self._semSessao()) { UI.toast("Entre na sua conta para criar os níveis.", "erro"); return; }
+        var antes = self._nivLer(), depois = antes.map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte != null ? n.corte : null, peDireitoDeclarado: n.peDireitoDeclarado != null ? n.peDireitoDeclarado : null }; });
+        var seqNv = [], criados = [], ajustados = [], erro = "", pend = {};
+        PROP.forEach(function (p) {
+          var v = Number(String(nvEd[p.pav]).replace(",", "."));
+          if (p.existente) {
+            var mudar = !!nvAj[p.pav] && p.origem === "desenho" && Math.abs(p.difere) > 0.02;
+            if (mudar && !isFinite(v)) { erro = "A cota de " + p.existente.nome + " não é um número."; return; }
+            if (mudar) { depois.forEach(function (n) { if (String(n.id) === String(p.existente.id)) n.elevacao = Math.round(v * 1000) / 1000; }); ajustados.push(p.existente.nome); pend[p.pav] = Math.round(v * 1000) / 1000; }
+            seqNv.push({ nome: p.existente.nome, y: mudar ? v : p.existente.y });
+          } else {
+            if (!isFinite(v)) { erro = "A cota de " + p.nome + " não é um número."; return; }
+            depois.push({ id: N.idLivre(depois), nome: p.nome, elevacao: Math.round(v * 1000) / 1000, corte: null, peDireitoDeclarado: null });
+            criados.push(p.nome + " " + (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2).replace(".", ",")); pend[p.pav] = Math.round(v * 1000) / 1000;
+            seqNv.push({ nome: p.nome, y: v });
+          }
+        });
+        /* ⚠ a ordem dos pavimentos tem de subir: criar o Pav. Superior (+3,42) com a Cobertura da obra parada em +2,80 deixaria
+           a cobertura ABAIXO do pavimento — a planta dele cortaria no lugar errado e ninguém entenderia por quê */
+        for (var q = 1; q < seqNv.length && !erro; q++) if (!(seqNv[q].y > seqNv[q - 1].y + 0.01)) erro = seqNv[q].nome + " (" + String(seqNv[q].y).replace(".", ",") + " m) ficaria na cota ou abaixo de " + seqNv[q - 1].nome + " (" + String(seqNv[q - 1].y).replace(".", ",") + " m). Marque \"Ajustar\" nesse nível ou corrija a cota.";
+        if (!erro) { var val = N.validar(depois); if (!val.ok) erro = val.erros[0]; }
+        if (erro) { UI.toast(erro, "erro", 9000); return; }
+        if (!criados.length && !ajustados.length) { UI.toast("Nada para criar ou ajustar: marque \"Ajustar\" no nível que deve mudar.", "aviso"); return; }
+        var ap = self._nivAplicarMudanca(antes, depois, false);
+        if (ap.falhou) { UI.toast("Não consegui salvar " + ap.falhou + " nível(is). Confira o espaço do navegador.", "erro"); return; }
+        Object.keys(pend).forEach(function (k) { aceito[k] = pend[k]; });
+        try { self._d2Config(); self._nivArvore(); } catch (eA) {}
+        try { Bim2D._avisarMudou(); } catch (eM) {}
+        try { if (window.BimArqUI && BimArqUI.ativo && BimArqUI.ativo()) BimArqUI.enviar(); } catch (eB) {}
+        /* as plantas vão para os níveis novos: a mesma regra de CadSepara.regioes (uma por nível; planta baixa ganha da de layout) */
+        try { NV = Bim2D.niveis(); } catch (eN) { NV = []; }
+        var ocup = {};
+        regs.forEach(function (r) { if (r.manual) { if (esc[r.id]) ocup[esc[r.id]] = 1; return; } var nv = ehPl[r.tipo] ? C.nivelDoPav(r.pav, NV) : null; r.nivelId = nv ? nv.id : null; esc[r.id] = ""; });
+        ["planta", "cobertura", "reservatorio", "layout"].forEach(function (tp) { regs.forEach(function (r) { if (r.manual || r.tipo !== tp || r.nivelId == null || ocup[String(r.nivelId)]) return; ocup[String(r.nivelId)] = 1; esc[r.id] = String(r.nivelId); }); });
+        nvEd = {}; nvAj = {}; propor(); repintar();
+        UI.toast((criados.length ? criados.length + " nível(is) criado(s): " + criados.join(" · ") + ". " : "") + (ajustados.length ? "Cota ajustada: " + ajustados.join(", ") + ". " : "") + "As plantas já estão nos níveis — confira e clique \"Separar por pavimento\".", "ok", 9000);
+      }
       m.addEventListener("click", function (e) {
+        if (e.target.closest && e.target.closest("[data-cad-criar]")) { criarNiveis(); return; }
         var b = e.target.closest ? e.target.closest("[data-cad-niveis]") : null; if (!b) return;
         /* vai criar o nível e volta: o arquivo já lido fica guardado (não peço o DWG de novo) */
         self._cadPendente = pacote; self._cadPendenteEm = Date.now(); UI.fecharModal(); self._niveis();
@@ -14840,6 +14927,7 @@
       /* ⚠ só logo depois: quem cancelou a tela de níveis e salvou níveis uma hora mais tarde não espera o desenho reaparecer */
       if (Date.now() - (this._cadPendenteEm || 0) > 20 * 60000) return false;
       var regs = []; try { regs = CadSepara.regioes(p.d, Bim2D.niveis()); } catch (e) { regs = []; }
+      if (!p.pid) p.pid = this._d2PlantaPadrao();
       if (regs.length >= 2) this._cadSeparar(p, regs); else this._cadVincularInteiro(p);
       return true;
     },
@@ -14848,7 +14936,7 @@
       var self = this, C = window.CadSepara, NV = Bim2D.niveis(), yDe = {}, nomeDe = {};
       NV.forEach(function (n) { yDe[String(n.id)] = n.y; nomeDe[String(n.id)] = n.nome; });
       var sel = regs.filter(function (r) { return esc[r.id] && yDe[esc[r.id]] != null; });
-      if (!sel.length) { UI.toast("Escolha o nível de pelo menos um desenho (na lista, ao lado de cada um).", "aviso"); return; }
+      if (!sel.length) { UI.toast(NV.length ? "Escolha o nível de pelo menos um desenho (na lista, ao lado de cada um)." : "Esta obra ainda não tem níveis: clique \"Criar os níveis do desenho\" (ou crie em Níveis do projeto) e depois separe.", "aviso", 7000); return; }
       sel.sort(function (a, b) { return yDe[esc[a.id]] - yDe[esc[b.id]]; });
       UI.fecharModal();
       BimShell.status("Separando " + pacote.nome + " por pavimento…");
