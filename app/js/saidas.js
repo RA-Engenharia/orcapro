@@ -60,6 +60,7 @@
     { id: "composicoesProprias", rotulo: "Composições próprias", grupo: "Planilha", aplica: ["pacote"], desc: "Composições montadas fora das bases oficiais." },
     { id: "auxiliares", rotulo: "Composições auxiliares", grupo: "Planilha", aplica: ["pacote"], desc: "Composições que entram dentro de outras." },
     { id: "quantitativos", rotulo: "Quantitativos e insumos", grupo: "Planilha", aplica: ["pacote", "excel"], desc: "Lista de insumos com quantidade total." },
+    { id: "consumoInsumos", rotulo: "Consumo de insumos por serviço", grupo: "Planilha", aplica: ["pacote"], desc: "Quanto de cada insumo cada serviço consome (coeficiente x quantidade). Antes saía junto com os quantitativos." },
     { id: "memoriaCalculo", rotulo: "Memória de cálculo", grupo: "Planilha", aplica: ["ref", "excel"], desc: "Como cada quantidade foi medida." },
     { id: "curvaAbc", rotulo: "Curva ABC", grupo: "Análises", aplica: ["pacote", "ref", "excel"], desc: "Serviços e insumos ordenados pelo peso no custo." },
     { id: "cronograma", rotulo: "Cronograma físico-financeiro", grupo: "Análises", aplica: ["pacote", "ref", "excel", "proposta"], desc: "Desembolso e avanço mês a mês." },

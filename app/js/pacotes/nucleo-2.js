@@ -78829,10 +78829,12 @@ var montarPacote = function (base) {
 var emp = cx.emp;
 var opc = { base: base };
 try {
-if (typeof Saidas !== "undefined" && Saidas.previaLigada()) {
+var secPac = self._licSecoesPacote(orc), usouModelo = false;
+if (!secPac.gravada && typeof Saidas !== "undefined" && Saidas.previaLigada()) {
 var escSai = Saidas.ativo();
-if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.secoes).length) opc.secoes = ogSai.secoes; }
+if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.secoes).length) { opc.secoes = ogSai.secoes; usouModelo = true; } }
 }
+if (!usouModelo) opc.secoes = LicitacaoDocs.secoesParaGerar(secPac.escolha);
 } catch (eSai) { }
 var pr = LicitacaoDocs.pendencias(orc, emp, opc);
 if (!pr.ok && auto) { falhaAuto(pr.erro); return; }
@@ -78894,11 +78896,12 @@ lista("Dados do pacote", pr.dados) + blocoConf,
 }
 };
 if (cx.perguntar && auto && !auto.empresaOk) { falhaAuto("o certame não informou a empresa licitante; gere o PDF pelo botão do pacote"); return; }
+var depoisEmpresa = function () { if (auto) seguir(); else self._licPainelSecoes(orc, seguir); };
 if (cx.perguntar) {
-this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, function () { });
+this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { depoisEmpresa(); }, function () { });
 return;
 }
-seguir();
+depoisEmpresa();
 },
 _licDescricoesOficiais: function (orc) {
 var self = this;
@@ -78951,6 +78954,55 @@ Util.esc(String(conta.nome || "").trim() || "(razão social não cadastrada)") +
 [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "Gerar com a empresa da conta", classe: "primary", onClick: function () { UI.fecharModal(); seguir(); } }]);
 return true;
+},
+_licSecoesPacote: function (orc) {
+var out = { chave: "", escolha: null, prefs: {} };
+try {
+var lic = Licitacao.cfg(orc);
+out.chave = LicitacaoDocs.chaveLicitante(lic);
+out.prefs = Store.lerPrefs(Auth.empresaId()) || {};
+out.exigidas = LicitacaoDocs.secoesExigidas(lic);
+out.escolha = LicitacaoDocs.secoesDoPacote(out.prefs, out.chave, out.exigidas);
+out.gravada = LicitacaoDocs.temEscolhaPacote(out.prefs, out.chave);
+} catch (e) { out.escolha = LicitacaoDocs.secoesDoPacote({}, ""); out.gravada = false; out.exigidas = {}; }
+return out;
+},
+_licPainelSecoes: function (orc, aoSeguir) {
+var self = this, cur = this._licSecoesPacote(orc), lista = LicitacaoDocs.secoesPacote();
+var caixas = lista.map(function (x) {
+return '<label style="display:block;margin:4px 0;font-size:13px"><input type="checkbox" data-lic-sec="' + Util.esc(x.id) + '"' + (cur.escolha[x.id] ? ' checked' : '') + '> ' + Util.esc(x.rotulo) +
+(x.aviso ? ' <span class="muted" style="font-size:11.5px">(' + Util.esc(x.aviso) + ')</span>' : '') +
+(cur.exigidas && cur.exigidas[x.id] ? ' <b data-lic-aviso="' + Util.esc(x.id) + '" style="color:#c00000;font-size:12px;' + (cur.escolha[x.id] ? 'display:none' : '') + '">Exigida pelo edital: desligada, a proposta pode ser recusada.</b>' : '') + '</label>';
+}).join("");
+var lerCaixas = function () {
+var esc = {};
+[].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) { esc[c.getAttribute("data-lic-sec")] = !!c.checked; });
+return esc;
+};
+UI.modal("O que sai na proposta",
+'<p style="font-size:13px;margin-top:0">Marque as seções do documento. A escolha fica gravada para ' + (cur.chave ? 'este licitante' : 'a sua empresa') + ' e vale também quando o pacote é gerado sozinho.</p>' + caixas,
+[{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Restaurar padrão", classe: "ghost", onClick: function () {
+var pd = LicitacaoDocs.secoesPadraoPacote();
+[].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) { var id = c.getAttribute("data-lic-sec"); c.checked = !!pd[id] || !!(cur.exigidas && cur.exigidas[id]); c.dispatchEvent(new Event("change")); });
+} },
+{ texto: "Gerar o pacote", classe: "primary", onClick: function () {
+var esc = lerCaixas();
+if (!Object.keys(esc).some(function (k) { return esc[k]; })) { UI.toast("Marque ao menos uma seção.", "erro"); return; }
+try {
+var pr = Store.lerPrefs(Auth.empresaId()) || {};
+LicitacaoDocs.gravarSecoesPacote(pr, cur.chave, esc);
+Store.salvarPrefs(Auth.empresaId(), pr);
+} catch (eG) { UI.toast("Não consegui gravar a escolha, mas o pacote sai com ela.", "aviso"); }
+UI.fecharModal();
+aoSeguir();
+} }]);
+[].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) {
+c.addEventListener("change", function () {
+var av = document.querySelector('[data-lic-aviso="' + c.getAttribute("data-lic-sec") + '"]');
+if (av) av.style.display = c.checked ? "none" : "";
+});
+});
 },
 _licEmpresaCertame: function (orc) {
 var lic = (typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null, conta = {};

@@ -430,13 +430,92 @@
       if (!incoerente && impresso != null && difCalc > 0.01) avisos.push("as linhas impressas dão " + fmt(calculado, 2) + "% pela fórmula, o órgão imprime " + fmt(impresso, 2) + "% e a proposta usa " + fmt(pctOrc, 2) + "% (diferença de arredondamento das linhas)");
     }
     var msg = incoerente ? ("Composição do órgão dá " + fmt(calculado, 2) + "%" + (impresso != null ? " (impresso " + fmt(impresso, 2) + "%)" : "") + ", a proposta usa " + fmt(pctOrc, 2) + "%. Reduza por desconto nos preços, que mantém o BDI, ou ajuste a composição no documento antes de enviar.") : "";
-    return { ok: true, grupos: grupos, impresso: impresso, conta: b.conta != null ? nm(b.conta) : null, avisos: avisos, calculado: calculado, incoerente: incoerente, msgIncoerente: msg };
+    return { ok: true, formula: s(b.formula), grupos: grupos, impresso: impresso, conta: b.conta != null ? nm(b.conta) : null, avisos: avisos, calculado: calculado, incoerente: incoerente, msgIncoerente: msg };
+  }
+
+  /* =====================================================================
+   * ADMINISTRAÇÃO DA OBRA NO FORMATO DO EDITAL (composicaoOrgao.formato === "administracao")
+   * O órgão imprime a equipe em MESES: preço unitário do mês x coeficiente mensal = total da linha (ao centavo); TOTAL SIMPLES = soma
+   * das linhas; TOTAL PARA N MESES = simples x N; FRAÇÃO = total do prazo x fração% / 100 / 100 (fração 100 => o custo de 1% do item; semântica do CertamePRO: coef efetivo = mensal x prazo x fração / 10000); BDI; e o PERCENTUAL.
+   * ⚠ O coeficiente mensal sai do coeficiente do item (por 1%): mensal = coef x fração / prazo (0,0075 x 100 / 6 = 0,125). Derivado
+   *   do coeficiente ATUAL, para o desconto que mexe no coeficiente de MO (licitacao.js, _escalarInsumosMO) continuar certo.
+   * ⚠ NUNCA imprime composição que não fecha com o custo da planilha. Com desconto (ou Fechar valor) os insumos já vêm reescalados
+   *   (licitacao.js / fechamento.js); aqui só se fecha o CENTAVO: se arredondar total simples x prazo / fração não dá o custo da
+   *   planilha, repete-se a reescala (mesmo fator, 4 casas) e o resíduo vai no preço do MAIOR insumo. Não fechou => devolve null e o
+   *   item sai no formato comum, com pendência.
+   * Devolve { prazo, fr, linhas:[{ codigo, descricao, unidade, pu, cm, total }], totalSimples, totalPrazo, valor, ajustado } ou null.
+   * Muda `ins[].cu` e `ins[].ct` quando precisa fechar (para o resto do documento dizer o mesmo).
+   * ===================================================================== */
+  function fecharAdministracao(co, ins, cuAlvo, semDesconto) {
+    if (!co || co.formato !== "administracao" || !ins || !ins.length) return null;
+    var prazo = nm(co.prazoMeses), fr = nm(co.fracaoPct) > 0 ? nm(co.fracaoPct) : 100;
+    if (!(prazo > 0) || !(cuAlvo > 0)) return null;
+    var lin = [], i;
+    for (i = 0; i < ins.length; i++) {
+      if (!(ins[i].coef > 0) || !(ins[i].cu > 0)) return null;
+      var cm = ins[i].coef * 10000 / (prazo * fr), dado = co.coeficientesMensais ? co.coeficientesMensais[ins[i].codigo] : null;
+      if (dado !== null && dado !== undefined && dado !== "" && Math.abs(nm(dado) - cm) <= 1e-6) cm = nm(dado);
+      lin.push({ x: ins[i], cm: cm, pu: ins[i].cu });
+    }
+    var tot = function (l) { return arr(l.cm * l.pu, 2); };
+    var soma = function () { var t = 0; lin.forEach(function (l) { t += tot(l); }); return arr(t, 2); };
+    var fecha = function (ts) { return arr(ts * prazo * fr / 10000, 2) === arr(cuAlvo, 2); };
+    var ts = soma(), ajustado = false;
+    if (!fecha(ts)) {
+      ajustado = true;
+      var sc = 0; lin.forEach(function (l) { sc += l.x.coef * l.pu; });
+      if (!(sc > 0)) return null;
+      var k = cuAlvo / sc;
+      lin.forEach(function (l) { l.pu = Math.round(l.pu * k * 1e4) / 1e4; });
+      ts = soma();
+      if (!fecha(ts)) {
+        var maior = lin[0]; lin.forEach(function (l) { if (tot(l) > tot(maior)) maior = l; });
+        var outros = arr(ts - tot(maior), 2), base = arr(cuAlvo * 10000 / (prazo * fr), 2), feito = false, d, sg, j;
+        for (d = 0; d <= 12 && !feito; d++) {
+          for (sg = 1; sg >= -1 && !feito; sg -= 2) {
+            if (d === 0 && sg === -1) continue;
+            var tsA = arr(base + sg * d * 0.01, 2);
+            if (!fecha(tsA)) continue;
+            var mA = arr(tsA - outros, 2);
+            if (!(mA > 0)) continue;
+            var p0 = Math.round(mA / maior.cm * 1e4) / 1e4;
+            for (j = -3; j <= 3 && !feito; j++) {
+              var p = Math.round((p0 + j * 1e-4) * 1e4) / 1e4;
+              if (p > 0 && arr(maior.cm * p, 2) === mA) { maior.pu = p; feito = true; }
+            }
+          }
+        }
+        if (!feito) return null;
+        ts = soma();
+        if (!fecha(ts)) return null;
+      }
+      lin.forEach(function (l) { l.x.cu = l.pu; l.x.ct = l.x.coef * l.pu; });
+    }
+    /* SEM desconto o impresso TEM de ser o do órgão: coeficientes mensais, total simples e total do prazo que o pacote trouxe. Divergiu => formato comum + pendência. */
+    if (semDesconto) {
+      var tolM = 1e-6;
+      for (i = 0; i < lin.length; i++) {
+        var dm = co.coeficientesMensais ? co.coeficientesMensais[lin[i].x.codigo] : null;
+        if (dm !== null && dm !== undefined && dm !== "" && Math.abs(nm(dm) - lin[i].cm) > tolM) return null;
+      }
+      if (co.totalSimples !== undefined && co.totalSimples !== null && co.totalSimples !== "" && Math.abs(nm(co.totalSimples) - ts) > 0.005) return null;
+      if (co.totalPrazo !== undefined && co.totalPrazo !== null && co.totalPrazo !== "" && Math.abs(nm(co.totalPrazo) - arr(ts * prazo, 2)) > 0.005) return null;
+    }
+    return {
+      prazo: prazo, fr: fr, ajustado: ajustado, totalSimples: ts, totalPrazo: arr(ts * prazo, 2), valor: arr(ts * prazo * fr / 10000, 2),
+      linhas: lin.map(function (l) { return { codigo: l.x.codigo, descricao: l.x.descricao, unidade: l.x.unidade, pu: l.pu, cm: l.cm, total: tot(l) }; })
+    };
   }
 
   /* =====================================================================
    * MONTAR — todos os dados do pacote (sem HTML)
    * `opcoes`: { base (baseDe), objeto, data, prazo, validade, prazoInicio, cidade }
    * ===================================================================== */
+  function copiaOff(sec) {
+    var o = {};
+    if (sec && typeof sec === "object") Object.keys(sec).forEach(function (k) { if (sec[k] === false) o[k] = false; });
+    return o;
+  }
   function empresaResolvida(emp) {
     emp = emp || {};
     var faltando = [];
@@ -583,6 +662,8 @@
     if (Orc.garantirConfig(orc).bdiIncidencia === "final") return { ok: false, erro: "O pacote da proposta usa o BDI no preço unitário. Em Parâmetros do orçamento, troque a incidência do BDI para \"preço unitário\" e gere de novo." };
     var leitura = (lic.leitura && typeof lic.leitura === "object") ? lic.leitura : null;
     var pend = { preencher: [], conferencia: [], dados: [], licitante: [] };
+    /* seção exigida pelo edital que a escolha desligou: fica registrada nas pendências (também no modo automático); nunca bloqueia */
+    avisosDeSecoes(opcoes.secoes, secoesExigidas(lic)).forEach(function (a) { pend.dados.push(a); });
 
     var valor = arr(Lic.totalProposta(orc), 2);
     var calc = Orc.calcular(orc);
@@ -741,6 +822,17 @@
         var cto = (x.custoTotalOrgao !== undefined && x.custoTotalOrgao !== null && x.custoTotalOrgao !== "" && isFinite(Number(x.custoTotalOrgao))) ? Number(x.custoTotalOrgao) : null;
         return { codigo: cod, descricao: d, unidade: un, fonte: s(x.fonte), coef: co, cu: cu, ct: co * cu, ctOrg: cto, cat: cat, composicao: !eh };
       });
+      /* administração no formato do edital: fecha o centavo ANTES de repartir as categorias (usa os mesmos insumos) */
+      var adm = null;
+      if (it.composicaoOrgao && it.composicaoOrgao.formato === "administracao") {
+        adm = fecharAdministracao(it.composicaoOrgao, ins, nm(Ln.custoUnitario), !(lic.descontoLinear || lic.descontoItens || orc.fechamento));
+        if (!adm) pend.dados.push("Item " + numeroDoc + " (" + s(Ln.codigo) + "): a composição da administração (formato do edital) não fecha com o custo da planilha, diverge dos totais impressos pelo órgão (sem desconto) ou veio incompleta (" + R(nm(Ln.custoUnitario)) + ") ou veio incompleta; saiu no formato comum. Conferir.");
+        else {
+          adm.pu = Ln.precoUnit; adm.pt = Ln.precoTotal; adm.qtd = Ln.quantidade; adm.unidade = s(Ln.unidade);
+          adm.perc = (it.composicaoOrgao.percentualAdministracao !== undefined && it.composicaoOrgao.percentualAdministracao !== null && it.composicaoOrgao.percentualAdministracao !== "") ? nm(it.composicaoOrgao.percentualAdministracao) : null;
+          adm.formula = s(it.composicaoOrgao.formulaPercentual);
+        }
+      }
       var cats = { MO: 0, MAT: 0, EQ: 0, OUTROS: 0 }, auxRaw = 0;
       if (ins.length) {
         ins.forEach(function (x) {
@@ -782,7 +874,7 @@
         descricaoLida: s(Ln.descricao),
         unidade: s(Ln.unidade), fonte: propriaOrgao ? "PRÓPRIO" : (propria ? "PRÓPRIA" : fonteRaw.toUpperCase()),
         quantidade: Ln.quantidade, cu: Ln.custoUnitario, pu: Ln.precoUnit, ct: Ln.custoTotal, pt: Ln.precoTotal,
-        insumos: ins, cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null
+        insumos: ins, adm: adm, formatoAdm: !!(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao"), cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null
       };
       try { var rf = Lic.refDoItem ? Lic.refDoItem(orc, it) : null; if (rf && rf.comBdi > 0) linhaI.refMax = rf.comBdi; } catch (eRf) {}
       itens.push(linhaI);
@@ -1203,7 +1295,7 @@
       aux: aux, quant: qLista, curva: curva, crono: crono, bdi: bdi, enc: enc, prazoDias: prazoDias, cronoSemPrazo: cronoSemPrazo, valorMaximo: num0(lic.valorEstimado),
       objetoInfo: objInfo, validadeDias: vEd || vCom || 0, validadeEdital: !!vEd,
       pend: pend, descTrocadas: descTrocadas, prazoTexto: txtPrazo, prazoDiverge: prazoDiverge, prazoDiasTexto: diasTxt,
-      desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd,
+      desconto: lic.descontoLinear || lic.descontoItens || null, cartaDoEdital: cartaEd, secoesOff: copiaOff(opcoes.secoes),
       fontesTxt: fontesTxt, dataBase: s(lic.dataBase)
     };
 
@@ -1254,6 +1346,11 @@
 
     /* MO/MAT/EQ: só "ok" se NENHUM item ficou em OUTROS. Sobra = não conferido (diz quantos itens e que % do custo); tudo em OUTROS = reprova. */
     var ci = d.custoItens, cT = ci ? ci.tot : null;
+    /* Seção "Custos por item" DESLIGADA na escolha da proposta: o item 7.20 do edital pede custo de material, mão de obra e equipamento por item.
+       Só avisa (não conferido, sem bloquear): quem gera decide se o edital dele exige. */
+    if (d.secoesOff && d.secoesOff.custosItem === false) {
+      add("Custos de material, mão de obra e equipamento (item 7.20)", "nao_conferido", "A seção \"Custos por item\" está desligada nesta proposta. O item 7.20 do edital pede o custo de material, mão de obra e equipamento por item: confira se o seu edital exige e ligue a seção se for o caso.");
+    }
     if (!ci) add("Custos de material, mão de obra e equipamento", "reprovado", "Seção de custos por item ausente.");
     else {
       var fecha = Math.abs(arr(cT.MAT + cT.MO + cT.EQ + cT.OUTROS, 2) - arr(tot.semBdi, 2)) < 0.005 && Math.abs(cT.pt - arr(d.valor, 2)) < 0.005;
@@ -1599,6 +1696,8 @@
   }
 
   function usaTotalOrgao(d, I) {
+    /* administração no formato do edital: o total do órgão é o MENSAL (2.165,75), não coeficiente x unitário da linha; o bloco comum usa coef x cu */
+    if (I.formatoAdm) return false;
     return !d.desconto && I.custoIgualOrgao !== false && !!(I.insumos && I.insumos.length) && I.insumos.every(function (x) { return x.ctOrg !== null && x.ctOrg !== undefined; });
   }
   function blocoComposicao(tit, insumos, valor, bdiPct, pu, qtdRot, qtd, nota, usaOrg, contRot) {
@@ -1630,6 +1729,29 @@
     return h + '</div>';
   }
 
+  /* Administração da obra como o edital imprime (ver fecharAdministracao). Fórmula do percentual só sai se o pacote a trouxe (`formulaPercentual`):
+     nunca se inventa a conta do órgão. */
+  function blocoAdministracao(tit, I, bdiPct, qtdRot, contRot) {
+    var a = I.adm;
+    var h = '<div class="ld-it"' + (contRot ? ' data-cont="' + esc(contRot) + '"' : '') + '><div class="ld-itt">' + esc(tit) + '</div>';
+    h += '<table class="ld-t"><colgroup><col style="width:16mm"><col style="width:68mm"><col style="width:12mm"><col style="width:32mm"><col style="width:28mm"><col style="width:30mm"></colgroup>' +
+      '<thead><tr><th>COD</th><th style="text-align:left">DESCRIÇÃO</th><th>UNID</th><th>PREÇO UNITÁRIO</th><th>COEFICIENTE (MENSAL)</th><th>TOTAL</th></tr></thead><tbody>';
+    a.linhas.forEach(function (l) {
+      h += '<tr>' + td(esc(l.codigo)) + td(esc(l.descricao)) + tdC(esc(l.unidade)) + tdN(Math.abs(l.pu * 100 - Math.round(l.pu * 100)) < 1e-7 ? R(l.pu) : R4(l.pu)) + tdN(C8(l.cm)) + tdN(R(l.total)) + '</tr>';
+    });
+    h += '<tr class="gr"><td colspan="5" style="text-align:right">TOTAL SIMPLES:</td>' + tdN(R(a.totalSimples)) + '</tr>' +
+      '<tr class="gr"><td colspan="5" style="text-align:right">TOTAL PARA ' + esc(fmt(a.prazo, a.prazo % 1 ? 2 : 0)) + ' ' + (a.prazo === 1 ? 'MÊS' : 'MESES') + ':</td>' + tdN(R(a.totalPrazo)) + '</tr>' +
+      '<tr class="gr"><td colspan="5" style="text-align:right">FRAÇÃO DE ' + esc(fmt(a.fr, a.fr % 1 ? 2 : 0)) + '%:</td>' + tdN(R(a.valor)) + '</tr></tbody></table>';
+    h += '<div class="ld-itv">VALOR: <b>' + esc(R(I.cu)) + '</b></div>' +
+      '<div class="ld-itv">BDI (' + esc(P(bdiPct)) + '): <b>' + esc(R(I.pu - I.cu)) + '</b></div>' +
+      '<div class="ld-itv">VALOR DA ADMINISTRAÇÃO DA OBRA: <b>' + esc(R(I.pu)) + '</b></div>';
+    if (a.perc !== null && a.perc !== undefined) {
+      h += '<div class="ld-itv">PERCENTUAL DA ADMINISTRAÇÃO' + (a.formula ? ' (' + esc(a.formula) + ')' : '') + ': <b>' + esc(P(a.perc)) + '</b></div>';
+    }
+    if (qtdRot) h += '<div class="ld-itv">QUANTIDADE (' + esc(qtdRot) + '): <b>' + esc(fmt(I.quantidade, 2)) + '</b></div>';
+    return h + '</div>';
+  }
+
   function secAnalitico(d) {
     var h = '<div class="ld-tit">Composições de Preços Unitários</div>';
     var n = 0;
@@ -1642,7 +1764,9 @@
       /* sem o total do órgão no pacote (pacote antigo), coeficiente x unitário passa do valor por até R$ 0,01 por linha (o órgão trunca): isso não é divergência dele */
       var limNota = usaOrg ? 0.005 : 0.01 * I.insumos.length + 0.005;
       var notaI = (!d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
-      h += blocoComposicao(I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade, notaI, usaOrg, I.numero + ". " + I.codigo);
+      var titI = I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")";
+      if (I.adm) { h += blocoAdministracao(titI, I, d.bdiPct, I.unidade, I.numero + ". " + I.codigo); return; }
+      h += blocoComposicao(titI, I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade, notaI, usaOrg, I.numero + ". " + I.codigo);
     });
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Relatório analítico">' + h + '</section>';
   }
@@ -1656,7 +1780,10 @@
     function grupo(arrI, sub) {
       if (!arrI.length) return;
       h += '<p class="ld-sub">' + sub + '</p>';
-      arrI.forEach(function (I) { h += blocoComposicao(I.codigo + " " + I.descricao + " (" + I.unidade + ")", I.insumos, I.cu, d.bdiPct, I.pu, null, null, "", usaTotalOrgao(d, I), I.codigo); });
+      arrI.forEach(function (I) {
+        var titP = I.codigo + " " + I.descricao + " (" + I.unidade + ")";
+        h += I.adm ? blocoAdministracao(titP, I, d.bdiPct, null, I.codigo) : blocoComposicao(titP, I.insumos, I.cu, d.bdiPct, I.pu, null, null, "", usaTotalOrgao(d, I), I.codigo);
+      });
     }
     grupo(doOrgao, 'Composições próprias que integram o orçamento do órgão (planilha analítica do edital), fora das tabelas oficiais de referência. Preços e coeficientes como publicados pelo órgão.');
     grupo(daProp, 'Composições elaboradas pela proponente, fora da tabela oficial de referência (preços e origem informados na licitação).');
@@ -1687,7 +1814,11 @@
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Composições auxiliares">' + h + '</section>';
   }
 
-  function secQuantitativos(d) {
+  /* `ligQuant` / `ligConsumo`: o detalhamento dos quantitativos e o consumo de insumos por serviço são seções separadas na escolha da proposta.
+     Os dois ligados (ou sem escolha) saem juntos, como sempre saíram — a impressão é a mesma de antes. */
+  function secQuantitativos(d, ligQuant, ligConsumo) {
+    if (ligQuant === undefined) ligQuant = true;
+    if (ligConsumo === undefined) ligConsumo = true;
     var h = '<div class="ld-tit">Detalhamento dos Quantitativos</div>';
     h += '<p class="ld-sub">Quantidades dos serviços conforme memória de cálculo do projeto básico do órgão. ' + (d.consumoNoAnalitico ? 'Os coeficientes de cada insumo estão no relatório analítico.' : 'O consumo de cada insumo é a quantidade do serviço multiplicada pelo coeficiente da composição.') + '</p>';
     var t = '<table class="ld-t ld-split"><colgroup><col style="width:14mm"><col style="width:15mm"><col style="width:82mm"><col style="width:12mm"><col style="width:26mm"><col style="width:26mm"></colgroup>' +
@@ -1697,8 +1828,8 @@
     });
     t += '</tbody></table>';
     h += t;
-    var q = '<div class="ld-tit" style="font-size:10.5pt;margin-top:5mm">Consumo de insumos por serviço</div>' +
-      '<table class="ld-t ld-split"><colgroup><col style="width:14mm"><col style="width:15mm"><col style="width:64mm"><col style="width:12mm"><col style="width:26mm"><col style="width:20mm"><col style="width:26mm"></colgroup>' +
+    var qTit = '<div class="ld-tit" style="font-size:10.5pt;margin-top:5mm">Consumo de insumos por serviço</div>';
+    var q = '<table class="ld-t ld-split"><colgroup><col style="width:14mm"><col style="width:15mm"><col style="width:64mm"><col style="width:12mm"><col style="width:26mm"><col style="width:20mm"><col style="width:26mm"></colgroup>' +
       '<thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIÇÃO</th><th>UNID</th><th>QUANTIDADE DO SERVIÇO</th><th>COEFICIENTE DO INSUMO</th><th>QUANTIDADE TOTAL</th></tr></thead><tbody>';
     d.quant.forEach(function (g) {
       q += '<tr class="gr kn"><td colspan="7">[ ' + esc(CAT_ROT_Q[g.cat]) + ' ] ' + esc(g.codigo) + ' — ' + esc(g.descricao) + (g.unidade ? ' (' + esc(g.unidade) + ')' : '') + '</td></tr>';
@@ -1709,8 +1840,10 @@
     });
     q += '</tbody></table>';
     /* Toda composição veio da planilha analítica do órgão: o consumo por serviço só repetiria, em 60 folhas (Sangão), os coeficientes que o relatório analítico já traz. */
-    if (!d.consumoNoAnalitico) h += q;
-    return '<section class="ld-sec" data-tipo="corpo" data-titulo="Detalhamento dos quantitativos">' + h + '</section>';
+    if (ligQuant && ligConsumo) { if (!d.consumoNoAnalitico) h += qTit + q; return '<section class="ld-sec" data-tipo="corpo" data-titulo="Detalhamento dos quantitativos">' + h + '</section>'; }
+    if (ligQuant) return '<section class="ld-sec" data-tipo="corpo" data-titulo="Detalhamento dos quantitativos">' + h + '</section>';
+    if (!ligConsumo || d.consumoNoAnalitico) return '';
+    return '<section class="ld-sec" data-tipo="corpo" data-titulo="Consumo de insumos">' + '<div class="ld-tit">Consumo de Insumos por Serviço</div>' + q + '</section>';
   }
 
   function secCurva(d) {
@@ -1786,7 +1919,8 @@
       t += '<tr class="gr"><td></td><td>TOTAL</td>' + tdN(P(g.totalLido != null ? g.totalLido : g.soma)) + '</tr>';
     });
     t += '<tr class="tt"><td colspan="2">BDI</td>' + tdN(P(d.bdiPct)) + '</tr></tbody></table>';
-    h += t + '<p class="ld-ext" style="font-style:normal">BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1</p>';
+    /* a fórmula do edital, quando a leitura a trouxe (`leitura.bdi.formula`); sem ela, a do acórdão 2622/2013, que é a que o cálculo acima usa */
+    h += t + '<p class="ld-ext" style="font-style:normal">' + (d.bdi.formula ? esc(d.bdi.formula) : 'BDI = [ (1 + AC + S + R + G) × (1 + DF) × (1 + L) / (1 − I) ] − 1') + '</p>';
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="BDI">' + h + '</section>';
   }
 
@@ -1897,7 +2031,10 @@
     if (lig("cronograma")) corpo += numera(secCronograma(d));
     if (lig("bdi")) corpo += numera(secBdi(d));
     if (lig("encargos")) corpo += numera(secEncargos(d));
-    corpo += (lig("quantitativos") ? secQuantitativos(d) : "") + (lig("curvaAbc") ? secCurva(d) : "");
+    /* consumo de insumos por serviço é seção própria; modelo antigo (sem a chave) segue o "quantitativos", como era quando saíam juntos */
+    var ligConsumo = (secoes && secoes.consumoInsumos !== undefined) ? secoes.consumoInsumos !== false : lig("quantitativos");
+    if (lig("quantitativos") || ligConsumo) corpo += secQuantitativos(d, lig("quantitativos"), ligConsumo);
+    corpo += (lig("curvaAbc") ? secCurva(d) : "");
     var tpAttr = '';
     if (modoPagina(d)) {
       var mmDe = function (cm) { return String(+(Number(cm) * 10).toFixed(2)); };   // 3,6 cm -> "36" (e não 36.00000000000001)
@@ -2164,11 +2301,87 @@
       '<style>html,body{margin:0;padding:0;background:#fff}@media screen{body{background:#5b6b7b;padding:10px 0}}</style></head><body>' + htmlRaiz + '</body></html>';
   }
 
+  /* =====================================================================
+   * ESCOLHA DAS SEÇÕES DA PROPOSTA DO LICITANTE (painel antes de gerar; motor puro, sem DOM)
+   * Padrão pedido pelo dono (26/11/2026): saem carta, planilha, resumo, composições, próprias, auxiliares, cronograma, BDI e encargos;
+   * NÃO saem custo por item, detalhamento dos quantitativos, consumo de insumos e curva ABC (ligáveis no painel).
+   * A escolha fica em `prefs.pacoteSecoes = { conta: {id:bool}, porLicitante: { <cnpj só dígitos>: {id:bool} } }` (por empresa da conta e,
+   * quando o certame traz o licitante, por licitante). O modo automático não abre painel: usa a gravada, ou o padrão.
+   * Ordem = a do documento. `aviso` = o que o edital costuma exigir quando a seção está desligada (só avisa, nunca bloqueia).
+   * ===================================================================== */
+  var SECOES_PACOTE = [
+    { id: "carta", rotulo: "Carta-proposta", padrao: true },
+    { id: "sintetico", rotulo: "Planilha orçamentária", padrao: true },
+    { id: "resumoEtapas", rotulo: "Resumo por etapa", padrao: true },
+    { id: "custosItem", rotulo: "Custo por item (material, mão de obra e equipamento)", padrao: false, aviso: "O item 7.20 do edital pede o custo de material, mão de obra e equipamento por item." },
+    { id: "analitico", rotulo: "Composições de preços unitários", padrao: true },
+    { id: "composicoesProprias", rotulo: "Composições próprias", padrao: true },
+    { id: "auxiliares", rotulo: "Composições auxiliares", padrao: true },
+    { id: "cronograma", rotulo: "Cronograma físico-financeiro", padrao: true },
+    { id: "bdi", rotulo: "Composição do BDI", padrao: true },
+    { id: "encargos", rotulo: "Encargos sociais", padrao: true },
+    { id: "quantitativos", rotulo: "Detalhamento dos quantitativos", padrao: false },
+    { id: "consumoInsumos", rotulo: "Consumo de insumos por serviço", padrao: false },
+    { id: "curvaAbc", rotulo: "Curva ABC", padrao: false }
+  ];
+  function secoesPacote() { return SECOES_PACOTE.map(function (x) { return { id: x.id, rotulo: x.rotulo, padrao: x.padrao, aviso: x.aviso || "" }; }); }
+  function secoesPadraoPacote() { var o = {}; SECOES_PACOTE.forEach(function (x) { o[x.id] = x.padrao; }); return o; }
+  function chaveLicitante(lic) {
+    var l = lic && lic.licitante;
+    return l ? s(l.cnpj).replace(/\D+/g, "") : "";
+  }
+  /* escolha vigente: padrão <- a da conta <- a do licitante. Só ids conhecidos e booleanos entram (dado estragado nunca desliga/liga por acidente). */
+  /* Seção que o edital exige: a conferência do item 7.20 (custo por item) vale para toda licitação ativa. Sem escolha EXPLÍCITA gravada, a exigida fica ligada. */
+  function secoesExigidas(lic) {
+    var o = {};
+    if (lic && lic.ativo) o.custosItem = true;
+    return o;
+  }
+  function secoesDoPacote(prefs, chave, exigidas) {
+    var out = secoesPadraoPacote(), g = prefs && prefs.pacoteSecoes;
+    if (!temEscolhaPacote(prefs, chave)) { Object.keys(exigidas || {}).forEach(function (id) { if (exigidas[id] && id in out) out[id] = true; }); return out; }
+    function aplica(src) {
+      if (!src || typeof src !== "object") return;
+      Object.keys(out).forEach(function (id) { if (typeof src[id] === "boolean") out[id] = src[id]; });
+    }
+    if (g && typeof g === "object") { aplica(g.conta); if (chave && g.porLicitante) aplica(g.porLicitante[chave]); }
+    return out;
+  }
+  /* a pessoa já escolheu (na conta ou para este licitante)? Sem escolha gravada, o app cai no modelo da prévia e depois no padrão. */
+  function temEscolhaPacote(prefs, chave) {
+    var g = prefs && prefs.pacoteSecoes;
+    return !!(g && typeof g === "object" && ((g.conta && typeof g.conta === "object") || (chave && g.porLicitante && typeof g.porLicitante === "object" && g.porLicitante[chave])));
+  }
+  /* grava (muda `prefs`; quem chama salva). Com licitante: só dele; sem: a da conta. Idempotente. */
+  function gravarSecoesPacote(prefs, chave, secoes) {
+    if (!prefs || typeof prefs !== "object") return prefs;
+    var g = (prefs.pacoteSecoes && typeof prefs.pacoteSecoes === "object") ? prefs.pacoteSecoes : {}, esc = {};
+    SECOES_PACOTE.forEach(function (x) { esc[x.id] = secoes && typeof secoes[x.id] === "boolean" ? secoes[x.id] : x.padrao; });
+    if (chave) { g.porLicitante = (g.porLicitante && typeof g.porLicitante === "object") ? g.porLicitante : {}; g.porLicitante[chave] = esc; }
+    else g.conta = esc;
+    prefs.pacoteSecoes = g;
+    return prefs;
+  }
+  /* o que se passa a gerar()/montar() como `opcoes.secoes`: só os ids desligados, explícitos */
+  function secoesParaGerar(escolha) {
+    var o = {};
+    SECOES_PACOTE.forEach(function (x) { if (escolha && escolha[x.id] === false) o[x.id] = false; });
+    return o;
+  }
+  /* avisos de seção desligada que o edital costuma pedir (nunca bloqueia) */
+  function avisosDeSecoes(escolha, exigidas) {
+    var out = [];
+    SECOES_PACOTE.forEach(function (x) { if (x.aviso && escolha && escolha[x.id] === false && (!exigidas || exigidas[x.id])) out.push('Seção "' + x.rotulo + '" desligada. ' + x.aviso); });
+    return out;
+  }
+
   var LicitacaoDocs = {
     montar: montar, html: html, gerar: gerar, pendencias: pendencias, paginar: paginar, documento: documento,
     elaborarCronograma: elaborarCronograma, empresaDoCertame: empresaDoCertame, temLicitante: temLicitante, conferirEdital: conferirEdital,
     baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, conferirValores: conferirValores,
     css: CSS,
+    secoesPacote: secoesPacote, secoesPadraoPacote: secoesPadraoPacote, chaveLicitante: chaveLicitante, secoesDoPacote: secoesDoPacote, secoesExigidas: secoesExigidas, temEscolhaPacote: temEscolhaPacote,
+    gravarSecoesPacote: gravarSecoesPacote, secoesParaGerar: secoesParaGerar, avisosDeSecoes: avisosDeSecoes,
     _util: { fmt: fmt, R: R, norm: norm, parecido: parecido, arr: arr, prazoExt: prazoExt, diasDoTexto: diasDoTexto, objetoDaCarta: objetoDaCarta, dataExtensoUpper: dataExtensoUpper }
   };
   global.LicitacaoDocs = LicitacaoDocs;

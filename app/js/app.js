@@ -12806,13 +12806,16 @@
         {
           var emp = cx.emp;
           var opc = { base: base };
-          /* "O que sai no documento" (prévia ?previa=motor): o modelo em uso decide quais seções do pacote saem. Sem prévia ou sem modelo, é o pacote de sempre. */
+          /* Seções do pacote: 1º a escolha gravada (painel "O que sai na proposta", por licitante ou conta); sem ela, o modelo em uso da prévia
+             (?previa=motor, "O que sai no documento"); sem nenhum dos dois, o PADRÃO da casa (sem custo por item, quantitativos, consumo e curva ABC). */
           try {
-            if (typeof Saidas !== "undefined" && Saidas.previaLigada()) {
+            var secPac = self._licSecoesPacote(orc), usouModelo = false;
+            if (!secPac.gravada && typeof Saidas !== "undefined" && Saidas.previaLigada()) {
               var escSai = Saidas.ativo();
-              if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.secoes).length) opc.secoes = ogSai.secoes; }
+              if (escSai) { var ogSai = Saidas.opcoesGerador(escSai); if (Object.keys(ogSai.secoes).length) { opc.secoes = ogSai.secoes; usouModelo = true; } }
             }
-          } catch (eSai) { /* sem o modelo, sai o pacote completo */ }
+            if (!usouModelo) opc.secoes = LicitacaoDocs.secoesParaGerar(secPac.escolha);
+          } catch (eSai) { /* sem a escolha, sai o pacote completo */ }
           var pr = LicitacaoDocs.pendencias(orc, emp, opc);
           if (!pr.ok && auto) { falhaAuto(pr.erro); return; }
           if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
@@ -12877,11 +12880,13 @@
         }
       };
       if (cx.perguntar && auto && !auto.empresaOk) { falhaAuto("o certame não informou a empresa licitante; gere o PDF pelo botão do pacote"); return; }
+      /* clique no botão: escolhe as seções antes de montar; automático: segue direto com a escolha gravada (ou o padrão) */
+      var depoisEmpresa = function () { if (auto) seguir(); else self._licPainelSecoes(orc, seguir); };
       if (cx.perguntar) {
-        this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { seguir(); }, function () { /* cancelou: nada a fazer */ });
+        this._licPerguntarEmpresa(cx.conta, "Cancelar", function () { depoisEmpresa(); }, function () { /* cancelou: nada a fazer */ });
         return;
       }
-      seguir();
+      depoisEmpresa();
     },
 
     /* Item SEINFRA com descrição que o OCR colou: troca pela oficial da base (Licitacao.descricoesOficiais) quando o
@@ -12947,6 +12952,59 @@
         [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
          { texto: "Gerar com a empresa da conta", classe: "primary", onClick: function () { UI.fecharModal(); seguir(); } }]);
       return true;
+    },
+
+    /* ESCOLHA DAS SEÇÕES DA PROPOSTA DO LICITANTE (js/licitacaodocs.js, secoesDoPacote). Gravada em prefs.pacoteSecoes por conta e,
+       quando o certame traz o licitante, por licitante. O modo automático não abre painel: usa a gravada ou o padrão. */
+    _licSecoesPacote: function (orc) {
+      var out = { chave: "", escolha: null, prefs: {} };
+      try {
+        var lic = Licitacao.cfg(orc);
+        out.chave = LicitacaoDocs.chaveLicitante(lic);
+        out.prefs = Store.lerPrefs(Auth.empresaId()) || {};
+        out.exigidas = LicitacaoDocs.secoesExigidas(lic);
+        out.escolha = LicitacaoDocs.secoesDoPacote(out.prefs, out.chave, out.exigidas);
+        out.gravada = LicitacaoDocs.temEscolhaPacote(out.prefs, out.chave);
+      } catch (e) { out.escolha = LicitacaoDocs.secoesDoPacote({}, ""); out.gravada = false; out.exigidas = {}; }
+      return out;
+    },
+    _licPainelSecoes: function (orc, aoSeguir) {
+      var self = this, cur = this._licSecoesPacote(orc), lista = LicitacaoDocs.secoesPacote();
+      var caixas = lista.map(function (x) {
+        return '<label style="display:block;margin:4px 0;font-size:13px"><input type="checkbox" data-lic-sec="' + Util.esc(x.id) + '"' + (cur.escolha[x.id] ? ' checked' : '') + '> ' + Util.esc(x.rotulo) +
+          (x.aviso ? ' <span class="muted" style="font-size:11.5px">(' + Util.esc(x.aviso) + ')</span>' : '') +
+          (cur.exigidas && cur.exigidas[x.id] ? ' <b data-lic-aviso="' + Util.esc(x.id) + '" style="color:#c00000;font-size:12px;' + (cur.escolha[x.id] ? 'display:none' : '') + '">Exigida pelo edital: desligada, a proposta pode ser recusada.</b>' : '') + '</label>';
+      }).join("");
+      var lerCaixas = function () {
+        var esc = {};
+        [].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) { esc[c.getAttribute("data-lic-sec")] = !!c.checked; });
+        return esc;
+      };
+      UI.modal("O que sai na proposta",
+        '<p style="font-size:13px;margin-top:0">Marque as seções do documento. A escolha fica gravada para ' + (cur.chave ? 'este licitante' : 'a sua empresa') + ' e vale também quando o pacote é gerado sozinho.</p>' + caixas,
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Restaurar padrão", classe: "ghost", onClick: function () {
+             var pd = LicitacaoDocs.secoesPadraoPacote();
+             [].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) { var id = c.getAttribute("data-lic-sec"); c.checked = !!pd[id] || !!(cur.exigidas && cur.exigidas[id]); c.dispatchEvent(new Event("change")); });
+           } },
+         { texto: "Gerar o pacote", classe: "primary", onClick: function () {
+             var esc = lerCaixas();
+             if (!Object.keys(esc).some(function (k) { return esc[k]; })) { UI.toast("Marque ao menos uma seção.", "erro"); return; }
+             try {
+               var pr = Store.lerPrefs(Auth.empresaId()) || {};
+               LicitacaoDocs.gravarSecoesPacote(pr, cur.chave, esc);
+               Store.salvarPrefs(Auth.empresaId(), pr);
+             } catch (eG) { UI.toast("Não consegui gravar a escolha, mas o pacote sai com ela.", "aviso"); }
+             UI.fecharModal();
+             aoSeguir();
+           } }]);
+      /* aviso visível na hora: seção exigida pelo edital desmarcada */
+      [].slice.call(document.querySelectorAll("input[data-lic-sec]")).forEach(function (c) {
+        c.addEventListener("change", function () {
+          var av = document.querySelector('[data-lic-aviso="' + c.getAttribute("data-lic-sec") + '"]');
+          if (av) av.style.display = c.checked ? "none" : "";
+        });
+      });
     },
 
     /* Qual empresa assina os documentos deste certame. `doCertame`: veio `licitante` no pacote. `perguntar`:
