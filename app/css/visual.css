@@ -644,3 +644,328 @@ html[data-visual="nova"] .mod-kpi { padding: 16px 20px; gap: 6px; }
     --raio-sm: 6px; --raio: 10px; --raio-lg: 16px; --raio-ctl: 8px;
   }
 }
+
+/* =====================================================================
+ * ORGANIZAÇÃO + METAL (23/11/2026) — análise de sistema pedida pelo Rogério
+ * (RA-Equipe\orcapro\revisoes\2026-11-23-analise-organizacao-visual.md).
+ *
+ * O QUE ISTO FAZ, em ordem de impacto:
+ *   A1 Painel na régua do roteiro: faixa de aço, indicadores do mesmo tecido
+ *      (vidro-aço, não seis cores), filtros compactos numa linha.
+ *   A2 Celular: ações secundárias compactas, primária inteira por último;
+ *      os filtros do Painel numa fileira que rola.
+ *   A3 Ações de linha em tabela: um desenho só (contorno + cor no texto),
+ *      sem botão cheio verde/preto/vermelho na mesma linha.
+ *   M2 Menu: bloco do vendedor mais fraco.   M3 Topo: versão fora da marca.
+ *   M4 BIM: 18 abas cabem a 1440 px.         M1 Obras: capa sem foto.
+ *   B1 METAL = AÇO ESCOVADO, NÃO CROMADO: gradiente vertical de 3–6 %, linha
+ *      de realce de 1 px no topo (--realce) e sombra curta. Só nos "móveis"
+ *      (barra, topo, botão principal, faixa de indicadores, fita do BIM);
+ *      nunca em tabela, campo ou gráfico — metal nos dados tira a leitura.
+ *   B2 Entrada escalonada dos cartões (opacidade; sem transform no .card
+ *      porque o BIM é position:fixed dentro de um .card — ver 07/10/2026).
+ *
+ * REGRA DE OURO mantida: tudo sob html[data-visual="nova"]; nenhum id,
+ * data-* ou texto de botão muda. Só CSS e ordem de montagem.
+ * ===================================================================== */
+html[data-visual="nova"] {
+  --realce: inset 0 1px 0 rgba(255,255,255,.72);
+  --metal-escuro: linear-gradient(170deg, #121f33 0%, #0b1526 55%, #070e1a 100%);
+  --metal-grao: repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, rgba(255,255,255,0) 1px 3px);
+  --metal-claro: linear-gradient(180deg, #ffffff 0%, #f6f9fc 100%);
+  --metal-realce-escuro: inset 0 1px 0 rgba(255,255,255,.16);
+  --sombra-metal: 0 1px 2px rgba(10,20,40,.08), 0 8px 20px -14px rgba(10,20,40,.25);
+}
+html[data-visual="nova"][data-tema="dark"] {
+  --realce: inset 0 1px 0 rgba(255,255,255,.09);
+  --metal-claro: linear-gradient(180deg, #111c2e 0%, #0c1526 100%);
+  --sombra-metal: 0 1px 2px rgba(0,0,0,.4), 0 10px 24px -14px rgba(0,0,0,.7);
+}
+
+/* ---- B1 · barra de módulos: aço escovado + a luz do mouse vira o reflexo ---- */
+html[data-visual="nova"] .sidebar {
+  background:
+    radial-gradient(var(--lr) circle at var(--lx) var(--ly), rgba(255,255,255,.14) 0, rgba(63,181,229,.26) 18%, rgba(63,181,229,.08) 46%, rgba(63,181,229,0) 72%),
+    var(--metal-grao),
+    radial-gradient(260px 300px at -30% 10%, rgba(31,93,146,.42), transparent 70%),
+    var(--metal-escuro);
+  background-size: auto, auto, 100% 200%, auto;
+  background-color: var(--vis-aurora);
+  animation: none;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.07), 1px 0 0 rgba(0,0,0,.35);
+}
+html[data-visual="nova"] .sb-item { border-radius: 12px; }
+html[data-visual="nova"] .sb-item:hover { background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+html[data-visual="nova"] .sb-item.on {
+  background: linear-gradient(180deg, rgba(255,255,255,.15), rgba(255,255,255,.04));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 0 0 1px rgba(63,181,229,.42), 0 8px 16px -10px rgba(0,0,0,.8);
+}
+html[data-visual="nova"] .sb-item.sb-grp-bt.aberto { background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05)); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+/* M2: o bloco de quem vende (Apresentação, Painel de vendas) fica mais fraco que os módulos do cliente */
+html[data-visual="nova"] .sb-item.sb-venda { opacity: .72; }
+html[data-visual="nova"] .sb-item.sb-venda:hover { opacity: 1; }
+
+/* ---- B1 · topo: vidro com realce; M3 · a versão sai da marca (fica em Ajuda → Sobre) ---- */
+html[data-visual="nova"] .topbar { box-shadow: inset 0 -1px 0 var(--vidro-borda), inset 0 1px 0 rgba(255,255,255,.8); border-bottom: 0; }
+html[data-visual="nova"][data-tema="dark"] .topbar { box-shadow: inset 0 -1px 0 rgba(255,255,255,.08), inset 0 1px 0 rgba(255,255,255,.05); }
+html[data-visual="nova"] .topbar .logo .topo-ver { display: none; }
+
+/* ---- B1 · botão principal: grafite escovado (branco escovado no escuro) ---- */
+html[data-visual="nova"] .btn.primary,
+html[data-visual="nova"] .btn.ghost.primary {
+  background: linear-gradient(180deg, #2a313c 0%, #15181d 100%); border-color: #15181d;
+  box-shadow: var(--metal-realce-escuro), 0 1px 2px rgba(10,20,40,.2);
+}
+html[data-visual="nova"] .btn.primary:hover,
+html[data-visual="nova"] .btn.ghost.primary:hover { background: linear-gradient(180deg, #2a5f8c 0%, #1d4a72 100%); border-color: #1d4a72; box-shadow: var(--metal-realce-escuro), 0 12px 28px -12px rgba(29,74,114,.55); }
+html[data-visual="nova"][data-tema="dark"] .btn.primary,
+html[data-visual="nova"][data-tema="dark"] .btn.ghost.primary { background: linear-gradient(180deg, #ffffff 0%, #dfe7f0 100%); border-color: #e6edf4; color: #15181d; box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(0,0,0,.4); }
+html[data-visual="nova"][data-tema="dark"] .btn.primary:hover,
+html[data-visual="nova"][data-tema="dark"] .btn.ghost.primary:hover { background: linear-gradient(180deg, #e9f4fc 0%, #cfe4f5 100%); border-color: #d9ecfa; }
+html[data-visual="nova"] .btn.success { background: linear-gradient(180deg, #27a05a 0%, #1f8a4c 100%); box-shadow: var(--metal-realce-escuro); }
+
+/* ---- B1 · faixa de indicadores do kit: aço claro com realce ---- */
+html[data-visual="nova"] .mod-kpis { background: var(--metal-claro); box-shadow: var(--realce), var(--sombra-metal); border-radius: var(--raio-lg); }
+html[data-visual="nova"] .mod-kpi-v { font-family: var(--fonte-tit); font-weight: 700; letter-spacing: -.03em; font-size: 24px; }
+html[data-visual="nova"] .mod-kpi-r { letter-spacing: .08em; }
+html[data-visual="nova"] .mod-filtros { box-shadow: var(--realce), var(--sombra-sm); }
+html[data-visual="nova"] .card { box-shadow: var(--realce), var(--sombra); }
+
+/* ---- A3 · ações de linha em tabela: um desenho só ----
+   Antes, numa mesma linha de Compras: Aprovar preto, Receber verde cheio,
+   Rejeitar vermelho em contorno e um ícone. Aqui todo botão de linha é
+   contorno com a cor no texto; o cheio fica para a ação primária do cabeçalho
+   e para a confirmação dentro do modal. Os data-gacao não mudam. */
+html[data-visual="nova"] .tbl td .btn.sm { min-height: 32px; padding: 4px 12px; background: var(--surface); border-color: var(--linha); color: var(--texto); box-shadow: none; font-weight: 600; }
+html[data-visual="nova"] .tbl td .btn.sm.primary,
+html[data-visual="nova"] .tbl td .btn.sm.ghost.primary { background: var(--surface); border-color: var(--linha-forte); color: var(--texto); }
+html[data-visual="nova"] .tbl td .btn.sm.success { background: var(--surface); border-color: rgba(31,138,76,.45); color: #1f8a4c; }
+html[data-visual="nova"][data-tema="dark"] .tbl td .btn.sm.success { color: #6fd59a; border-color: rgba(111,213,154,.4); }
+html[data-visual="nova"] .tbl td .btn.sm.danger { background: var(--surface); border-color: rgba(214,31,38,.4); color: var(--vermelho); }
+html[data-visual="nova"] .tbl td .btn.sm:hover { background: var(--surface-2); border-color: var(--linha-forte); }
+html[data-visual="nova"] .tbl td .btn.sm.success:hover { background: rgba(31,138,76,.08); border-color: #1f8a4c; }
+html[data-visual="nova"] .tbl td .btn.sm.primary:hover { background: var(--surface-3); }
+
+/* ---- A1 · PAINEL (Modelo A): faixa de aço e indicadores do mesmo tecido ----
+   O problema medido: seis cartões com fundo cheio em seis cores (azul, teal,
+   verde, laranja, roxo, navy) em cima de uma faixa navy com 3 fileiras de
+   pílulas. Cor virava decoração. Agora: um tecido só (vidro sobre aço), o
+   ícone leva a tinta de SIGNIFICADO (entra = verde, sai = tijolo, resto =
+   ciano) e os números são todos brancos. */
+html[data-visual="nova"] .pv-faixa {
+  background: var(--metal-grao), linear-gradient(170deg, #142743 0%, #0c1a30 60%, #091425 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), inset 0 -1px 0 rgba(0,0,0,.35);
+}
+html[data-visual="nova"] button.pv-kpi,
+html[data-visual="nova"] .pv-k-caixaHoje, html[data-visual="nova"] .pv-k-projetado, html[data-visual="nova"] .pv-k-aReceber,
+html[data-visual="nova"] .pv-k-aPagar, html[data-visual="nova"] .pv-k-margem, html[data-visual="nova"] .pv-k-saldoFaturar {
+  /* cor de fundo OPACA + vidro por cima: o medidor da e2e-painel-v2 [8] mistura cada ponta do degradê sobre a cor base */
+  background-color: #10203a;
+  background-image: linear-gradient(180deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.05) 100%);
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 10px 24px -16px rgba(0,0,0,.7);
+  min-height: 92px;
+}
+html[data-visual="nova"] button.pv-kpi:hover { border-color: rgba(63,181,229,.6); background-image: linear-gradient(180deg, rgba(255,255,255,.17) 0%, rgba(255,255,255,.07) 100%); }
+html[data-visual="nova"] .pv-k-ic { width: 40px; height: 40px; background: rgba(63,181,229,.16); border-color: rgba(63,181,229,.35); color: #9be3ff; }
+html[data-visual="nova"] .pv-k-aReceber .pv-k-ic, html[data-visual="nova"] .pv-k-caixaHoje .pv-k-ic { background: rgba(111,208,138,.16); border-color: rgba(111,208,138,.4); color: #8fe3a8; }
+html[data-visual="nova"] .pv-k-aPagar .pv-k-ic { background: rgba(244,153,157,.16); border-color: rgba(244,153,157,.42); color: #ffb3b6; }
+html[data-visual="nova"] button.pv-kpi .pv-kpi-v { font-family: var(--fonte-tit); font-weight: 700; letter-spacing: -.03em; }
+html[data-visual="nova"] button.pv-kpi .pv-kpi-r { opacity: .8; letter-spacing: .08em; }
+html[data-visual="nova"] button.pv-kpi .pv-spark { opacity: .55; }
+/* Modelo B (central escura): o mesmo tecido */
+html[data-visual="nova"] .pn[data-modelo="b"] button.pv-kpi { background-color: var(--surface); background-image: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)); border-color: var(--linha); box-shadow: var(--realce); }
+
+/* A1 · cabeçalho: 2 ações à vista + "Mais" (o JS mudou a ordem; aqui só o desenho) */
+html[data-visual="nova"] .pv-faixa .pv-bt-prim { background: linear-gradient(180deg, #ffffff, #dfe7f0); color: #0a1322; border-color: #e6edf4; box-shadow: inset 0 1px 0 #fff; }
+html[data-visual="nova"] .pv-faixa .pv-vistas .btn,
+html[data-visual="nova"] .pv-faixa .mod-mais-bt { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.22); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.1); }
+html[data-visual="nova"] .pv-faixa .pv-vistas .btn:hover,
+html[data-visual="nova"] .pv-faixa .mod-mais-bt:hover { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.4); }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu { color: var(--texto); }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pn-seg { border-color: var(--linha); margin: 2px 4px; }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pn-seg-b { color: var(--texto); border-left-color: var(--linha); }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pn-seg-b.on { background: var(--navy); color: #fff; }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pn-filtro { color: var(--texto); padding: 6px 10px; display: flex; align-items: center; gap: 8px; }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pv-bt { background: transparent; border-color: transparent; color: var(--texto); width: 100%; justify-content: flex-start; text-align: left; box-shadow: none; }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .pv-bt:hover { background: var(--surface-2); }
+html[data-visual="nova"] .pv-faixa .mod-mais-menu .btn { box-shadow: none; }
+
+/* A1 · filtros: chips compactos (32 px) com o rótulo ao lado, tudo numa fileira que quebra o menos possível */
+html[data-visual="nova"] .pv-seg { gap: 6px 18px; margin-bottom: 10px; align-items: center; }
+html[data-visual="nova"] .pv-seg-g { grid-auto-flow: column; align-items: center; gap: 8px; }
+html[data-visual="nova"] .pv-seg-t { white-space: nowrap; }
+html[data-visual="nova"] .pv-seg-c { gap: 4px; }
+/* alvo de clique de 40 px (regra do Painel, e2e-painel-v2 [8]); o compacto vem do padding e da letra, não da altura */
+html[data-visual="nova"] button.pv-chipseg { min-height: 40px; padding: 0 12px; font-size: var(--t-micro); border-radius: 99px; }
+html[data-visual="nova"] .pv-faixa button.pv-chipseg { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.2); }
+html[data-visual="nova"] .pv-faixa button.pv-chipseg.on,
+html[data-visual="nova"] .pv-faixa button.pv-chipseg[aria-pressed="true"] { background: linear-gradient(180deg, #ffffff, #dfe7f0); border-color: #fff; color: #0a1322; box-shadow: inset 0 1px 0 #fff; }
+html[data-visual="nova"] .pv-seg-c select,
+html[data-visual="nova"] .pv-seg-c .btn { min-height: 40px; padding-top: 0; padding-bottom: 0; font-size: var(--t-micro); }
+html[data-visual="nova"] .pv-faixa .pv-seg-c .btn { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.2); color: #fff; }
+
+/* ---- M4 · BIM: fita de aço (combina com o molde, sem copiar) e 18 abas cabendo a 1440 px ---- */
+html[data-visual="nova"] .bim-revit .rv-abas { background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0)), var(--rv-abas-bg); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"] .rv-abas { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0)), var(--rv-abas-bg); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+@media (max-width: 1540px) {
+  html[data-visual="nova"] .bim-revit .rv-aba { padding: 6px 9px 7px; letter-spacing: -.01em; }
+}
+@media (max-width: 1300px) {
+  html[data-visual="nova"] .bim-revit .rv-aba { padding: 6px 7px 7px; }
+}
+
+/* ---- M1 · Obras: cartão sem foto ganha uma capa de aço com silhueta de obra (não o logotipo) ---- */
+html[data-visual="nova"] .ov-grade .orc-card .obra-capa.sem-foto {
+  background:
+    linear-gradient(0deg, rgba(8,20,33,.55) 0%, rgba(8,20,33,0) 55%),
+    /* silhueta: quatro blocos e um guindaste, desenhados só com gradientes */
+    linear-gradient(90deg, transparent 12%, rgba(255,255,255,.07) 12%, rgba(255,255,255,.07) 26%, transparent 26%) 0 100% / 100% 42% no-repeat,
+    linear-gradient(90deg, transparent 30%, rgba(255,255,255,.1) 30%, rgba(255,255,255,.1) 46%, transparent 46%) 0 100% / 100% 62% no-repeat,
+    linear-gradient(90deg, transparent 50%, rgba(255,255,255,.08) 50%, rgba(255,255,255,.08) 68%, transparent 68%) 0 100% / 100% 50% no-repeat,
+    linear-gradient(90deg, transparent 72%, rgba(255,255,255,.06) 72%, rgba(255,255,255,.06) 88%, transparent 88%) 0 100% / 100% 34% no-repeat,
+    linear-gradient(90deg, transparent 57%, rgba(63,181,229,.55) 57%, rgba(63,181,229,.55) 58%, transparent 58%) 0 0 / 100% 70% no-repeat,
+    linear-gradient(0deg, transparent 69%, rgba(63,181,229,.55) 69%, rgba(63,181,229,.55) 70%, transparent 70%) 0 0 / 64% 100% no-repeat,
+    linear-gradient(170deg, #1a2f4c 0%, #0f1f36 60%, #0a1322 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14);
+}
+html[data-visual="nova"] .ov-grade .orc-card .obra-capa.sem-foto svg { display: none; }
+
+/* ---- A2 · celular: ações secundárias compactas, primária inteira por último; filtros do Painel numa fileira que rola ---- */
+@media (max-width: 720px) {
+  html[data-visual="nova"] .mod-acoes { gap: 6px; }
+  html[data-visual="nova"] .mod-acoes > .btn:not(.primary),
+  html[data-visual="nova"] .mod-acoes > .mod-mais > .btn { padding: 6px 12px; font-size: var(--t-peq); min-height: 36px; }
+  html[data-visual="nova"] .mod-acoes > .btn.primary { order: 9; flex: 1 1 100%; min-height: 44px; }
+  html[data-visual="nova"] .pv-seg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 14px; padding-bottom: 2px; margin-bottom: 8px; }
+  html[data-visual="nova"] .pv-seg::-webkit-scrollbar { display: none; }
+  html[data-visual="nova"] .pv-seg-g { flex: none; }
+  html[data-visual="nova"] .pv-seg-c { flex-wrap: nowrap; }
+  html[data-visual="nova"] .pv-faixa { padding-top: 10px; }
+  html[data-visual="nova"] .pv-topo { margin-bottom: 6px; }
+  html[data-visual="nova"] .pv-acoes { flex-wrap: wrap; justify-content: flex-start; }
+  html[data-visual="nova"] button.pv-kpi { min-height: 80px; }
+}
+
+/* ---- B2 · entrada escalonada: cartões e faixas aparecem em sequência (240 ms, só opacidade) ----
+   ⚠ sem transform: o BIM é position:fixed dentro de um .card e um transform
+   no ancestral vira bloco contentor e o encolhe (medido em 07/10/2026). */
+@keyframes vm-entra { from { opacity: 0; } to { opacity: 1; } }
+html[data-visual="nova"] #main .card,
+html[data-visual="nova"] #main .pv-card,
+html[data-visual="nova"] #main .mod-kpis,
+html[data-visual="nova"] #main .mod-filtros,
+html[data-visual="nova"] #main .pv-kpis-sec { animation: vm-entra .24s var(--ease, ease-out) both; }
+html[data-visual="nova"] #main :is(.card, .pv-card):nth-child(2) { animation-delay: .04s; }
+html[data-visual="nova"] #main :is(.card, .pv-card):nth-child(3) { animation-delay: .08s; }
+html[data-visual="nova"] #main :is(.card, .pv-card):nth-child(4) { animation-delay: .12s; }
+html[data-visual="nova"] #main :is(.card, .pv-card):nth-child(5) { animation-delay: .16s; }
+html[data-visual="nova"] #main :is(.card, .pv-card):nth-child(n+6) { animation-delay: .2s; }
+html[data-visual="nova"] #main .mod-kpis { animation-delay: .04s; }
+/* impressão e captura de PDF não esperam animação */
+@media print { html[data-visual="nova"] #main * { animation: none !important; } }
+
+/* ---- FITA DO BIM: interface, ferramentas e ícones (23/11/2026) ----
+   Medido na 1.2.443: 320 comandos com 100 ícones (58 repetidos), ícone de
+   32 px com traço de 1,25 (sumia no claro), rótulo cortado em "…" no botão
+   de 62 px e selo PRO por cima do texto do botão pequeno. O desenho de
+   ícones por comando está em js/icones.js (POR_COMANDO_FITA); aqui é o
+   acabamento: aço na fita, traço legível, botão que cabe o nome. */
+/* traço: 1,5 no ícone grande (32 px) e 1,6 no pequeno (16 px). A regra do
+   bim-fino.css (1,25) tem 5 classes repetidas; esta tem 6 e o atributo. */
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd:not(.rv-cmd-sm) svg { stroke-width: 1.5; }
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm svg { stroke-width: 1.7; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd-ico { height: 30px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:not(.rv-cmd-sm) .rv-cmd-ico svg { width: 28px; height: 28px; }
+/* o botão grande cresce até 92 px para o nome caber ("Importar de outros programas") em vez de cortar em "…" */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:not(.rv-cmd-sm) { width: auto; min-width: 62px; max-width: 92px; padding: 5px 5px 4px; border-radius: 8px; gap: 4px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd-rot { font-size: var(--t-mini); line-height: 1.2; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd-rot span { white-space: nowrap; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm { border-radius: 6px; height: 24px; min-width: 104px; }
+/* selo PRO: no botão pequeno vai depois do texto; no grande, canto com respiro */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-pro { position: static; margin-left: 4px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd-pro { background: #e8b04f; color: #1a1a1a; border-radius: 4px; font-size: .8em; padding: 0 4px; line-height: 1.5; }
+/* hover e ligado: aço, não um retângulo azul chapado */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,.3)); border-color: rgba(21,24,29,.12);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(10,20,40,.1);
+}
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(45,106,156,.18), rgba(45,106,156,.08)); border-color: rgba(45,106,156,.45);
+  box-shadow: inset 0 1px 2px rgba(10,20,40,.12);
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-cmd:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05)); border-color: rgba(255,255,255,.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-cmd[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(111,176,227,.22), rgba(111,176,227,.1)); border-color: rgba(111,176,227,.5);
+}
+/* nome do painel: caixa alta pequena, como legenda de régua */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-painel-nome { font-size: .86em; letter-spacing: .06em; text-transform: uppercase; opacity: .7; padding: 3px 0 4px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-painel { padding: 0 10px; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-painel-corpo { gap: 3px; }
+/* fita e barra de título em aço: realce em cima, sombra curta embaixo */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita { box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 1px 0 rgba(10,20,40,.06); }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-fita { box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 1px 0 rgba(0,0,0,.4); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-titulo { box-shadow: inset 0 -1px 0 rgba(10,20,40,.08), inset 0 1px 0 rgba(255,255,255,.6); }
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) .rv-titulo { box-shadow: inset 0 -1px 0 rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06); }
+/* "Mais painéis": o mesmo desenho de um botão grande (no escuro aparecia um cartão branco solto) */
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec {
+  background: transparent; border: 1px solid transparent; border-radius: 8px; box-shadow: none; color: var(--rv-fita-tx);
+}
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,.3)); border-color: rgba(21,24,29,.12); box-shadow: inset 0 1px 0 #fff;
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"].bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-painel-rec:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05)); border-color: rgba(255,255,255,.14);
+}
+
+/* o nome do comando NÃO corta em "…": o botão cresce até 112 px (bim-fino.css trava em 98 e corta) */
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd:not(.rv-cmd-sm) { max-width: 112px; }
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd-rot > span { overflow: visible; text-overflow: clip; }
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm { max-width: 230px; }
+html[data-visual="nova"] .bim-revit.bim-revit.bim-revit.bim-revit.bim-revit.bim-revit:not(.bim-pele-revit) .rv-col { max-width: 230px; }
+
+/* ---- FITA DO BIM: duas cores + letra de software de projeto (23/11/2026) ----
+   Pedido: "ícones e letras no padrão de software de projeto e modelagem".
+   Revit/ArchiCAD/Tekla desenham o contexto em cinza e o ELEMENTO que a
+   ferramenta cria em cor (azul), com preenchimento leve; a letra é Segoe UI
+   a 11 px, caixa normal. A camada de acento vem de js/icones.js (ACENTO):
+   fora do BIM ela fica escondida, então Painel, menus e módulos não mudam. */
+html[data-visual="nova"] .ic-svg .ic-a,
+html[data-visual="nova"] .ic-svg .ic-al { display: none; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) {
+  --rv-acento: #1a6cb5;
+  --rv-acento-fill: rgba(26,108,181,.16);
+  --rv-ink: #2b2f36;
+}
+html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) {
+  --rv-acento: #7cc0f2;
+  --rv-acento-fill: rgba(124,192,242,.2);
+  --rv-ink: #e6ebf1;
+}
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita .ic-svg .ic-a,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita .ic-svg .ic-al,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita-mais .ic-svg .ic-a { display: inline; stroke: var(--rv-acento); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita .ic-svg .ic-a { fill: var(--rv-acento-fill); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-fita .ic-svg .ic-al { fill: none; }
+/* o contexto do ícone em cinza-escuro neutro (não o preto do texto): o azul do elemento se destaca */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd .rv-cmd-ico { color: var(--rv-ink); opacity: .9; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:disabled .rv-cmd-ico { opacity: .35; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:disabled .ic-a,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd:disabled .ic-al { stroke: currentColor; fill: none; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd .ic-svg { shape-rendering: geometricPrecision; }
+/* letra de software de projeto: Segoe UI, 11 px, caixa normal, sem suavização pesada */
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) {
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased; letter-spacing: 0;
+}
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-aba { font-family: inherit; font-weight: 500; letter-spacing: 0; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd-rot { font-size: .96em; line-height: 1.25; color: var(--rv-ink); }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-cmd.rv-cmd-sm .rv-cmd-rot { font-size: .96em; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-painel-nome { font-size: .95em; letter-spacing: 0; text-transform: none; opacity: .75; }
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-titulo,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-doca-cab,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-params,
+html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-status { font-family: inherit; }

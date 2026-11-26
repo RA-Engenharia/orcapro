@@ -916,7 +916,7 @@
       /* as bases de preço e as composições, numa porta só (prévia ?previa=orcamento, js/orcguiaui.js). NÃO é tela: o clique abre o
          painel (App.VIEW_ACOES.bases). Fora da prévia o Perfis.permite responde false e o item não existe (EM_PREVIA em js/perfis.js). */
       { id: "bases", nome: "Bases e Composições", curto: "Bases e composições", g: "orcar" },
-      { id: "bim", nome: "BIM 3D ao 7D" },
+      { id: "bim", nome: "BIM 3D ao 7D", curto: "BIM" }   /* `curto`: o azulejo de 138 px (23/11/2026) — o nome inteiro apertava em 3 linhas */,
       { id: "clientes", nome: "Clientes", g: "obra" },
       { id: "contratos", nome: "Contratos", g: "obra" },
       { id: "obras", nome: "Obras", g: "obra" },
@@ -1243,7 +1243,8 @@
        na frente, "Ponto / Folha" vira "Ponto" e para de quebrar em duas
        linhas — quatro itens quebravam assim. */
     _sbItem: function (m, viewAtiva, dentroDeGrupo) {
-      var nome = dentroDeGrupo && typeof MenuArvore !== "undefined" ? MenuArvore.rotulo(m) : m.nome;
+      /* o rótulo curto vale na aba lateral E no azulejo da raiz (BIM): o azulejo tem 138 px (23/11/2026) */
+      var nome = typeof MenuArvore !== "undefined" ? MenuArvore.rotulo(m) : (m.curto || m.nome);
       /* licença só do Modela: o módulo aparece, trancado (cadeado + dica) */
       var tr = !!this._trancadoModela && this._trancadoModela(m.id);
       /* 22 no azulejo da barra (com o rótulo embaixo, o ícone é o que se lê
@@ -11603,6 +11604,8 @@
       this._nivCopias = {};
       this._nivArvore();
       if (novos.length) this._nivDepoisCopia(novos, this._nivOpc);
+      /* SEPARAR POR PAVIMENTO: a pessoa veio criar o nível que faltava — volta para o desenho que ficou esperando */
+      else if (this._cadPendente) { try { this._cadRetomar(); } catch (eCR) {} }
     },
 
     /* PESO POR NÍVEL — o que o Rogério pediu para conferir carga.
@@ -14704,24 +14707,182 @@
       if (!this._d2Config()) return;
       var st = this._bimVxEst(), pid = plantaId || (/^d2p-/.test(st.ativa) ? st.ativa : this._d2PlantaPadrao());
       if (!pid) { UI.toast("Abra um modelo primeiro: o vínculo CAD vai numa planta.", "aviso"); return; }
-      var dxfTexto = /\.dxf$/i.test(file.name) ? file.text() : file.arrayBuffer().then(function (ab) {
+      /* ⚠ ACENTO: o conversor entrega DXF 2018 (UTF-8). Lido como latin1, "TÉRREO" virava "TÃ‰RREO": o texto do fundo saía
+         com lixo e o título da planta não casava com nível nenhum. CadSepara.decodificar tenta UTF-8 e só então latin1. */
+      var dec = function (ab) { return window.CadSepara ? CadSepara.decodificar(ab) : new TextDecoder("latin1").decode(ab); };
+      BimShell.status("Lendo " + file.name + "…");
+      var dxfTexto = file.arrayBuffer().then(function (ab) {
+        if (/\.dxf$/i.test(file.name)) return dec(ab);
         BimShell.status("Convertendo " + file.name + " para DXF neste computador…");
         return fetch("/__dwg/converter", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: ab }).then(function (r) {
           if (r.status === 404) throw new Error("a conversão de DWG precisa do OrçaPRO instalado no computador (nesta versão online não há). Salve como DXF no AutoCAD e vincule o .dxf.");
           if (!r.ok) return r.json().then(function (j) { throw new Error(j.erro || ("erro " + r.status)); }, function () { throw new Error("erro " + r.status); });
-          return r.arrayBuffer().then(function (b) { return new TextDecoder("latin1").decode(b); });
+          return r.arrayBuffer().then(dec);
         });
       });
       dxfTexto.then(function (txt) {
-        var d = window.DXF ? DXF.parse(txt) : null;
+        /* COM os blocos: louça, porta e mobília são bloco no CAD — sem eles o fundo do hidrossanitário vinha sem vaso nem pia */
+        var d = window.DXF ? DXF.parse(txt, { blocos: true }) : null;
         if (!d || !d.segmentos || !d.segmentos.length) { UI.toast("O desenho não tem linhas que eu leia (LINE, POLYLINE, ARC, CIRCLE).", "aviso"); return; }
-        var r = Bim2D.vincularCad(pid, file.name, d);
-        if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-        self._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
-        Bim2D.redesenhar(pid, false);
-        try { BimShell.repintarVista(); } catch (eR) {}
-        UI.toast(file.name + " vinculado na planta: " + r.segmentos + " linha(s), " + r.textos + " texto(s)" + (r.cortado ? " (limitado a " + r.segmentos + " para caber no aparelho)" : "") + ". Ajuste o deslocamento em Propriedades › Vínculos CAD.", "ok", 8000);
+        var pacote = { nome: file.name, d: d, pid: pid, semBlocos: function () { if (!this._sb) this._sb = DXF.parse(txt); return this._sb; } };
+        /* SEPARAR POR PAVIMENTO (js/cadsepara.js): o arquivo traz mais de um desenho? A pessoa escolhe o que vai em cada nível */
+        var regs = []; try { regs = window.CadSepara ? CadSepara.regioes(d, Bim2D.niveis()) : []; } catch (eR) { regs = []; }
+        if (regs.length >= 2) { self._cadSeparar(pacote, regs); return; }
+        self._cadVincularInteiro(pacote);
       })["catch"](function (e) { UI.toast("Não vinculei " + file.name + ": " + e.message, "erro", 9000); });
+    },
+    /* o desenho inteiro num nível só (o vínculo de sempre) */
+    _cadVincularInteiro: function (pacote) {
+      var d = pacote.d, pid = pacote.pid;
+      /* passou do limite com os blocos? As paredes valem mais que a mobília: fica a leitura sem blocos */
+      if (d.segmentos.length > Bim2D.MAX_CAD_SEG) { try { var d2 = pacote.semBlocos(); if (d2 && d2.segmentos && d2.segmentos.length) d = d2; } catch (eB) {} }
+      var r = Bim2D.vincularCad(pid, pacote.nome, d);
+      if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+      this._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+      Bim2D.redesenhar(pid, false);
+      try { BimShell.repintarVista(); } catch (eR) {}
+      UI.toast(pacote.nome + " vinculado na planta: " + r.segmentos + " linha(s), " + r.textos + " texto(s)" + (r.cortado ? " (limitado a " + r.segmentos + " para caber no aparelho)" : "") + ". Ajuste a posição em Propriedades › Vínculos CAD › Alinhar por ponto.", "ok", 8000);
+    },
+    /* SEPARAR POR PAVIMENTO (26/11/2026) — o diálogo. Roteiro do defeito no cabeçalho do js/cadsepara.js.
+       regs = CadSepara.regioes: cada desenho do arquivo com o nível sugerido. A pessoa confere, muda o nível de
+       cada um, marca um recorte à mão (arrastando na miniatura) e manda separar. */
+    _cadSeparar: function (pacote, regs) {
+      var self = this, C = window.CadSepara, d = pacote.d;
+      var NV = []; try { NV = Bim2D.niveis(); } catch (e) { NV = []; }
+      var ehPl = { planta: 1, cobertura: 1, reservatorio: 1, layout: 1 };
+      /* o que a pessoa escolheu: id da região → id do nível ("" = não entra) */
+      var esc = {}; regs.forEach(function (r) { esc[r.id] = r.importar && r.nivelId != null ? String(r.nivelId) : ""; });
+      var h = function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+      var f1 = function (v) { return (Math.round(v * 10) / 10).toFixed(1).replace(".", ","); };
+      /* a miniatura: no máximo ~9 mil linhas (o desenho inteiro pesaria na tela e não ajuda a escolher) */
+      var cx = C.caixaDe(d.segmentos), mg = Math.max(cx.x1 - cx.x0, cx.y1 - cx.y0) * 0.02 + 0.5;
+      var vb = [cx.x0 - mg, -(cx.y1 + mg), (cx.x1 - cx.x0) + 2 * mg, (cx.y1 - cx.y0) + 2 * mg];
+      var passo = Math.max(1, Math.ceil(d.segmentos.length / 9000)), pd = [], i, s;
+      for (i = 0; i < d.segmentos.length; i += passo) { s = d.segmentos[i]; pd.push("M" + s.x1.toFixed(2) + " " + (-s.y1).toFixed(2) + "L" + s.x2.toFixed(2) + " " + (-s.y2).toFixed(2)); }
+      var fonte = vb[2] / 55;
+      function opcoes(sel) {
+        return '<option value="">Não importar</option>' + NV.map(function (n) { return '<option value="' + h(n.id) + '"' + (String(n.id) === sel ? " selected" : "") + ">" + h(n.nome) + "</option>"; }).join("");
+      }
+      function linha(r, k) {
+        return '<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--linha)">' +
+          '<b style="min-width:22px;text-align:center">' + k + "</b>" +
+          '<span style="flex:1;min-width:0;font-size:12.5px"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + h(r.rotulo) + "</span>" +
+          '<span class="muted" style="font-size:11.5px">' + f1(r.x1 - r.x0) + " × " + f1(r.y1 - r.y0) + " m · " + r.n + " linhas</span></span>" +
+          '<select data-cad-reg="' + h(r.id) + '" style="max-width:150px">' + opcoes(esc[r.id]) + "</select></div>";
+      }
+      function corpoLista() {
+        var pl = [], ou = [], num = {};
+        regs.forEach(function (r, k) { num[r.id] = k + 1; if (ehPl[r.tipo] || r.manual) pl.push(r); else ou.push(r); });
+        var falta = pl.filter(function (r) { return !r.manual && r.pav && r.nivelId == null; });
+        var t = "";
+        if (falta.length) t += '<div style="border:1px solid var(--aviso,#c80);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px">A obra não tem nível para: <b>' +
+          falta.map(function (r) { return h(r.rotulo); }).join("</b>, <b>") + "</b>. Escolha um nível na lista ao lado do desenho, ou crie o nível que falta e eu volto para esta tela." +
+          '<div style="margin-top:6px"><button class="btn sm" data-cad-niveis="1">Criar o nível que falta…</button></div></div>';
+        if (!pl.length) t += '<p class="muted" style="font-size:12.5px">Não reconheci título de planta neste arquivo. Escolha o nível de cada desenho abaixo, ou arraste na miniatura para marcar um recorte.</p>';
+        t += pl.map(function (r) { return linha(r, num[r.id]); }).join("");
+        if (ou.length) t += '<details style="margin-top:8px"' + (pl.length ? "" : " open") + '><summary style="cursor:pointer;font-size:12.5px">Outros desenhos do arquivo (' + ou.length + "): cortes, fachadas, situação…</summary>" + ou.map(function (r) { return linha(r, num[r.id]); }).join("") + "</details>";
+        return t;
+      }
+      function retangulos() {
+        return regs.map(function (r, k) {
+          var on = !!esc[r.id];
+          return '<rect x="' + r.x0 + '" y="' + (-r.y1) + '" width="' + (r.x1 - r.x0) + '" height="' + (r.y1 - r.y0) + '" fill="' + (on ? "rgba(46,125,50,.16)" : "none") + '" stroke="' + (on ? "#2e7d32" : "#c62828") + '" stroke-width="' + (on ? 2 : 1) + '" vector-effect="non-scaling-stroke"' + (on ? "" : ' stroke-dasharray="4 3"') + "/>" +
+            '<text x="' + (r.x0 + fonte * 0.3) + '" y="' + (-r.y1 + fonte * 1.1) + '" font-size="' + fonte.toFixed(2) + '" font-weight="700" fill="' + (on ? "#2e7d32" : "#c62828") + '">' + (k + 1) + "</text>";
+        }).join("");
+      }
+      var html = '<div data-modal-largo="1" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">' +
+        '<div style="flex:1 1 420px;min-width:280px"><p class="muted" style="font-size:12.5px;margin:0 0 6px">Este arquivo traz <b>' + regs.length + " desenhos</b> lado a lado. Escolha em qual pavimento cada planta entra: elas ficam <b>uma sobre a outra</b>, cada uma no seu nível.</p>" +
+        '<svg id="cad-sep-svg" viewBox="' + vb.join(" ") + '" style="width:100%;height:auto;max-height:52vh;background:#fff;border:1px solid var(--linha);border-radius:10px;cursor:crosshair;touch-action:none">' +
+        '<path d="' + pd.join("") + '" fill="none" stroke="#777" stroke-width="1" vector-effect="non-scaling-stroke"/><g id="cad-sep-ret">' + retangulos() + '</g><rect id="cad-sep-novo" fill="rgba(21,101,192,.12)" stroke="#1565c0" stroke-width="1.5" vector-effect="non-scaling-stroke" style="display:none"/></svg>' +
+        '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Verde = entra · vermelho tracejado = fica de fora. Faltou um desenho ou o retângulo pegou demais? <b>Arraste na miniatura</b> para marcar o recorte à mão.</p></div>' +
+        '<div style="flex:1 1 300px;min-width:260px;max-height:60vh;overflow:auto" id="cad-sep-lista">' + corpoLista() + "</div></div>";
+      var bg = UI.modal("Separar o desenho por pavimento", html, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Vincular o desenho inteiro", classe: "", onClick: function () { UI.fecharModal(); self._cadVincularInteiro(pacote); } },
+        { texto: "Separar por pavimento", classe: "primary", onClick: function () { self._cadSepararAplicar(pacote, regs, esc); } }
+      ]);
+      var m = bg && bg.querySelector ? bg.querySelector(".modal") : null; if (!m) return;
+      function repintar() { var L = document.getElementById("cad-sep-lista"), R = document.getElementById("cad-sep-ret"); if (L) L.innerHTML = corpoLista(); if (R) R.innerHTML = retangulos(); }
+      m.addEventListener("change", function (e) {
+        var id = e.target && e.target.getAttribute ? e.target.getAttribute("data-cad-reg") : null; if (!id) return;
+        esc[id] = e.target.value; var R = document.getElementById("cad-sep-ret"); if (R) R.innerHTML = retangulos();
+      });
+      m.addEventListener("click", function (e) {
+        var b = e.target.closest ? e.target.closest("[data-cad-niveis]") : null; if (!b) return;
+        /* vai criar o nível e volta: o arquivo já lido fica guardado (não peço o DWG de novo) */
+        self._cadPendente = pacote; self._cadPendenteEm = Date.now(); UI.fecharModal(); self._niveis();
+        UI.toast("Crie o nível que falta e salve: eu volto para a separação do desenho.", "ok", 7000);
+      });
+      /* recorte à mão: arrastar na miniatura */
+      var svg = document.getElementById("cad-sep-svg"), novo = document.getElementById("cad-sep-novo"), ini = null, nMan = 0;
+      function pt(ev) { var ctm = svg.getScreenCTM(); if (!ctm) return null; var p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; p = p.matrixTransform(ctm.inverse()); return [p.x, -p.y]; }
+      if (svg && novo) {
+        svg.addEventListener("pointerdown", function (ev) { if (ev.button !== 0) return; ini = pt(ev); if (!ini) return; try { svg.setPointerCapture(ev.pointerId); } catch (eC) {} });
+        svg.addEventListener("pointermove", function (ev) {
+          if (!ini) return; var q = pt(ev); if (!q) return;
+          novo.style.display = ""; novo.setAttribute("x", Math.min(ini[0], q[0])); novo.setAttribute("y", -Math.max(ini[1], q[1])); novo.setAttribute("width", Math.abs(q[0] - ini[0])); novo.setAttribute("height", Math.abs(q[1] - ini[1]));
+        });
+        var solta = function (ev) {
+          if (!ini) return; var a = ini, q = pt(ev); ini = null; novo.style.display = "none";
+          if (!q || Math.abs(q[0] - a[0]) < 1 || Math.abs(q[1] - a[1]) < 1) return;   /* clique sem arrasto */
+          var r = { id: "m" + (++nMan), manual: true, x0: Math.min(a[0], q[0]), y0: Math.min(a[1], q[1]), x1: Math.max(a[0], q[0]), y1: Math.max(a[1], q[1]), tipo: "", pav: "", nivelId: null, rotulo: "Recorte marcado à mão " + nMan };
+          r.n = C.recortar(d, r).segmentos.length;
+          if (!r.n) { UI.toast("Esse recorte não pegou nenhuma linha.", "aviso"); return; }
+          regs.push(r); esc[r.id] = ""; repintar();
+          UI.toast("Recorte " + regs.length + " marcado: escolha o nível dele na lista.", "ok", 4000);
+        };
+        svg.addEventListener("pointerup", solta); svg.addEventListener("pointercancel", function () { ini = null; novo.style.display = "none"; });
+      }
+    },
+    /* voltou da tela de níveis com um arquivo esperando: reabre a separação já com os níveis novos */
+    _cadRetomar: function () {
+      var p = this._cadPendente; this._cadPendente = null; if (!p || !window.CadSepara) return false;
+      /* ⚠ só logo depois: quem cancelou a tela de níveis e salvou níveis uma hora mais tarde não espera o desenho reaparecer */
+      if (Date.now() - (this._cadPendenteEm || 0) > 20 * 60000) return false;
+      var regs = []; try { regs = CadSepara.regioes(p.d, Bim2D.niveis()); } catch (e) { regs = []; }
+      if (regs.length >= 2) this._cadSeparar(p, regs); else this._cadVincularInteiro(p);
+      return true;
+    },
+    /* grava um recorte por nível, EMPILHADOS: o do nível mais baixo é a referência; os outros casam com ele (CadSepara.alinhar) */
+    _cadSepararAplicar: function (pacote, regs, esc) {
+      var self = this, C = window.CadSepara, NV = Bim2D.niveis(), yDe = {}, nomeDe = {};
+      NV.forEach(function (n) { yDe[String(n.id)] = n.y; nomeDe[String(n.id)] = n.nome; });
+      var sel = regs.filter(function (r) { return esc[r.id] && yDe[esc[r.id]] != null; });
+      if (!sel.length) { UI.toast("Escolha o nível de pelo menos um desenho (na lista, ao lado de cada um).", "aviso"); return; }
+      sel.sort(function (a, b) { return yDe[esc[a.id]] - yDe[esc[b.id]]; });
+      UI.fecharModal();
+      BimShell.status("Separando " + pacote.nome + " por pavimento…");
+      var MAX = Bim2D.MAX_CAD_SEG, base = pacote.nome.replace(/\.(dwg|dxf)$/i, "");
+      function recorte(r) {
+        var x = C.recortar(pacote.d, r);
+        /* o recorte sozinho passou do limite com os blocos: fica sem a mobília, com as paredes inteiras */
+        if (x.segmentos.length > MAX) { try { var y = C.recortar(pacote.semBlocos(), r); if (y.segmentos.length) x = y; } catch (e) {} }
+        return x;
+      }
+      var grupo = "g" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), ref = null, feitos = [], semCasar = [], falhas = [];
+      sel.forEach(function (r) {
+        var x = recorte(r), nid = esc[r.id], pid = Bim2D.idPlanta(nid), nome = (base + " — " + r.rotulo).slice(0, 80), opts = { grupo: grupo, calado: true };
+        if (!x.segmentos.length) { falhas.push(r.rotulo + ": sem linhas"); return; }
+        if (ref) {
+          var al = C.alinhar(ref.dxf, x);
+          if (!al.ok) { al = C.alinharPeloCanto(ref.dxf.extents, x.extents); semCasar.push(nomeDe[nid]); }
+          opts.pos = C.posicao(ref.pos, ref.dxf.extents, x.extents, al);
+        }
+        var rv = Bim2D.vincularCad(pid, nome, x, opts);
+        if (!rv.ok) { falhas.push(r.rotulo + ": " + rv.erro); return; }
+        if (!ref) ref = { dxf: x, pos: { dx: rv.dx, dy: rv.dy }, pid: pid };
+        feitos.push({ pid: pid, nivel: nomeDe[nid], n: rv.segmentos, cortado: rv.cortado, gravou: rv.gravou });
+      });
+      if (!feitos.length) { UI.toast("Não separei " + pacote.nome + ": " + falhas.join("; "), "erro", 9000); return; }
+      feitos.forEach(function (f) { try { Bim2D.redesenhar(f.pid, false); } catch (e) {} });
+      this._d2Abrir(ref.pid, (Bim2D.def(ref.pid) || {}).nome || "Planta baixa");
+      try { Bim2D.redesenhar(ref.pid, false); BimShell.repintarVista(); } catch (eR) {}
+      var msg = feitos.length + (feitos.length === 1 ? " desenho vinculado: " : " desenhos separados, um sobre o outro: ") + feitos.map(function (f) { return f.nivel + " (" + f.n + " linhas" + (f.cortado ? ", limitado" : "") + ")"; }).join(", ") + ".";
+      if (semCasar.length) msg += " ⚠ Não consegui casar sozinho: " + semCasar.join(", ") + " — abra a planta dele, Propriedades › Vínculos CAD › desligue \"Mover junto\" e use \"Alinhar por ponto\".";
+      if (feitos.some(function (f) { return !f.gravou; })) msg += " ⚠ O aparelho ficou sem espaço para guardar tudo: parte fica só até fechar o OrçaPRO.";
+      if (falhas.length) msg += " Ficou de fora: " + falhas.join("; ") + ".";
+      UI.toast(msg, semCasar.length || falhas.length ? "aviso" : "ok", 12000);
+      BimShell.status("Desenho separado por pavimento. Abra a planta de cada nível: o lançamento passa a nascer no nível da planta aberta.");
     },
     /* TEMPLATE (.optpl): níveis + famílias da biblioteca + estilos das vistas 2D */
     _optplSalvar: function () {
@@ -15340,6 +15501,8 @@
       try { if (window.BimFocoUI && BimFocoUI.vistaAtiva) BimFocoUI.vistaAtiva(id, v ? v.tipo : "3d"); } catch (eVD) {}
       /* S8: a regra do topo da viga é da vista na frente (planta estrutural × piso/3D) */
       try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
+      /* NÍVEL SEGUE A PLANTA (26/11/2026): a planta que veio para a frente vira o "Nível atual" das ferramentas (js/bimarqui.js seguirVista) */
+      try { if (window.BimArqUI && BimArqUI.seguirVista) BimArqUI.seguirVista(id); } catch (eNS) {}
       /* NÍVEL DE DETALHE: a cena 3D passa ao nível da aba 3D ativada; o botão da barra mostra o da vista ativa (2D ou 3D) */
       try { if (window.BimInstUI && BimInstUI.aoAtivarVista) BimInstUI.aoAtivarVista(id); } catch (eND) {}
       /* vista 2D: não tem caixa de corte nem ortogonal — Propriedades mostra os parâmetros do desenho */

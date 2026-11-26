@@ -59,6 +59,9 @@
      DE VISTA neste aparelho. Peças já existentes não mudam (vale para a peça nova). */
   var CHAVE_VIGA_TOPO = "orcapro:bim:viga-topo:v1";
   var VIGA_TOPO_PADRAO = { estrutural: "nivel", piso: "acima" };
+  /* NÍVEL SEGUE A PLANTA: a escolha é da pessoa e fica no aparelho (ligado por padrão) */
+  var CHAVE_NIVEL_SEGUE = "orcapro:bim:nivel-segue:v1";
+  try { if (global.localStorage && global.localStorage.getItem(CHAVE_NIVEL_SEGUE) === "0") cfg.nivelSegue = false; } catch (eNS) {}
   cfg.vigaTopo = (function () {
     var o = { estrutural: VIGA_TOPO_PADRAO.estrutural, piso: VIGA_TOPO_PADRAO.piso };
     try { var g = JSON.parse((global.localStorage && global.localStorage.getItem(CHAVE_VIGA_TOPO)) || "null"); if (g) ["estrutural", "piso"].forEach(function (k) { if (g[k] === "nivel" || g[k] === "acima") o[k] = g[k]; }); } catch (e) {}
@@ -100,11 +103,13 @@
         L.slice().reverse().map(function (n) {
           return '<label style="display:flex;gap:8px;align-items:center;padding:6px 0"><input type="radio" name="b2-nivel" value="' + String(n.id).replace(/"/g, "&quot;") + '"' + (at && String(at.id) === String(n.id) ? " checked" : "") + "> " +
             String(n.nome).replace(/</g, "&lt;") + " · " + (n.elevacao >= 0 ? "+" : "") + n2(n.elevacao) + " m" + (n.peDireito != null ? " (pé-direito " + n2(n.peDireito) + " m)" : "") + "</label>";
-        }).join("");
+        }).join("") +
+        '<label style="display:flex;gap:8px;align-items:flex-start;padding:10px 0 0;margin-top:8px;border-top:1px solid var(--linha);font-size:12.5px"><input type="checkbox" id="b2-nivel-segue"' + (this.nivelSegue() ? " checked" : "") + '> <span>O nível atual acompanha a planta aberta<br><span class="muted">Abriu a planta de outro pavimento, o que você lançar nasce nele. Desmarque para fixar o nível escolhido aqui.</span></span></label>';
       UI.modal("Nível atual", h, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Usar este nível", classe: "primary", onClick: function () {
           var r = document.querySelector('input[name="b2-nivel"]:checked'); if (r) cfg.nivelId = r.value;
+          var sg = document.getElementById("b2-nivel-segue"); if (sg) self.definirNivelSegue(sg.checked);
           UI.fecharModal(); self.enviar();
           var nv = self.nivelAtivo(); status("Nível atual: " + (nv ? nv.nome + " (" + n2(nv.elevacao) + " m)" : "—") + ".");
         } }
@@ -141,6 +146,33 @@
       if (this._ctxEnviado === this.contextoVista()) return false;
       this.enviar();
       return true;
+    },
+
+    /* NÍVEL SEGUE A PLANTA (26/11/2026). Roteiro do defeito: a pessoa lançava a caixa d'água na planta da
+       cobertura, abria a planta do pavimento de baixo e continuava lançando — mas o "Nível atual" das
+       ferramentas continuava na cobertura, porque só mudava pelo diálogo. Tudo nascia na mesma cota e ela via
+       "tudo no mesmo plano". Agora a planta que vem para a frente vira o nível atual, com aviso na barra.
+       ⚠ A porta: "Nível atual" › desmarcar "acompanha a planta aberta" (quem modela a estrutura de um piso
+       olhando a planta de outro precisa dela). */
+    nivelSegue: function () { return cfg.nivelSegue !== false; },
+    definirNivelSegue: function (on) {
+      cfg.nivelSegue = !!on;
+      try { if (global.localStorage) global.localStorage.setItem(CHAVE_NIVEL_SEGUE, on ? "1" : "0"); } catch (e) {}
+      return cfg.nivelSegue;
+    },
+    /* a vista que ficou na frente é uma planta de OUTRO nível? Ele passa a ser o nível atual. → o nível, ou null */
+    seguirVista: function (id) {
+      if (!this.nivelSegue()) return null;
+      var P = global.Bim2D, d = null;
+      try { d = P && P.ehVista2d && P.ehVista2d(id) ? P.def(id) : null; } catch (e) { d = null; }
+      if (!d || d.tipo !== "planta" || !d.nivel) return null;
+      if (String(cfg.nivelId) === String(d.nivel.id)) return null;
+      var n = this.niveis().filter(function (x) { return String(x.id) === String(d.nivel.id); })[0];
+      if (!n) return null;   /* planta de um nível que a obra não tem mais: não invento elevação */
+      cfg.nivelId = n.id;
+      if (this.ativo()) this.enviar();
+      try { status("Nível atual: " + n.nome + " (" + (n.elevacao >= 0 ? "+" : "") + n2(n.elevacao) + " m) — acompanha a planta aberta. O que você lançar agora nasce nele."); } catch (eS) {}
+      return n;
     },
 
     /* ------------------------------------------------------------ tipos */

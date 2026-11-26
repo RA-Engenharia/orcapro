@@ -791,12 +791,21 @@
     var t = c.topo || {}, ic = '<span class="mod-ic" aria-hidden="true">' + (c.icone ? c.icone("dashboard") : "") + "</span>";
     var modelo = '<div class="pn-seg pv-modelo" role="group" aria-label="Modelo do painel">' + [["a", "Modelo A"], ["b", "Modelo B"]].map(function (o) { var on = t.modelo === o[0]; return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="painel-modelo" data-value="' + o[0] + '" title="' + (o[0] === "a" ? "Executivo BI, claro" : "Central escura") + '">' + o[1] + "</button>"; }).join("") + "</div>";
     var auto = '<label class="pn-filtro pv-auto">Auto <select data-gacao="painel-auto" title="Atualiza sozinho a cada N minutos, enquanto o painel está aberto">' + [[0, "desligada"], [1, "1 min"], [5, "5 min"], [10, "10 min"], [30, "30 min"]].map(function (o) { return '<option value="' + o[0] + '"' + (t.auto === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>";
-    var mais = (typeof global.Modulo !== "undefined" && global.Modulo.mais) ? global.Modulo.mais([t.metasHtml || "", t.criarDemoHtml || ""].filter(Boolean)) : "";
+    /* ROTEIRO §2 (23/11/2026): no máximo 2 ações à vista (Atualizar e Relatório) e o
+       resto no "Mais" — Modelo A/B, Auto, Expandir, Reduzir, Organizar, metas, demo.
+       Os botões continuam com o mesmo data-gacao e o mesmo clique (e2e-painel-v2 [16]
+       os aciona por seletor); só mudaram de lugar. Antes eram 3 fileiras de pílulas
+       em cima dos números: 80 botões visíveis na primeira tela do produto. */
+    var expandir = '<button type="button" class="pn-ctl pv-bt" data-gacao="painel-expandir" aria-pressed="' + (t.tv ? "true" : "false") + '" title="Tela cheia, sem o menu lateral (modo TV). Esc sai.">Expandir</button>';
+    var reduzir = '<button type="button" class="pn-ctl pv-bt" data-gacao="painel-reduzir" aria-pressed="' + (t.compacto ? "true" : "false") + '" title="' + (t.tv ? "Sai da tela cheia" : "Modo compacto: menos espaço entre os cartões") + '">Reduzir</button>';
+    var organizar = '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar</button>';
+    var SEP = (typeof global.Modulo !== "undefined" && global.Modulo.SEP) || "-";
+    var itensMais = [modelo, auto, SEP, expandir, reduzir, organizar, SEP, t.metasHtml || "", t.criarDemoHtml || ""];
+    var mais = (typeof global.Modulo !== "undefined" && global.Modulo.mais) ? global.Modulo.mais(itensMais) : itensMais.filter(function (x) { return x && x !== SEP; }).join("");
     return '<header class="mod-cab pv-topo"><div class="mod-tit">' + ic + '<div><h1>Painel de Gestão</h1><p class="mod-sub">' + (t.subHtml || "") + "</p></div></div>"
-      + '<div class="pv-acoes">' + modelo
-      + '<div class="pv-atualiza"><button type="button" class="pv-bt pv-bt-prim" data-gacao="painel-atualizar" title="Recalcula tudo agora">Atualizar</button><span class="pv-atualiz" data-pv-atualiz aria-live="polite">Atualizado às ' + esc(t.hora || "") + "</span>" + auto + "</div>"
-      + '<div class="pv-vistas"><button type="button" class="pn-ctl pv-bt" data-gacao="painel-expandir" aria-pressed="' + (t.tv ? "true" : "false") + '" title="Tela cheia, sem o menu lateral (modo TV). Esc sai.">Expandir</button><button type="button" class="pn-ctl pv-bt" data-gacao="painel-reduzir" aria-pressed="' + (t.compacto ? "true" : "false") + '" title="' + (t.tv ? "Sai da tela cheia" : "Modo compacto: menos espaço entre os cartões") + '">Reduzir</button></div>'
-      + '<div class="pv-vistas"><button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button><button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar</button>' + mais + "</div></div></header>";
+      + '<div class="pv-acoes">'
+      + '<div class="pv-atualiza"><button type="button" class="pv-bt pv-bt-prim" data-gacao="painel-atualizar" title="Recalcula tudo agora">Atualizar</button><span class="pv-atualiz" data-pv-atualiz aria-live="polite">Atualizado às ' + esc(t.hora || "") + "</span></div>"
+      + '<div class="pv-vistas"><button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>' + mais + "</div></div></header>";
   }
 
   /* ---------- H. COMERCIAL ---------- */

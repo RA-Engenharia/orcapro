@@ -118475,6 +118475,14 @@ acimaTopo: function (d, yCorte) {
 var D = D2(); if (!D || !D.Acima || !this._acimaVale(d)) return null;
 return D.Acima.topo(this.acimaCfg(d.id), d.nivel.y, yCorte, this.niveis());
 },
+instAcimaModo: function (d) { var pp = (d && d.nivel && this.estado().plantas[d.nivel.id]) || {}; return pp.instAcima === "3m" ? "3m" : "nivel"; },
+instTopo: function (d) {
+var yc = d.nivel.y + d.altura, t3 = yc + 3;
+if (this.instAcimaModo(d) === "3m") return t3;
+var prox = null;
+this.niveis().forEach(function (n) { if (n.y > yc + 1e-6 && (prox === null || n.y < prox)) prox = n.y; });
+return prox === null ? t3 : Math.min(t3, prox - 0.01);
+},
 idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
 idCorte: function (cid) { return "d2c-" + cid; },
 ehVista2d: function (id) { return /^d2[pcve]-/.test(String(id || "")); },
@@ -118652,7 +118660,7 @@ var b5 = B(), I5 = global.BimInst;
 if (I5 && b5 && b5.editarEstado) {
 var e5 = b5.editarEstado();
 if (e5 && e5.estado && e5.estado.instalacoes && (e5.estado.instalacoes.trechos.length || e5.estado.instalacoes.pecas.length))
-out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: d.nivel.y + d.altura + 3, rede: I5.rede(e5.estado, b5.familiaAvaliar),
+out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: this.instTopo(d), rede: I5.rede(e5.estado, b5.familiaAvaliar),
 legenda: !!(global.BimInstUI && global.BimInstUI.legendaLigada && global.BimInstUI.legendaLigada()) });
 var nd5 = dados.info && dados.info.nivelInst ? dados.info.nivelInst.usado : null;
 if (out.inst && nd5) {
@@ -119090,7 +119098,8 @@ return true;
 cancelarTraco: function (calado) {
 if (!this._pick) return;
 var c = this._cache[this._pick.id]; if (c && c.el) { c.el.removeAttribute("data-d2-pick"); var g = c.el.querySelector(".d2-pick"); if (g) g.parentNode.removeChild(g); }
-this._pick = null; if (!calado) status("Corte cancelado.");
+var eraCad = this._pick.modo === "cad";
+this._pick = null; if (!calado) status(eraCad ? "Alinhamento cancelado." : "Corte cancelado.");
 },
 _travar: function (a, p, livre) {
 if (livre) return p;
@@ -119099,12 +119108,13 @@ return Math.abs(dx) >= Math.abs(dy) ? [p[0], a[1]] : [a[0], p[1]];
 },
 _mostrarPick: function (id, ev) {
 var c = this._cache[id], p = this._ptSvg(id, ev); if (!c || !p || !c.svg) return;
-var a = this._pick.pts[0], q = this._travar(a, p, ev.shiftKey);
+var a = this._pick.pts[0], q = this._pick.modo === "cad" ? p : this._travar(a, p, ev.shiftKey);
 var g = c.svg.querySelector(".d2-pick");
 if (!g) { g = document.createElementNS("http://www.w3.org/2000/svg", "line"); g.setAttribute("class", "d2-pick"); g.setAttribute("vector-effect", "non-scaling-stroke"); c.svg.appendChild(g); }
 g.setAttribute("x1", a[0]); g.setAttribute("y1", a[1]); g.setAttribute("x2", q[0]); g.setAttribute("y2", q[1]);
 },
 _clicarPick: function (id, ev) {
+if (this._pick.modo === "cad") { this._clicarPickCad(id, ev); return; }
 var p = this._ptSvg(id, ev); if (!p) return;
 var pk = this._pick;
 if (!pk.pts.length) { pk.pts.push(p); status("Agora o 2º ponto (Shift solta o ângulo)."); return; }
@@ -119168,7 +119178,8 @@ var x = null; try { x = JSON.parse(localStorage.getItem(this._cadChave(lid)) || 
 if (x && Array.isArray(x.s)) this._cadMem[lid] = x;
 return x;
 },
-vincularCad: function (id, nome, dxf) {
+vincularCad: function (id, nome, dxf, opts) {
+opts = opts || {};
 var d = this.def(id); if (!d || d.tipo !== "planta") return { ok: false, erro: "O vínculo CAD vai numa planta baixa: abra uma planta primeiro." };
 var segs = (dxf && dxf.segmentos) || [], ex = dxf && dxf.extents;
 if (!segs.length || !ex) return { ok: false, erro: "O desenho não tem linhas." };
@@ -119180,17 +119191,70 @@ var t = (dxf.textos || []).slice(0, 3000).filter(function (x) { return isFinite(
 var w = ex.x1 - ex.x0, h = ex.y1 - ex.y0, dx = 0, dy = h;
 var p = B() && B().pavimentos2d ? B().pavimentos2d() : null;
 if (p && p.caixa) { dx = (p.caixa.min[0] + p.caixa.max[0]) / 2 - w / 2; dy = (p.caixa.min[2] + p.caixa.max[2]) / 2 + h / 2; }
-var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+if (opts.pos && isFinite(+opts.pos.dx) && isFinite(+opts.pos.dy)) { dx = +opts.pos.dx; dy = +opts.pos.dy; }
+this._cadSeq = (this._cadSeq || 0) + 1;
+var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36) + this._cadSeq.toString(36);
 var dados = { s: s, t: t };
 this._cadMem[lid] = dados;
 var gravou = true;
 try { localStorage.setItem(this._cadChave(lid), JSON.stringify(dados)); } catch (e) { gravou = false; }
 var e = this.estado(); if (!e.cad || typeof e.cad !== "object") e.cad = {};
 var L = e.cad[d.nivel.id] || (e.cad[d.nivel.id] = []);
-L.push({ id: lid, nome: String(nome || "Desenho CAD").slice(0, 80), w: r3(w), h: r3(h), dx: r3(dx), dy: r3(dy), rot: 0, vis: true, n: s.length / 4, nt: t.length, cortado: cortado, temp: !gravou });
+var reg = { id: lid, nome: String(nome || "Desenho CAD").slice(0, 80), w: r3(w), h: r3(h), dx: r3(dx), dy: r3(dy), rot: 0, vis: true, n: s.length / 4, nt: t.length, cortado: cortado, temp: !gravou };
+if (opts.grupo) reg.grupo = String(opts.grupo).slice(0, 40);
+L.push(reg);
 this._gravar(); this._avisarMudou();
-if (!gravou) toast("O desenho é grande para guardar neste aparelho: ele fica só até fechar o OrçaPRO.", "aviso");
-return { ok: true, id: lid, segmentos: s.length / 4, textos: t.length, cortado: cortado, gravou: gravou };
+if (!gravou && !opts.calado) toast("O desenho é grande para guardar neste aparelho: ele fica só até fechar o OrçaPRO.", "aviso");
+return { ok: true, id: lid, segmentos: s.length / 4, textos: t.length, cortado: cortado, gravou: gravou, dx: reg.dx, dy: reg.dy };
+},
+_cadDoGrupo: function (v) {
+if (!v.grupo || v.junto === false) return [v];
+var c = this.estado().cad || {}, out = [];
+Object.keys(c).forEach(function (k) { (c[k] || []).forEach(function (x) { if (x.grupo === v.grupo) out.push(x); }); });
+return out.length ? out : [v];
+},
+moverCad: function (lid, ddx, ddy) {
+var v = this._cadAchar(lid); if (!v || !isFinite(ddx) || !isFinite(ddy)) return 0;
+var G = this._cadDoGrupo(v), self = this;
+G.forEach(function (x) { x.dx = Math.round(((+x.dx || 0) + ddx) * 1000) / 1000; x.dy = Math.round(((+x.dy || 0) + ddy) * 1000) / 1000; });
+this._gravar();
+Object.keys(this._cache).forEach(function (k) { var dk = self.def(k); if (dk && dk.tipo === "planta") self.redesenhar(k, false); });
+return G.length;
+},
+alinharCad: function (idPlanta, lid) {
+var c = this._cache[idPlanta], v = this._cadAchar(lid); if (!c || !c.el || !v) return false;
+if (this._pick) this.cancelarTraco(true);
+this._pick = { id: idPlanta, pts: [], modo: "cad", lid: lid };
+c.el.setAttribute("data-d2-pick", "1");
+status("Alinhar desenho: clique um ponto do desenho CAD (um canto de parede). Esc cancela.");
+var self = this;
+if (!this._escPick) {
+this._escPick = function (ev) { if (ev.key === "Escape" && self._pick) { self.cancelarTraco(); ev.stopPropagation(); } };
+document.addEventListener("keydown", this._escPick, true);
+}
+return true;
+},
+_cadPonta: function (nivelId, lid, p, raio) {
+var melhor = null, dm = raio * raio;
+this._cadDesenho(nivelId).forEach(function (g) {
+if (g.id !== lid) return;
+for (var i = 0; i + 1 < g.seg.length; i += 2) { var dx = g.seg[i] - p[0], dy = g.seg[i + 1] - p[1], q = dx * dx + dy * dy; if (q < dm) { dm = q; melhor = [g.seg[i], g.seg[i + 1]]; } }
+});
+return melhor || p;
+},
+_clicarPickCad: function (id, ev) {
+var p = this._ptSvg(id, ev), pk = this._pick, d = this.def(id); if (!p || !d) return;
+if (!pk.pts.length) {
+var c = this._cache[id], raio = 0.3;
+try { var m = c.svg.getScreenCTM(); if (m && m.a) raio = Math.max(0.02, 12 / Math.abs(m.a)); } catch (e) {}
+pk.pts.push(this._cadPonta(d.nivel.id, pk.lid, p, raio));
+status("Agora clique ONDE esse ponto deve ficar (no modelo ou na planta). Esc cancela.");
+return;
+}
+var a = pk.pts[0], lid = pk.lid;
+this.cancelarTraco(true);
+var n = this.moverCad(lid, p[0] - a[0], p[1] - a[1]);
+status("Desenho alinhado" + (n > 1 ? ": os " + n + " pavimentos do mesmo arquivo andaram juntos." : "."));
 },
 _cadAchar: function (lid) {
 var c = this.estado().cad || {}, r = null;
@@ -119263,7 +119327,8 @@ return { id: "nv:" + n.chave, rotulo: n.nome + " " + D.fmtCota(n.cota), tipo: "s
 if (d.tipo === "planta") {
 secoes.push({ nome: "Extensões (faixa de vista)", params: [
 { id: "altura", rotulo: "Altura do corte", unidade: "m", tipo: "numero", passo: 0.05, valor: d.altura },
-{ id: "abaixo", rotulo: "Ver abaixo do piso", unidade: "m", tipo: "numero", passo: 0.05, valor: d.abaixo }
+{ id: "abaixo", rotulo: "Ver abaixo do piso", unidade: "m", tipo: "numero", passo: 0.05, valor: d.abaixo },
+{ id: "instAcima", rotulo: "Instalações acima do corte", tipo: "lista", valor: this.instAcimaModo(d), opcoes: [{ id: "nivel", rotulo: "Até o nível de cima" }, { id: "3m", rotulo: "Até 3 m acima do corte" }] }
 ] });
 } else {
 secoes.push({ nome: "Extensões", params: [
@@ -119295,6 +119360,8 @@ vc.push({ id: p + "vis", rotulo: "Mostrar", tipo: "sim-nao", valor: !!v.vis });
 vc.push({ id: p + "dx", rotulo: "Deslocamento X", unidade: "m", tipo: "numero", passo: 0.05, valor: v.dx });
 vc.push({ id: p + "dy", rotulo: "Deslocamento Y", unidade: "m", tipo: "numero", passo: 0.05, valor: v.dy });
 vc.push({ id: p + "rot", rotulo: "Rotação", unidade: "°", tipo: "numero", passo: 1, valor: v.rot || 0 });
+vc.push({ id: p + "alinhar", rotulo: "Posição", tipo: "botao", rotuloBotao: "Alinhar por ponto…", fn: function () { self.alinharCad(id, v.id); } });
+if (v.grupo) vc.push({ id: p + "junto", rotulo: "Mover junto os outros pavimentos", tipo: "sim-nao", valor: v.junto !== false });
 vc.push({ id: p + "excluir", rotulo: "Vínculo", tipo: "botao", rotuloBotao: "Remover vínculo", fn: function () { self.excluirCad(v.id); self.redesenhar(id, false); status("Vínculo CAD removido."); } });
 });
 if (this._cfg.vincular) vc.push({ id: "cad-novo", rotulo: "DWG / DXF", tipo: "botao", rotuloBotao: "Vincular desenho CAD…", fn: function () { self._cfg.vincular(id); } });
@@ -119320,9 +119387,16 @@ var d = this.def(id); if (!d) return;
 if (/^cc:/.test(String(pid)) && global.BimCoresCatUI && global.BimCoresCatUI.mudarVista(id, pid, valor)) return;
 var M6 = this._p6(); if (M6 && M6.mudar(id, pid, valor)) return;
 var e = this.estado();
-var mc = /^cad-(\w+)-(vis|dx|dy|rot)$/.exec(pid);
+var mc = /^cad-(\w+)-(vis|dx|dy|rot|junto)$/.exec(pid);
 if (mc) {
 var v = this._cadAchar(mc[1]); if (!v) return;
+if (mc[2] === "dx" || mc[2] === "dy") {
+var novo = num(valor, +v[mc[2]] || 0), dif = novo - (+v[mc[2]] || 0);
+var nG = this.moverCad(v.id, mc[2] === "dx" ? dif : 0, mc[2] === "dy" ? dif : 0);
+if (nG > 1) status("Os " + nG + " pavimentos do mesmo arquivo andaram juntos (para mover só este, desligue \"Mover junto os outros pavimentos\").");
+return;
+}
+if (mc[2] === "junto") { v.junto = !!valor; this._gravar(); return; }
 v[mc[2]] = mc[2] === "vis" ? !!valor : num(valor, v[mc[2]] || 0);
 this._gravar(); this.redesenhar(id, false); return;
 }
@@ -119336,6 +119410,13 @@ else cur.rotulo = D4.ROTULOS[valor] ? valor : cur.rotulo;
 e.acima[id] = D4.cfg(cur);
 this._gravar(); if (ma[1] !== "rotulo") this.atualizar(id); else this.redesenhar(id, false);
 status(cur.on ? (ma[1] === "rotulo" ? "Rótulo das peças acima do corte: " + D4.ROTULOS[e.acima[id].rotulo] + "." : "Peças acima do corte em projeção tracejada, " + (e.acima[id].modo === "altura" ? "até " + D2().fmtNum(e.acima[id].altura, 2) + " m do piso." : "até o nível de cima.")) : "Peças acima do corte escondidas nesta vista.");
+return;
+}
+if (pid === "instAcima" && d.nivel) {
+var pi = e.plantas[d.nivel.id] || (e.plantas[d.nivel.id] = {});
+pi.instAcima = valor === "3m" ? "3m" : "nivel";
+this._gravar(); this.redesenhar(id, true);
+status(pi.instAcima === "3m" ? "Instalações acima do corte: até 3 m — o que está no pavimento de cima aparece tracejado nesta planta." : "Instalações acima do corte: até o nível de cima — o que é do pavimento de cima fica na planta dele.");
 return;
 }
 if (pid === "altura" || pid === "abaixo") {
@@ -188905,6 +188986,8 @@ cobertura: { ref: "acima", deslocBase: 0 }
 };
 var CHAVE_VIGA_TOPO = "orcapro:bim:viga-topo:v1";
 var VIGA_TOPO_PADRAO = { estrutural: "nivel", piso: "acima" };
+var CHAVE_NIVEL_SEGUE = "orcapro:bim:nivel-segue:v1";
+try { if (global.localStorage && global.localStorage.getItem(CHAVE_NIVEL_SEGUE) === "0") cfg.nivelSegue = false; } catch (eNS) {}
 cfg.vigaTopo = (function () {
 var o = { estrutural: VIGA_TOPO_PADRAO.estrutural, piso: VIGA_TOPO_PADRAO.piso };
 try { var g = JSON.parse((global.localStorage && global.localStorage.getItem(CHAVE_VIGA_TOPO)) || "null"); if (g) ["estrutural", "piso"].forEach(function (k) { if (g[k] === "nivel" || g[k] === "acima") o[k] = g[k]; }); } catch (e) {}
@@ -188937,11 +189020,13 @@ var h = '<p class="muted" style="margin:0 0 10px">O próximo elemento nasce nest
 L.slice().reverse().map(function (n) {
 return '<label style="display:flex;gap:8px;align-items:center;padding:6px 0"><input type="radio" name="b2-nivel" value="' + String(n.id).replace(/"/g, "&quot;") + '"' + (at && String(at.id) === String(n.id) ? " checked" : "") + "> " +
 String(n.nome).replace(/</g, "&lt;") + " · " + (n.elevacao >= 0 ? "+" : "") + n2(n.elevacao) + " m" + (n.peDireito != null ? " (pé-direito " + n2(n.peDireito) + " m)" : "") + "</label>";
-}).join("");
+}).join("") +
+'<label style="display:flex;gap:8px;align-items:flex-start;padding:10px 0 0;margin-top:8px;border-top:1px solid var(--linha);font-size:12.5px"><input type="checkbox" id="b2-nivel-segue"' + (this.nivelSegue() ? " checked" : "") + '> <span>O nível atual acompanha a planta aberta<br><span class="muted">Abriu a planta de outro pavimento, o que você lançar nasce nele. Desmarque para fixar o nível escolhido aqui.</span></span></label>';
 UI.modal("Nível atual", h, [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "Usar este nível", classe: "primary", onClick: function () {
 var r = document.querySelector('input[name="b2-nivel"]:checked'); if (r) cfg.nivelId = r.value;
+var sg = document.getElementById("b2-nivel-segue"); if (sg) self.definirNivelSegue(sg.checked);
 UI.fecharModal(); self.enviar();
 var nv = self.nivelAtivo(); status("Nível atual: " + (nv ? nv.nome + " (" + n2(nv.elevacao) + " m)" : "—") + ".");
 } }
@@ -188973,6 +189058,25 @@ if (!this.ativo()) return false;
 if (this._ctxEnviado === this.contextoVista()) return false;
 this.enviar();
 return true;
+},
+nivelSegue: function () { return cfg.nivelSegue !== false; },
+definirNivelSegue: function (on) {
+cfg.nivelSegue = !!on;
+try { if (global.localStorage) global.localStorage.setItem(CHAVE_NIVEL_SEGUE, on ? "1" : "0"); } catch (e) {}
+return cfg.nivelSegue;
+},
+seguirVista: function (id) {
+if (!this.nivelSegue()) return null;
+var P = global.Bim2D, d = null;
+try { d = P && P.ehVista2d && P.ehVista2d(id) ? P.def(id) : null; } catch (e) { d = null; }
+if (!d || d.tipo !== "planta" || !d.nivel) return null;
+if (String(cfg.nivelId) === String(d.nivel.id)) return null;
+var n = this.niveis().filter(function (x) { return String(x.id) === String(d.nivel.id); })[0];
+if (!n) return null;
+cfg.nivelId = n.id;
+if (this.ativo()) this.enviar();
+try { status("Nível atual: " + n.nome + " (" + (n.elevacao >= 0 ? "+" : "") + n2(n.elevacao) + " m) — acompanha a planta aberta. O que você lançar agora nasce nele."); } catch (eS) {}
+return n;
 },
 tipoParede: function () {
 var t = null;

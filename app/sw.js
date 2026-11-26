@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.2.445';
+var CACHE = 'orcapro-app-v1.2.446';
 
 /* ⚠ SEM skipWaiting NO INSTALL, E PRÉ-CACHE CONFERIDO (21/11/2026).
  * Roteiro do defeito (1.2.308 → 1.2.410, notebook do Rogério): o worker novo

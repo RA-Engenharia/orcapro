@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.445",
+versao: "1.2.446",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -1132,15 +1132,314 @@ escada: '<path d="M4 20h4v-4h4v-4h4V8h4"/>',
 escadaU: '<path d="M3 20V8h5v12"/><path d="M8 20v-8h5v8"/><path d="M13 20V6h6"/>',
 sondagem: '<path d="M12 3v14"/><path d="M8 17h8l-4 4z"/><path d="M5 7h14"/>',
 colarAlinhado: '<path d="M8 4h8v3H8z"/><path d="M6 6H5v15h14V6h-1"/><path d="M8 12h8M8 16h8"/>',
+viga: '<path d="M4 8h16M4 16h16"/><path d="M6 8v8M12 8v8M18 8v8"/>',
+graute: '<rect x="3" y="6" width="18" height="12"/><path d="M9 6v12M15 6v12"/><path d="m10 9 4 6M10 15l4-6"/>',
+projetoEstrutural: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M5 9h14"/><path d="M8 9v7M12 9v7M16 9v7"/><path d="M5 16h14"/>',
+forroEstrutura: '<path d="M3 5h18"/><path d="M6 5v6M12 5v6M18 5v6"/><path d="M3 11h18"/><path d="M3 15h18"/>',
+pergolado: '<path d="M4 21V8M20 21V8"/><path d="M2 8h20"/><path d="M7 8V5M11 8V5M15 8V5"/>',
+enrijecedor: '<path d="M5 5h14M5 19h14M12 5v14"/><path d="M8.5 9v6M15.5 9v6"/>',
+estruturaDesenhada: '<path d="M3 19h11"/><path d="m3 19 3-7 3 7 3-7 2 4"/><path d="m16 11 5-5 2 2-5 5-3 1z"/>',
+ifcFabricacao: '<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="m12 10-3 1.7v3.6l3 1.7 3-1.7v-3.6z"/><path d="M9 11.7 12 13.4l3-1.7M12 13.4V17"/>',
+planoMontagem: '<path d="M4 21h16"/><path d="M6 21v-8h5v8M13 21v-5h5v5"/><path d="M8 13V6l6-3"/><path d="M14 3v4"/>',
+modelosAbertos: '<path d="M9 4 4 6.5v5L9 14l5-2.5v-5z"/><path d="M4 6.5 9 9l5-2.5M9 9v5"/><path d="m15 10 5 2.5v5L15 20l-5-2.5"/>',
+tiposParede: '<rect x="3" y="4" width="18" height="16"/><path d="M9 4v16M15 4v16"/><path d="M3 10h6M3 14h6"/>',
+cotarIguais: '<path d="M3 8h18M3 16h18"/><path d="M3 6v4M21 6v4M3 14v4M21 14v4"/><path d="M10 12h4"/>',
+disciplinas: '<path d="M3 20h12V8H3z"/><path d="M7 8V4h12v12h-4"/>',
+organizarPaineis: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16M9 12h12"/>',
+sanca: '<path d="M3 4h18"/><path d="M3 4v8h6a3 3 0 0 0 3-3V4"/><path d="M15 9h6"/><path d="m16 13 1 2M18 13v2M20 13l-1 2"/>',
+forro: '<path d="M3 6h18"/><path d="M3 6v3h18V6"/><path d="M7 9v11M12 9v11M17 9v11"/>',
+criarGrupo: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2"/><rect x="7" y="7" width="4" height="4"/><circle cx="15" cy="15" r="2"/>',
+chapasFitas: '<rect x="4" y="5" width="16" height="12"/><path d="M4 19h16"/><path d="M8 17v2M12 17v2M16 17v2"/>',
+planoTrabalho: '<path d="m3 16 9-5 9 5-9 5z"/><path d="M12 11V3"/><path d="m9 6 3-3 3 3"/>',
+cantoneiraDupla: '<path d="M5 4v16h6M19 4v16h-6"/>',
+modelosProntos: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m12 8 1.4 2.9 3.1.4-2.3 2.2.6 3.1-2.8-1.5-2.8 1.5.6-3.1-2.3-2.2 3.1-.4z"/>',
+planificacao: '<path d="M3 18V8l6-3v10z"/><path d="m9 15 6 3V8L9 5"/><path d="m15 18 6-3V5l-6 3"/>',
+elevacoes: '<rect x="3" y="4" width="18" height="16"/><rect x="7" y="8" width="4" height="4"/><rect x="13" y="8" width="4" height="8"/>',
+pranchasProjeto: '<rect x="5" y="3" width="16" height="14" rx="1"/><path d="M3 7v14h14"/><path d="M9 7h8M9 10h5"/>',
+detalhePeca: '<rect x="3" y="12" width="9" height="8"/><circle cx="15" cy="9" r="5"/><path d="m18.5 12.5 3 3"/>',
+template: '<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/><path d="m10 12-2 2 2 2M14 12l2 2-2 2"/>',
+galeriaRenders: '<rect x="3" y="5" width="13" height="11" rx="1"/><path d="m3 14 4-4 3 3 2-2 4 4"/><path d="M8 19h13V8"/>',
+gerarPranchas: '<rect x="3" y="4" width="14" height="16" rx="1"/><path d="M7 9h6M7 12h4"/><path d="m18 3 1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
+novaFolha: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M12 9v6M9 12h6"/>',
+construirDemolir: '<path d="M3 20v-8h8v8"/><path d="M3 16h8"/><path d="m13 11 7-7 2 2-7 7z"/><path d="m13 11-3 3"/>',
+desenhoFabricacao: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M8 8h8v3H8z"/><path d="M7 15h10"/><path d="M7 13v4M17 13v4"/>',
+pranchasExecutivas: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 16h18"/><rect x="14" y="17" width="6" height="2"/><path d="M7 8h7M7 11h5"/>',
+paginarPiso: '<rect x="3" y="3" width="18" height="18"/><path d="M3 12h18M12 3v18"/><path d="M7.5 3v9M16.5 12v9"/>',
+vistasLadoALado: '<rect x="2" y="5" width="9" height="14" rx="1"/><rect x="13" y="5" width="9" height="14" rx="1"/>',
+eixo: '<path d="M6 21V7M18 21V7"/><circle cx="6" cy="4" r="2"/><circle cx="18" cy="4" r="2"/><path d="M3 14h18" stroke-dasharray="3 2"/>',
+deck: '<path d="M3 20 20 3M3 14 14 3M3 8 8 3M9 20l11-11M15 20l5-5"/>',
+vigasEntrePilares: '<path d="M5 21V5M19 21V5"/><path d="M5 9h14"/><path d="M3 5h4M17 5h4"/>',
+contraventamento: '<path d="M4 20V4M20 20V4"/><path d="M4 4h16M4 20h16"/><path d="m4 4 16 16M20 4 4 20"/>',
+nesting: '<rect x="3" y="3" width="18" height="18" rx="1"/><rect x="5" y="5" width="6" height="8"/><path d="M13 5h6v4h-6z"/><circle cx="16" cy="15" r="3"/>',
+quantIlustrado: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 12v9"/><path d="m5 10 2.5-3 2 2 1.5-1.5L13 10"/>',
+pontosLevantamento: '<circle cx="6" cy="16" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="18" cy="13" r="1.5"/><path d="M3 21h18"/>',
+modular: '<rect x="3" y="9" width="18" height="6"/><path d="M8 9v6M13 9v6M18 9v6"/><path d="M3 5v2M21 5v2M3 6h18"/>',
+separadorAmbiente: '<rect x="3" y="4" width="18" height="16"/><path d="M12 4v16" stroke-dasharray="3 2"/>',
+cotaOculta: '<path d="M4 12h16"/><path d="M4 8v8M20 8v8"/><path d="m3 21 18-18"/>',
+eletrocalha: '<path d="M3 8v8h18V8"/><path d="M7 8v8M12 8v8M17 8v8"/>',
+telhadoBorda: '<path d="m3 13 9-8 9 8"/><path d="M3 13h18"/><path d="M6 13v6M18 13v6"/>',
+terca: '<path d="m3 16 9-9 9 9"/><path d="M7 12h3v3H7zM14 12h3v3h-3z"/>',
+perfilCoord: '<path d="M5 5h14M5 19h14M12 5v14"/><circle cx="5" cy="5" r="1.2"/><circle cx="19" cy="19" r="1.2"/>',
+listaCorte: '<path d="M4 6h9M4 12h9M4 18h9"/><path d="M17 3v18"/><path d="m17 5 3 1.5-3 1.5 3 1.5-3 1.5 3 1.5-3 1.5 3 1.5-3 1.5"/>',
+numerar: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 4.5v3M3 7.5h2"/><path d="M3 10.5h2v1.5H3v1.5h2"/><path d="M3 16.5h2v3H3"/>',
+tee: '<path d="M3 12h6a3 3 0 0 1 3 3v6"/><path d="M12 12h9"/><circle cx="12" cy="12" r="2"/>',
+legendaTubulacao: '<path d="M4 7h4M4 12h4M4 17h4"/><path d="M11 7h9M11 12h9M11 17h9" stroke-dasharray="2 2"/>',
+localizarSubstituir: '<circle cx="9" cy="9" r="5"/><path d="m12.5 12.5 4 4"/><path d="M15 5h5M17.5 2.5 20 5l-2.5 2.5"/>',
+explodirPecas: '<path d="M9 9h6v6H9z"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="m4.5 4.5 2.5 2.5M17 17l2.5 2.5M19.5 4.5 17 7M7 17l-2.5 2.5"/>',
+telha: '<path d="M3 8c3-3 6-3 9 0s6 3 9 0"/><path d="M3 13c3-3 6-3 9 0s6 3 9 0"/><path d="M3 18c3-3 6-3 9 0s6 3 9 0"/>',
+ajustarParedes: '<path d="m4 11 8-7 8 7"/><path d="M6 11v9M18 11v9"/><path d="M4 20h16"/><path d="m9 15 2 2 4-4"/>',
+telhadoAuto: '<path d="m3 13 9-8 9 8"/><path d="M5 13v7h14v-7"/><path d="m16 2 .7 1.5 1.5.3-1.1 1.1.3 1.5-1.4-.7-1.4.7.3-1.5-1.1-1.1 1.5-.3z"/>',
+telhadoAmbientes: '<path d="m3 11 9-7 9 7"/><path d="M5 11v9h14v-9"/><path d="M12 11v9M5 15h14"/>',
+telhadoParam: '<path d="m3 12 9-8 9 8"/><path d="M5 12v8h14v-8"/><path d="M8 16h8"/><circle cx="14" cy="16" r="1.5"/>',
+varinha: '<path d="m3 21 11-11"/><path d="m14 10 2-2"/><path d="M17 3v4M15 5h4"/><path d="M20 10h2M19 12l1.5 1.5"/>',
+fabrica: '<path d="M3 21V10l5 3v-3l5 3v-3l5 3v8z"/><path d="M16 11V4h3v7"/>',
+clique: '<path d="m4 4 7.07 17 2.51-7.39L21 11.07z"/>',
+conexao: '<path d="M3 10h8v4H3z"/><path d="M11 12h4"/><path d="M15 8h6v8h-6z"/>',
+arvore: '<path d="M12 22v-5"/><path d="m12 2 6 8h-3l4 5H5l4-5H6z"/>',
+noTrelica: '<circle cx="12" cy="12" r="2.5"/><path d="M12 9.5V3M9.8 13.3 4 19M14.2 13.3 20 19M9.5 12H3M14.5 12h7"/>',
+demolir: '<path d="m14 3 7 7-4 4-7-7z"/><path d="m10 7-7 7 4 4 7-7"/>',
+posicionar: '<rect x="3" y="4" width="18" height="16" rx="1"/><rect x="8" y="9" width="8" height="6"/><path d="M12 4v3M12 17v3M3 12h3M18 12h3"/>',
+terreno: '<path d="M3 18c4-6 8-6 12 0s4 2 6 0"/><path d="M3 21h18"/>',
+desconexao: '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h3M13 12h3"/><path d="m10 4 4 16"/>',
+filtro: '<path d="M3 4h18l-7 8v6l-4 2v-8z"/>',
+parafuso: '<path d="m12 3 7.8 4.5v9L12 21l-7.8-4.5v-9z"/><circle cx="12" cy="12" r="3"/>',
+contorno: '<path d="M5 19V5h14v14z"/><circle cx="5" cy="5" r="1.5"/><circle cx="19" cy="19" r="1.5"/><path d="m14 10 3 3"/>',
+conferirModulacao: '<rect x="3" y="7" width="12" height="10"/><path d="M9 7v10M3 12h12"/><path d="m16 15 2 2 4-4"/>',
+furoConferir: '<rect x="3" y="6" width="12" height="12"/><circle cx="9" cy="12" r="3"/><path d="m16 15 2 2 4-4"/>',
+caixaCorte: '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" stroke-dasharray="3 2"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+plataforma: '<path d="M3 20h18"/><path d="M6 20v-6h12v6"/><path d="m3 14 3-4h12l3 4"/>',
+planoCorte: '<rect x="3" y="4" width="18" height="16"/><path d="M3 12h10M13 4v16M13 12h8"/>',
+entorno: '<circle cx="12" cy="12" r="3"/><path d="M4 20V10l4-2M20 20v-8l-4-2"/><path d="M3 20h18"/>',
+gerarDeDesenho: '<path d="M4 20V4h9l4 4v3"/><path d="M13 4v4h4"/><path d="m14 13 3 2v4l-3 2-3-2v-4z"/>',
+curvas: '<path d="M3 17c4-8 7 2 11-6s5-2 7 2"/><path d="M3 21c4-6 7 0 11-5s5-1 7 1"/>',
+renderIa: '<path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3"/><path d="m19 2 .6 1.4L21 4l-1.4.6L19 6l-.6-1.4L17 4l1.4-.6z"/>',
+familiaNova: '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M12 9v6M9 12h6"/>',
+inserirModulo: '<rect x="3" y="8" width="14" height="12" rx="1"/><path d="M3 12h14M10 12v8"/><path d="M19 3v6M16 6h6"/>',
+janelaNova: '<path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M19 13v6H5V5h6"/>',
+placaBase: '<path d="M9 3h6v12H9z"/><path d="M4 15h16v4H4z"/><circle cx="7" cy="17" r=".8"/><circle cx="17" cy="17" r=".8"/>',
+pavimentos: '<path d="M3 20h18M3 14h18M3 8h18"/><path d="M6 20V4M18 20V4"/>',
+clip: '<path d="M8 6v9a4 4 0 0 0 8 0V5a2.5 2.5 0 0 0-5 0v9a1 1 0 0 0 2 0V7"/>',
+fases: '<path d="M3 18h5v-5h5V8h5V3"/>',
+qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM19 14h2M14 19h2M19 19h2v2"/>',
+comando: '<path d="M4 5h16v14H4z"/><path d="m8 10 3 2-3 2M13 14h4"/>',
+galpao: '<path d="M3 20v-8a9 9 0 0 1 18 0v8"/><path d="M3 20h18"/><path d="M9 20v-5h6v5"/>',
+desagrupar: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><path d="m10 10 4 4" stroke-dasharray="2 2"/>',
+platibanda: '<path d="M3 20V8h18v12"/><path d="m3 8 2-3h14l2 3"/><path d="M7 12h10"/>',
+chapaExt: '<path d="M5 5h10M5 19h10M12 5v14"/><path d="M17 4v16"/><circle cx="19.5" cy="8" r=".8"/><circle cx="19.5" cy="16" r=".8"/>',
+materiais: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h9V3"/><path d="M12 21v-9h9"/><circle cx="16.5" cy="7.5" r="2"/>',
+subregiao: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M8 8h8v8H8z" stroke-dasharray="2 2"/>',
+vassoura: '<path d="m14 3 7 7"/><path d="m9.5 7.5 7 7"/><path d="M3 21c0-4 2-7 5-9l3.5 3.5C9.5 18 6.5 20 3 21z"/>',
+mesa: '<rect x="3" y="7" width="18" height="4"/><path d="M6 11v9M18 11v9"/>',
+emenda: '<path d="M3 12h7M14 12h7"/><rect x="8" y="8" width="8" height="8"/><circle cx="10.5" cy="12" r=".8"/><circle cx="13.5" cy="12" r=".8"/>',
+acessorioTubo: '<path d="M3 10h8v4H3z"/><path d="M11 12h4"/><path d="M15 8h6v8h-6z"/>',
 lampadaEmb: '<path d="M3 5h18"/><path d="M9 5v3a3 3 0 0 0 6 0V5"/><path d="M12 13v3M8 15l1.5 1.5M16 15l-1.5 1.5"/>'
 };
 var POR_COMANDO = {"rampa": "rampa", "guarda-corpo": "guardaCorpo", "rodape": "rodape", "rodape-acab": "rodape", "cob-calha": "calha", "cob-pluvial": "pluvial", "esq-criterios": "criterios", "conc-criterios": "criterios", "ele-criterios": "criterios", "ele-circ-criterios": "criterios", "inc-dados": "criterios", "mob-opcoes": "engrenagem", "esq-auditar": "auditar", "mob-auditar": "auditar", "inc-auditar": "auditar", "acs-auditar": "auditar", "conc-auditar": "auditar", "hid-equipar-auditar": "auditar", "ele-circ-auditar": "auditar", "ele-auditar": "auditar", "p7-cota-alinhada": "cotaLinear", "cota-continua": "cotaContinua", "cotar-selecao": "cotaSelecao", "cotas-automaticas": "cotasAuto", "p7-cota-linear": "cotaLinear", "cotas-vivas": "cotaLinear", "p7-cota-radial": "cotaRadial", "p7-cota-diametro": "cotaDiametro", "p7-cota-elevacao": "cotaNivel", "cota": "cotaLinear", "gm-cota-rede": "cotasAuto", "fx-medir-longo": "medirLongo", "varredura": "varredura", "revolucao": "revolucao", "p11-divisa": "divisa", "vista-desenho": "cubo", "unir-geometria": "unir", "unir": "unir", "telhado-unir": "unir", "subtrair": "subtrair", "criar-similar": "similar", "mob-auto": "familia", "editor-familia": "familia", "inc-lancar": "extintor", "hid-equipar": "pia", "ele-auto": "pontos", "ele-aparelho-ponto": "tomada", "ele-circ": "quadro", "quadro-eletrico": "quadro", "ele-projeto": "raio", "luminaria-mep": "lampada", "cob-luminarias": "lampadaEmb", "ultra": "diamante", "p7-simbolo": "simbolo", "presets-acabamento": "paleta", "fechar-cantos": "canto", "aparar-canto": "aparar", "fx-caixa-selecao": "caixaSel", "met-chapa": "chapa", "p7-mascara": "mascara", "fx-propriedades": "propriedades", "met-mecanica": "engrenagem", "cotas-padrao": "arredondar", "p7-texto": "texto", "p7-tipos": "tiposTexto", "fx-interface": "interfaceUi", "viga": "perfil", "met-viga": "perfil", "trelica": "trelica", "met-pronta-trelica": "trelica", "cob-estrutura": "tesoura", "marc-tesoura": "tesoura", "met-porticos": "portico", "met-galpao-portico": "portico", "alinhar": "alinhar", "nivel-atual": "nivelAtual", "identificador-ambiente": "etiqueta", "identificar-todos": "etiqueta", "girar": "girar", "orbita": "orbita", "espelhar": "espelhar", "dividir-elemento": "dividir", "furo-laje": "furo", "escada": "escada", "escada-u": "escadaU", "sondagem": "sondagem", "fx-colar-alinhado": "colarAlinhado", "esq-auto": "porta", "nova-vista": "cubo"};
+var POR_COMANDO_FITA = {"viga":"viga","met-viga":"viga","graute":"graute","estrutural":"projetoEstrutural","cob-forro-estrutura":"forroEstrutura","marc-pergolado":"pergolado","met-enrijecedor":"enrijecedor","met-calc-livre":"estruturaDesenhada","met-ifc":"ifcFabricacao","met-montagem":"planoMontagem","trelica":"trelica","marc-tesoura":"tesoura","met-vista-portico":"portico","met-galpao":"galpao","modelos":"modelosAbertos","tipos-parede":"tiposParede","cota-iguais":"cotarIguais","disciplinas":"disciplinas","paineis":"organizarPaineis","ambientes-3d":"cubo","cob-sanca":"sanca","forro":"forro","criar-grupo":"criarGrupo","marc-catalogo":"chapasFitas","met-plano":"planoTrabalho","plano-trabalho":"planoTrabalho","met-cant-dupla":"cantoneiraDupla","met-calc-modelos":"modelosProntos","met-planif":"planificacao","elevacoes":"elevacoes","pranchas":"pranchasProjeto","detalhe-peca":"detalhePeca","templates":"template","galeria-ia":"galeriaRenders","gerar-pranchas":"gerarPranchas","nova-folha":"novaFolha","construir-demolir":"construirDemolir","duplicar-folha":"copiar","met-desenho":"desenhoFabricacao","met-executivo":"pranchasExecutivas","paginar-alvenaria":"paredecebola","paginar-piso":"paginarPiso","lado-a-lado":"vistasLadoALado","eixo":"eixo","met-eixo":"eixo","met-grade-eixos":"eixo","quadro-eletrico":"quadro","marc-deck":"deck","met-vigas-pilares":"vigasEntrePilares","met-contravento":"contraventamento","met-nesting":"nesting","quant-ilustrado":"quantIlustrado","p11-csv":"pontosLevantamento","familias":"familia","modular":"modular","cotas-auto":"cotasAuto","separador-ambiente":"separadorAmbiente","met-cotas":"cotaLinear","cotas-ocultar":"cotaOculta","eletrocalha":"eletrocalha","telhado-borda":"telhadoBorda","met-terca":"terca","met-perfil":"perfilCoord","met-corte":"listaCorte","marc-serradas":"listaCorte","cota-numerar":"numerar","met-numerar":"numerar","componentes":"tee","legenda-mep":"legendaTubulacao","localizar-substituir":"localizarSubstituir","marc-explodir":"explodirPecas","met-etiquetas":"etiqueta","met-lista-montagem":"checklist","cob-telha":"telha","ajustar-paredes":"ajustarParedes","ajustar-tudo-paredes":"ajustarParedes","telhado-auto":"telhadoAuto","telhado-ambientes":"telhadoAmbientes","telhado-param":"telhadoParam","orc-modelo":"dinheiro","cob-calha-calc":"calha","cob-quant":"tabela","met-calc-assistente":"varinha","met-pintura":"pincel","met-orcamento":"dinheiro","met-orcfab":"fabrica","peso-coletar":"clique","conjuntos":"caixaSel","cota-furacao":"furo","acessorio-tubo":"acessorioTubo","p11-comp":"arvore","met-no":"noTrelica","demolir":"demolir","cotar-vista":"cotasAuto","posicionar-vista":"posicionar","p11-topo":"terreno","desconexoes":"desconexao","filtro-fase":"filtro","p11-entorno-ver":"olhoFechado","met-parafusos-ver":"parafuso","editar-contorno":"contorno","editar-grupo":"criarGrupo","conferir-modulacao":"conferirModulacao","verificar-sistemas":"auditar","advertencias":"alerta","met-conferir":"furoConferir","marc-planilha":"excel","met-listas":"excel","caixa-corte":"caixaCorte","p11-plataforma":"plataforma","marc-plano":"planoCorte","exemplo":"cubo","reuniao":"pessoas","p11-entorno":"entorno","gerar-volumetria":"gerarDeDesenho","p3d":"gerarDeDesenho","p11-dxf":"curvas","render-ia":"renderIa","salvar-vista-3d":"salvar","editor-familia":"familiaNova","componente":"cubo","marc-inserir":"inserirModulo","janela-3d":"janelaNova","met-placa-base":"placaBase","pavimentos":"pavimentos","sondagem":"sondagem","escada":"escada","escada-u":"escadaU","furo-laje":"furo","orbita":"orbita","met-chapa":"chapa","dispositivo-eletrico":"tomada","met-clip":"clip","p11-rotular":"etiqueta","marc-etiquetas":"etiqueta","quatro-d":"cronograma","fases":"fases","met-producao":"qr","modelar-ia":"comando","vista-inicial":"casa","desagrupar":"desagrupar","cob-platibanda":"platibanda","met-chapa-ext":"chapaExt","materiais":"materiais","p11-subregiao":"subregiao","opcoes-projeto":"parametros","limpar-nao-usados":"vassoura","mesa":"mesa","met-emenda":"emenda","met-cotas-eixos":"cotaLinear","cob-estr-verificar":"auditar","peso-pecas":"balanca"};
+(function () { for (var k in POR_COMANDO_FITA) if (Object.prototype.hasOwnProperty.call(POR_COMANDO_FITA, k)) POR_COMANDO[k] = POR_COMANDO_FITA[k]; })();
+var ACENTO = {
+abrir: '<path d="M3 10h18v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+acessorioTubo: '<path d="M15 8h6v8h-6z"/>',
+ajustarParedes: 'L:<path d="m9 15 2 2 4-4"/>',
+ajustes: '<circle cx="12" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/>',
+alerta: 'L:<path d="M12 9v4.5M12 17.2h.01"/>',
+ambiente: '<path d="M9 20v-6h6v6z"/>',
+angulo: 'L:<path d="M4 20a9 9 0 0 0 5.2-1.7"/>',
+apresentar: '<path d="m9.5 8 4 2.2-4 2.2z"/>',
+area: '<path d="M4 4h16v16H4z"/>',
+arvore: '<path d="m12 2 6 8h-3l4 5H5l4-5H6z"/>',
+auditar: 'L:<path d="m9 12 2 2 4-4"/>',
+azulejo: '<rect x="13" y="13" width="8" height="8" rx="1"/>',
+baixar: 'L:<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>',
+balanca: '<path d="M12 6 4 9l3 5 3-5zM12 6l8 3-3 5-3-5z"/>',
+bloco: '<rect x="9" y="7" width="6" height="10"/>',
+buscar: '<circle cx="11" cy="11" r="7"/>',
+cadeado: '<rect x="4" y="10.5" width="16" height="10.5" rx="2"/>',
+caixaCorte: 'L:<path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+calculadora: '<path d="M8 6h8v3H8z"/>',
+calha: 'L:<path d="M5 8v4a4 4 0 0 0 4 4h6a4 4 0 0 0 4-4V8"/>',
+caminhao: '<path d="M13.5 10h4l4 3.5v2h-8z"/>',
+cantoneiraDupla: 'L:<path d="M5 4v16h6M19 4v16h-6"/>',
+casa: '<path d="M10 20v-6h4v6z"/>',
+cebola: '<path d="M3 9.7h18v4.6H3z"/>',
+chapaExt: 'L:<path d="M17 4v16"/>',
+chapasFitas: 'L:<path d="M4 19h16"/><path d="M8 17v2M12 17v2M16 17v2"/>',
+checklist: 'L:<path d="m3 5 1.4 1.4L7 4M3 12l1.4 1.4L7 11M3 19l1.4 1.4L7 18"/>',
+ciclo: '<circle cx="12" cy="12" r="2.6"/>',
+clash: '<path d="M11 11h2v2h-2z"/>',
+clip: 'L:<path d="M8 6v9a4 4 0 0 0 8 0V5a2.5 2.5 0 0 0-5 0v9a1 1 0 0 0 2 0V7"/>',
+clique: '<path d="m4 4 7.07 17 2.51-7.39L21 11.07z"/>',
+comando: 'L:<path d="m8 10 3 2-3 2M13 14h4"/>',
+conferirModulacao: 'L:<path d="m16 15 2 2 4-4"/>',
+construirDemolir: '<path d="m13 11 7-7 2 2-7 7z"/>',
+contorno: '<circle cx="5" cy="5" r="1.5"/><circle cx="19" cy="19" r="1.5"/>',
+contraventamento: 'L:<path d="m4 4 16 16M20 4 4 20"/>',
+copiar: '<rect x="8" y="8" width="13" height="13" rx="2"/>',
+corte: 'L:<path d="M3 12h18"/><path d="m9 9-3 3 3 3M15 9l3 3-3 3"/>',
+cotaLinear: 'L:<path d="M3 12h18"/><path d="m7 9-3 3 3 3M17 9l3 3-3 3"/>',
+cotaOculta: 'L:<path d="m3 21 18-18"/>',
+cotaSelecao: '<path d="m13 13 3 8 1.6-3.4L21 16z"/>',
+cotasAuto: '<path d="M19 3l.9 2.4L22 6.3l-2.1.9L19 9.6l-.9-2.4-2.1-.9 2.1-.9z"/>',
+criarGrupo: '<rect x="7" y="7" width="4" height="4"/><circle cx="15" cy="15" r="2"/>',
+cronograma: 'L:<path d="M8 14h3M13 14h3M8 17.5h3"/>',
+cubo: '<path d="M4 7.5 12 3l8 4.5-8 4.5z"/>',
+curvas: 'L:<path d="M3 17c4-8 7 2 11-6s5-2 7 2"/>',
+deck: 'L:<path d="M3 14 14 3M9 20l11-11"/>',
+demolir: '<path d="m14 3 7 7-4 4-7-7z"/>',
+desagrupar: 'L:<path d="m10 10 4 4"/>',
+desconexao: 'L:<path d="m10 4 4 16"/>',
+desenhoFabricacao: 'L:<path d="M7 15h10"/><path d="M7 13v4M17 13v4"/>',
+dinheiro: '<circle cx="12" cy="12" r="2.6"/>',
+disciplinas: '<path d="M3 20h12V8H3z"/>',
+divisa: '<circle cx="3" cy="17" r="1.2"/><circle cx="21" cy="5" r="1.2"/>',
+editar: '<path d="M17 3.5a2.1 2.1 0 0 1 3 3L8.5 18l-4.5 1.5L5.5 15z"/>',
+eixo: '<circle cx="6" cy="4" r="2"/><circle cx="18" cy="4" r="2"/>',
+eletrocalha: 'L:<path d="M3 8v8h18V8"/>',
+elevacoes: '<rect x="7" y="8" width="4" height="4"/><rect x="13" y="8" width="4" height="8"/>',
+emenda: '<rect x="8" y="8" width="8" height="8"/>',
+entorno: '<circle cx="12" cy="12" r="3"/>',
+escada: 'L:<path d="M4 20h4v-4h4v-4h4V8h4"/>',
+escadaU: '<path d="M8 20v-8h5v8z"/>',
+estruturaDesenhada: '<path d="m16 11 5-5 2 2-5 5-3 1z"/>',
+etiqueta: '<path d="M3 12V4h8l10 10-8 8z"/>',
+excel: 'L:<path d="m6.5 11.2 3 3.6M9.5 11.2l-3 3.6"/>',
+expandir: 'L:<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+explodirPecas: '<path d="M9 9h6v6H9z"/>',
+exportar: 'L:<path d="M12 3v12"/><path d="m8 7 4-4 4 4"/>',
+fabrica: '<path d="M16 11V4h3v7z"/>',
+familia: '<path d="M3 13a2 2 0 0 1 4 0v2h10v-2a2 2 0 0 1 4 0v5H3z"/>',
+familiaNova: 'L:<path d="M12 9v6M9 12h6"/>',
+fases: 'L:<path d="M3 18h5v-5h5V8h5V3"/>',
+filtro: '<path d="M3 4h18l-7 8v6l-4 2v-8z"/>',
+forro: '<path d="M3 6v3h18V6z"/>',
+forroEstrutura: '<path d="M3 11h18v4H3z"/>',
+furo: '<circle cx="12" cy="12" r="3.5"/>',
+furoConferir: '<circle cx="9" cy="12" r="3"/>',
+galeriaRenders: 'L:<path d="m3 14 4-4 3 3 2-2 4 4"/>',
+galpao: '<path d="M9 20v-5h6v5z"/>',
+gerarDeDesenho: '<path d="m14 13 3 2v4l-3 2-3-2v-4z"/>',
+gerarPranchas: '<path d="m18 3 1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
+grafico: 'L:<path d="m6 15 4-5 4 3 5-7"/>',
+guardaCorpo: 'L:<path d="M6 8v12M10 8v12M14 8v12M18 8v12"/>',
+guindaste: 'L:<path d="M19 4.5V11"/><path d="M17.5 13a1.5 1.5 0 1 0 3 0c0-.8-.6-1.3-1.5-2"/>',
+ia: 'L:<path d="M12 3v18M8 8h8M8 16h8"/>',
+ifcFabricacao: '<path d="m12 10-3 1.7v3.6l3 1.7 3-1.7v-3.6z"/>',
+importar: 'L:<path d="M12 15V3"/><path d="m8 11 4 4 4-4"/>',
+imprimir: '<path d="M7 14h10v7H7z"/>',
+inserirModulo: 'L:<path d="M19 3v6M16 6h6"/>',
+insumo: 'L:<path d="M12 12v9M4 7.5l8 4.5 8-4.5"/>',
+janela: '<rect x="4" y="5" width="16" height="12" rx="1"/>',
+janelaNova: 'L:<path d="M14 4h6v6"/><path d="m20 4-9 9"/>',
+laje: '<path d="m3 8 9-4 9 4-9 4z"/>',
+lampada: '<path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .8 1.6h5.6c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z"/>',
+lampadaEmb: 'L:<path d="M9 5v3a3 3 0 0 0 6 0V5"/>',
+legendaTubulacao: 'L:<path d="M4 7h4M4 12h4M4 17h4"/>',
+listaCorte: 'L:<path d="M17 3v18"/><path d="m17 5 3 1.5-3 1.5 3 1.5-3 1.5 3 1.5-3 1.5 3 1.5-3 1.5"/>',
+livro: '<path d="M4 20.5A2 2 0 0 1 6 18.5h13V21H6a2 2 0 0 1-2-2z"/>',
+lixeira: 'L:<path d="M4 7h16"/><path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/>',
+localizarSubstituir: 'L:<path d="M15 5h5M17.5 2.5 20 5l-2.5 2.5"/>',
+medir: '<path d="M2 12 12 2l10 10-10 10z"/>',
+mesa: '<rect x="3" y="7" width="18" height="4"/>',
+modelosProntos: '<path d="m12 8 1.4 2.9 3.1.4-2.3 2.2.6 3.1-2.8-1.5-2.8 1.5.6-3.1-2.3-2.2 3.1-.4z"/>',
+modular: '<rect x="3" y="9" width="18" height="6"/>',
+nesting: '<rect x="5" y="5" width="6" height="8"/><path d="M13 5h6v4h-6z"/><circle cx="16" cy="15" r="3"/>',
+niveis: '<circle cx="7" cy="6" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="10" cy="18" r="1.4"/>',
+noTrelica: '<circle cx="12" cy="12" r="2.5"/>',
+novaFolha: 'L:<path d="M12 9v6M9 12h6"/>',
+numerar: 'L:<path d="M4 4.5v3M3 7.5h2"/><path d="M3 10.5h2v1.5H3v1.5h2"/><path d="M3 16.5h2v3H3"/>',
+obra: '<path d="M9.5 21v-4h5v4z"/>',
+olho: '<circle cx="12" cy="12" r="3"/>',
+olhoFechado: 'L:<path d="M4 4l16 16"/>',
+orbita: '<circle cx="12" cy="12" r="2"/>',
+organizarPaineis: '<path d="M3 4h6v16H3z"/>',
+paginarPiso: '<path d="M3 3h4.5v9H3z"/>',
+parafuso: '<circle cx="12" cy="12" r="3"/>',
+parametros: '<circle cx="15" cy="7" r="2.4"/><circle cx="9" cy="17" r="2.4"/>',
+parede: '<path d="M3 6h18v12H3z"/>',
+paredecebola: '<path d="M3 9.7h18v4.6H3z"/>',
+pasta: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2.5h9a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+pavimentos: '<path d="M6 8h12v6H6z"/>',
+pergolado: 'L:<path d="M7 8V5M11 8V5M15 8V5"/>',
+pessoas: '<circle cx="9" cy="8" r="3.2"/>',
+pilar: '<path d="M8 3h8v18H8z"/>',
+pincel: '<path d="M4 20s2-1 3.5-2.5C9 16 9 14 9 14l1-1 1 1s-2 0-3.5 1.5S5 19 4 20z"/>',
+placaBase: '<path d="M4 15h16v4H4z"/>',
+planificacao: '<path d="M9 5v10l6 3V8z"/>',
+planilha: 'L:<path d="M3 9h18M3 15h18M9 3v18"/>',
+planoCorte: '<path d="M3 4h10v8H3z"/>',
+planoMontagem: '<path d="M6 21v-8h5v8zM13 21v-5h5v5z"/>',
+planoTrabalho: '<path d="m3 16 9-5 9 5-9 5z"/>',
+planta: 'L:<path d="M3 10h7V3M14 21v-7h7"/>',
+plataforma: '<path d="M6 20v-6h12v6z"/>',
+platibanda: '<path d="m3 8 2-3h14l2 3z"/>',
+pluvial: 'L:<path d="M9 6v10a3 3 0 0 0 3 3h6"/>',
+pontosLevantamento: '<circle cx="6" cy="16" r="1.5"/><circle cx="12" cy="8" r="1.5"/><circle cx="18" cy="13" r="1.5"/>',
+porta: '<path d="M6 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17z"/>',
+portico: 'L:<path d="M4 20V9l8-5 8 5v11"/>',
+posicionar: '<rect x="8" y="9" width="8" height="6"/>',
+pranchasExecutivas: '<rect x="14" y="17" width="6" height="2"/>',
+pranchasProjeto: '<rect x="5" y="3" width="16" height="14" rx="1"/>',
+projetoEstrutural: 'L:<path d="M5 9h14"/><path d="M8 9v7M12 9v7M16 9v7"/>',
+qr: '<rect x="14" y="14" width="3" height="3"/>',
+quadro: 'L:<path d="M9 7h6M9 11h2M13 11h2M9 15h2M13 15h2"/>',
+quantIlustrado: 'L:<path d="m5 10 2.5-3 2 2 1.5-1.5L13 10"/>',
+raio: '<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
+rampa: '<path d="M3 19 17 8v11z"/>',
+renderIa: '<circle cx="12" cy="13" r="3"/>',
+rodape: '<path d="M4 15h16v5H4z"/>',
+salvar: '<path d="M8 20v-6h8v6z"/>',
+sanca: 'L:<path d="m16 13 1 2M18 13v2M20 13l-1 2"/>',
+separadorAmbiente: 'L:<path d="M12 4v16"/>',
+sol: '<circle cx="12" cy="12" r="4"/>',
+sondagem: '<path d="M8 17h8l-4 4z"/>',
+subregiao: '<path d="M8 8h8v8H8z"/>',
+tabela: 'L:<path d="M3 9h18M9 3v18"/>',
+tee: '<circle cx="12" cy="12" r="2"/>',
+telha: 'L:<path d="M3 13c3-3 6-3 9 0s6 3 9 0"/>',
+telhado: 'L:<path d="m2 12 10-7 10 7"/>',
+telhadoAmbientes: 'L:<path d="M12 11v9M5 15h14"/>',
+telhadoAuto: '<path d="m16 2 .7 1.5 1.5.3-1.1 1.1.3 1.5-1.4-.7-1.4.7.3-1.5-1.1-1.1 1.5-.3z"/>',
+telhadoBorda: 'L:<path d="M3 13h18"/>',
+telhadoParam: '<circle cx="14" cy="16" r="1.5"/>',
+template: 'L:<path d="m10 12-2 2 2 2M14 12l2 2-2 2"/>',
+terca: '<path d="M7 12h3v3H7zM14 12h3v3h-3z"/>',
+terreno: 'L:<path d="M3 18c4-6 8-6 12 0s4 2 6 0"/>',
+tesoura: 'L:<path d="M12 6v12M7.5 12 12 18l4.5-6"/>',
+tiposParede: '<path d="M9 4h6v16H9z"/>',
+tomada: '<path d="M7 8h10v4a5 5 0 0 1-10 0z"/>',
+trelica: 'L:<path d="m3 18 4-10 4 10 4-10 4 10"/>',
+unir: '<rect x="9" y="4" width="12" height="12" rx="1"/>',
+varinha: 'L:<path d="M17 3v4M15 5h4"/><path d="M20 10h2M19 12l1.5 1.5"/>',
+vassoura: '<path d="M3 21c0-4 2-7 5-9l3.5 3.5C9.5 18 6.5 20 3 21z"/>',
+viga: '<path d="M4 8h16v8H4z"/>',
+vigasEntrePilares: 'L:<path d="M5 9h14"/>',
+vistasLadoALado: '<rect x="13" y="5" width="9" height="14" rx="1"/>',
+voo: '<path d="m2 12 20-8-8 20-2.5-8z"/>',
+vr: '<circle cx="7.5" cy="11.5" r="1.3"/><circle cx="16.5" cy="11.5" r="1.3"/>',
+estrutura: 'L:<path d="m4 6 8 6 8-6M4 20l8-8 8 8"/>',
+camadas: '<path d="m12 2 9 4.8-9 4.8-9-4.8z"/>',
+prancha: 'L:<path d="M14 16v4M7 8h6M7 11h4"/>',
+grade: 'L:<path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>',
+regua: 'L:<path d="m7 8 1.6 1.6M10 11l1.6 1.6M13 14l1.6 1.6"/>',
+lista: '<circle cx="4.5" cy="6" r="1.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="4.5" cy="18" r="1.5"/>',
+link: 'L:<path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/>',
+camera: '<circle cx="12" cy="13" r="3"/>',
+perfil: 'L:<path d="M12 5v14"/>',
+chapa: '<circle cx="7" cy="12" r=".9"/><circle cx="17" cy="12" r=".9"/>',
+mais: 'L:<path d="M12 5v14M5 12h14"/>',
+ima: 'L:<path d="M8 12V6M16 12V6"/>'
+};
+function acento(nome) {
+var a = ACENTO[nome]; if (!a) return "";
+if (a.indexOf("L:") === 0) return '<g class="ic-al">' + a.slice(2) + "</g>";
+return '<g class="ic-a">' + a + "</g>";
+}
 var Icones = {
 get: function (nome, size, extraStyle) {
 var d = P[nome];
 if (!d) return "";
 var s = size || 15;
-return '<svg class="ic-svg" data-ic="' + nome + '" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px;margin-right:6px;flex:0 0 auto' + (extraStyle ? ";" + extraStyle : "") + '">' + d + "</svg>";
+return '<svg class="ic-svg" data-ic="' + nome + '" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px;margin-right:6px;flex:0 0 auto' + (extraStyle ? ";" + extraStyle : "") + '">' + d + acento(nome) + "</svg>";
 },
 solo: function (nome, size) {
 return this.get(nome, size, "margin-right:0");
@@ -5987,12 +6286,16 @@ function topo(m, c) {
 var t = c.topo || {}, ic = '<span class="mod-ic" aria-hidden="true">' + (c.icone ? c.icone("dashboard") : "") + "</span>";
 var modelo = '<div class="pn-seg pv-modelo" role="group" aria-label="Modelo do painel">' + [["a", "Modelo A"], ["b", "Modelo B"]].map(function (o) { var on = t.modelo === o[0]; return '<button type="button" class="pn-seg-b' + (on ? " on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-gacao="painel-modelo" data-value="' + o[0] + '" title="' + (o[0] === "a" ? "Executivo BI, claro" : "Central escura") + '">' + o[1] + "</button>"; }).join("") + "</div>";
 var auto = '<label class="pn-filtro pv-auto">Auto <select data-gacao="painel-auto" title="Atualiza sozinho a cada N minutos, enquanto o painel está aberto">' + [[0, "desligada"], [1, "1 min"], [5, "5 min"], [10, "10 min"], [30, "30 min"]].map(function (o) { return '<option value="' + o[0] + '"' + (t.auto === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>";
-var mais = (typeof global.Modulo !== "undefined" && global.Modulo.mais) ? global.Modulo.mais([t.metasHtml || "", t.criarDemoHtml || ""].filter(Boolean)) : "";
+var expandir = '<button type="button" class="pn-ctl pv-bt" data-gacao="painel-expandir" aria-pressed="' + (t.tv ? "true" : "false") + '" title="Tela cheia, sem o menu lateral (modo TV). Esc sai.">Expandir</button>';
+var reduzir = '<button type="button" class="pn-ctl pv-bt" data-gacao="painel-reduzir" aria-pressed="' + (t.compacto ? "true" : "false") + '" title="' + (t.tv ? "Sai da tela cheia" : "Modo compacto: menos espaço entre os cartões") + '">Reduzir</button>';
+var organizar = '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar</button>';
+var SEP = (typeof global.Modulo !== "undefined" && global.Modulo.SEP) || "-";
+var itensMais = [modelo, auto, SEP, expandir, reduzir, organizar, SEP, t.metasHtml || "", t.criarDemoHtml || ""];
+var mais = (typeof global.Modulo !== "undefined" && global.Modulo.mais) ? global.Modulo.mais(itensMais) : itensMais.filter(function (x) { return x && x !== SEP; }).join("");
 return '<header class="mod-cab pv-topo"><div class="mod-tit">' + ic + '<div><h1>Painel de Gestão</h1><p class="mod-sub">' + (t.subHtml || "") + "</p></div></div>"
-+ '<div class="pv-acoes">' + modelo
-+ '<div class="pv-atualiza"><button type="button" class="pv-bt pv-bt-prim" data-gacao="painel-atualizar" title="Recalcula tudo agora">Atualizar</button><span class="pv-atualiz" data-pv-atualiz aria-live="polite">Atualizado às ' + esc(t.hora || "") + "</span>" + auto + "</div>"
-+ '<div class="pv-vistas"><button type="button" class="pn-ctl pv-bt" data-gacao="painel-expandir" aria-pressed="' + (t.tv ? "true" : "false") + '" title="Tela cheia, sem o menu lateral (modo TV). Esc sai.">Expandir</button><button type="button" class="pn-ctl pv-bt" data-gacao="painel-reduzir" aria-pressed="' + (t.compacto ? "true" : "false") + '" title="' + (t.tv ? "Sai da tela cheia" : "Modo compacto: menos espaço entre os cartões") + '">Reduzir</button></div>'
-+ '<div class="pv-vistas"><button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button><button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar</button>' + mais + "</div></div></header>";
++ '<div class="pv-acoes">'
++ '<div class="pv-atualiza"><button type="button" class="pv-bt pv-bt-prim" data-gacao="painel-atualizar" title="Recalcula tudo agora">Atualizar</button><span class="pv-atualiz" data-pv-atualiz aria-live="polite">Atualizado às ' + esc(t.hora || "") + "</span></div>"
++ '<div class="pv-vistas"><button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>' + mais + "</div></div></header>";
 }
 function blComercial(m, c) {
 if (!c.podeMod("orcamentos")) return "";
@@ -19027,7 +19330,7 @@ return '' +
 '<button class="topbar-burger" data-acao="menu" aria-label="Menu de módulos" title="Módulos">☰</button>' +
 '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
 ((typeof Produto !== "undefined" && Produto.ehCplpro()) ? Produto.seloHtml(34) : '<svg width="34" height="34" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#tbg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>') +
-'<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + ' · <span style="opacity:.85">v' + CONFIG.versao + '</span></small></div>' +
+'<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + '<span class="topo-ver"> · <span style="opacity:.85">v' + CONFIG.versao + '</span></span></small></div>' +
 '</div>' +
 '<span class="badge-plano ' + freeCls + '">' + ((typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) ? "Modela" : (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano)) + '</span>' +
 '<span class="spacer"></span>' +
@@ -64419,6 +64722,278 @@ global.DXF = DXF;
 if (typeof module !== "undefined" && module.exports) module.exports = DXF;
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cadsepara.js ==== */
+try {
+(function (global) {
+"use strict";
+var CEL = 0.5;
+var VAO = 1.5;
+var LONGA = 60;
+var MIN_LINHAS = 12;
+var MIN_LADO = 2.5;
+var PASSO_VOTO = 0.05;
+function num(v, d) { v = +v; return isFinite(v) ? v : d; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function norm(s) {
+s = String(s == null ? "" : s).toUpperCase();
+var de = "ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑº°ª", para = "AAAAAEEEEIIIIOOOOOUUUUCNOOA", o = "", i, k;
+for (i = 0; i < s.length; i++) { k = de.indexOf(s.charAt(i)); o += k >= 0 ? para.charAt(k) : s.charAt(i); }
+return o.replace(/[^A-Z0-9]+/g, " ").replace(/^ +| +$/g, "");
+}
+function decodificar(buf) {
+var TD = global.TextDecoder || (typeof TextDecoder !== "undefined" ? TextDecoder : null);
+if (!TD) return "";
+var u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+try { return new TD("utf-8", { fatal: true }).decode(u8); } catch (e) {}
+return new TD("latin1").decode(u8);
+}
+function caixaDe(segs) {
+var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, i, s;
+for (i = 0; i < segs.length; i++) {
+s = segs[i];
+if (s.x1 < x0) x0 = s.x1; if (s.x2 < x0) x0 = s.x2; if (s.y1 < y0) y0 = s.y1; if (s.y2 < y0) y0 = s.y2;
+if (s.x1 > x1) x1 = s.x1; if (s.x2 > x1) x1 = s.x2; if (s.y1 > y1) y1 = s.y1; if (s.y2 > y1) y1 = s.y2;
+}
+return segs.length ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null;
+}
+function ilhas(dxf, o) {
+o = o || {};
+var segs = (dxf && dxf.segmentos) || [], cel = num(o.celula, CEL), vao = num(o.vao, VAO), longa = num(o.longa, LONGA);
+var uteis = [], i, s, L;
+for (i = 0; i < segs.length; i++) {
+s = segs[i];
+if (!isFinite(s.x1) || !isFinite(s.y1) || !isFinite(s.x2) || !isFinite(s.y2)) continue;
+L = Math.sqrt((s.x2 - s.x1) * (s.x2 - s.x1) + (s.y2 - s.y1) * (s.y2 - s.y1));
+if (L > longa) continue;
+uteis.push(s);
+}
+var cx = caixaDe(uteis); if (!cx) return [];
+var nx = Math.ceil((cx.x1 - cx.x0) / cel) + 1, ny = Math.ceil((cx.y1 - cx.y0) / cel) + 1;
+while (nx * ny > 4e6) { cel *= 2; nx = Math.ceil((cx.x1 - cx.x0) / cel) + 1; ny = Math.ceil((cx.y1 - cx.y0) / cel) + 1; }
+var oc = {}, chaves = [];
+function marca(x, y) {
+var k = Math.floor((x - cx.x0) / cel) + nx * Math.floor((y - cx.y0) / cel);
+if (oc[k] === undefined) { oc[k] = -1; chaves.push(k); }
+}
+for (i = 0; i < uteis.length; i++) {
+s = uteis[i];
+L = Math.sqrt((s.x2 - s.x1) * (s.x2 - s.x1) + (s.y2 - s.y1) * (s.y2 - s.y1));
+var np = Math.max(1, Math.ceil(L / (cel * 0.5))), j, t;
+for (j = 0; j <= np; j++) { t = j / np; marca(s.x1 + (s.x2 - s.x1) * t, s.y1 + (s.y2 - s.y1) * t); }
+}
+var alc = Math.max(1, Math.round(vao / cel)), comp = 0, caixas = [];
+for (i = 0; i < chaves.length; i++) {
+if (oc[chaves[i]] !== -1) continue;
+var pilha = [chaves[i]], c = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+oc[chaves[i]] = comp;
+while (pilha.length) {
+var k = pilha.pop(), kx = k % nx, ky = (k - kx) / nx, ax, ay, v;
+if (kx < c.x0) c.x0 = kx; if (kx > c.x1) c.x1 = kx; if (ky < c.y0) c.y0 = ky; if (ky > c.y1) c.y1 = ky;
+for (ay = -alc; ay <= alc; ay++) for (ax = -alc; ax <= alc; ax++) {
+if (kx + ax < 0 || kx + ax >= nx || ky + ay < 0) continue;
+v = (kx + ax) + nx * (ky + ay);
+if (oc[v] === -1) { oc[v] = comp; pilha.push(v); }
+}
+}
+caixas.push(c); comp++;
+}
+var res = caixas.map(function () { return { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, n: 0 }; });
+for (i = 0; i < uteis.length; i++) {
+s = uteis[i];
+var kk = Math.floor(((s.x1 + s.x2) / 2 - cx.x0) / cel) + nx * Math.floor(((s.y1 + s.y2) / 2 - cx.y0) / cel), id = oc[kk], q;
+if (id === undefined) continue;
+q = res[id]; q.n++;
+if (s.x1 < q.x0) q.x0 = s.x1; if (s.x2 < q.x0) q.x0 = s.x2; if (s.y1 < q.y0) q.y0 = s.y1; if (s.y2 < q.y0) q.y0 = s.y2;
+if (s.x1 > q.x1) q.x1 = s.x1; if (s.x2 > q.x1) q.x1 = s.x2; if (s.y1 > q.y1) q.y1 = s.y1; if (s.y2 > q.y1) q.y1 = s.y2;
+}
+return res.filter(function (q) { return q.n > 0; }).sort(function (a, b) { return b.n - a.n; });
+}
+function classificar(txt) {
+var t = norm(txt), tipo = "", pav = "";
+if (!t || t.length > 70) return null;
+if (/^(CORTE|SECAO|SECCAO)\b/.test(t)) tipo = "corte";
+else if (/\b(FACHADA|ELEVACAO|VISTA (FRONTAL|LATERAL|POSTERIOR))\b/.test(t)) tipo = "fachada";
+else if (/\bSITUACAO\b/.test(t)) tipo = "situacao";
+else if (/\b(LOCACAO|IMPLANTACAO)\b/.test(t)) tipo = "locacao";
+else if (/\b(DETALHE|DET|AMPLIACAO)\b/.test(t) && !/PLANTA/.test(t)) tipo = "detalhe";
+else if (/\b(RESERVATORIO|BARRILETE|CAIXA D ?AGUA)\b/.test(t) && /\b(PLANTA|COBERTURA|PAV|NIVEL)\b/.test(t)) tipo = "reservatorio";
+else if (/\bCOBERTURA\b/.test(t) && /\bPLANTA\b/.test(t)) tipo = "cobertura";
+else if (/\bLAY ?OUT\b/.test(t)) tipo = "layout";
+else if (/\bPLANTA\b/.test(t) || /^(PAV|PAVTO|PAVIMENTO|TERREO|SUBSOLO|ANDAR|MEZANINO|COBERTURA)\b/.test(t)) tipo = "planta";
+if (!tipo) return null;
+if (/\b(PLANTA BAIXA|PLANTAS) .*\b(LAYOUT|COBERTURA|CORTES?)\b/.test(t) && !/TERREO|SUPERIOR|PAV/.test(t)) return null;
+if (/\b(COBERTURA|CORTES|FACHADAS) E \b/.test(t)) return null;
+if (/^PROJ\b|\bPROJECAO\b/.test(t)) return null;
+if (tipo === "reservatorio") pav = "reservatorio";
+else if (tipo === "cobertura") pav = "cobertura";
+else if (tipo === "planta" || tipo === "layout") {
+var m;
+if (/\bSUBSOLO\b/.test(t)) pav = "subsolo";
+else if (/\b(TERREO|TERREA)\b/.test(t)) pav = "terreo";
+else if (/\bMEZANINO\b/.test(t)) pav = "mezanino";
+else if (/\b(PAV(TO|IMENTO)?|ANDAR|PISO) TIPO\b|\bTIPO\b/.test(t)) pav = "tipo";
+else if ((m = /\b(\d{1,2}) ?O? ?(PAV|PAVTO|PAVIMENTO|ANDAR|PISO)\b/.exec(t)) || (m = /\b(PAV|PAVTO|PAVIMENTO|ANDAR|PISO) (\d{1,2})\b/.exec(t))) pav = "n" + parseInt(/\d+/.exec(m[0])[0], 10);
+else if (/\b(PRIMEIRO)\b/.test(t)) pav = "n1";
+else if (/\b(SEGUNDO)\b/.test(t)) pav = "n2";
+else if (/\b(TERCEIRO)\b/.test(t)) pav = "n3";
+else if (/\b(SUPERIOR|SUP)\b/.test(t)) pav = "superior";
+else if (/\b(INFERIOR|INF)\b/.test(t)) pav = "inferior";
+else if (/\bCOBERTURA\b/.test(t)) pav = "cobertura";
+}
+return { tipo: tipo, pav: pav };
+}
+function titulos(dxf) {
+var out = [];
+((dxf && dxf.textos) || []).forEach(function (t) {
+if (!t || !t.txt || !isFinite(t.x) || !isFinite(t.y) || t.bloco) return;
+var c = classificar(t.txt); if (!c) return;
+out.push({ txt: String(t.txt).replace(/\s+/g, " ").replace(/^ | $/g, "").slice(0, 70), x: t.x, y: t.y, tipo: c.tipo, pav: c.pav });
+});
+return out;
+}
+function nivelDoPav(pav, niveis) {
+if (!pav || !niveis || !niveis.length) return null;
+var L = niveis.map(function (n) { return { n: n, t: norm(n.nome), y: num(n.y != null ? n.y : n.elevacao, 0) }; });
+function acha(rx) { var r = L.filter(function (x) { return rx.test(x.t); })[0]; return r ? r.n : null; }
+var pisos = L.filter(function (x) { return !/TERRENO|FUNDA|SONDAG|SUBSOLO|COBERT|RESERVAT|BARRILETE|CAIXA|TELHAD|PLATIBANDA/.test(x.t); }).sort(function (a, b) { return a.y - b.y; });
+var m, r;
+if (pav === "terreo") return acha(/\bTERREO\b/) || (pisos[0] ? pisos[0].n : null);
+if (pav === "subsolo") return acha(/\bSUBSOLO\b/);
+if (pav === "mezanino") return acha(/\bMEZANINO\b/);
+if (pav === "reservatorio") return acha(/RESERVAT|BARRILETE|CAIXA D/) || acha(/\bCOBERT/);
+if (pav === "cobertura") return acha(/\bCOBERT|TELHAD/);
+if (pav === "tipo") return acha(/\bTIPO\b/);
+if (pav === "inferior") return acha(/\bINFERIOR\b/) || (pisos[0] ? pisos[0].n : null);
+if (pav === "superior") {
+r = acha(/\bSUPERIOR\b|\bSUP\b/); if (r) return r;
+return pisos.length >= 2 ? pisos[1].n : null;
+}
+if ((m = /^n(\d+)$/.exec(pav))) {
+var k = parseInt(m[1], 10);
+r = L.filter(function (x) { var q = /\b(\d{1,2}) ?O? ?(PAV|PAVTO|PAVIMENTO|ANDAR|PISO)\b/.exec(x.t) || /\b(PAV|PAVTO|PAVIMENTO|ANDAR|PISO) (\d{1,2})\b/.exec(x.t); return q && parseInt(/\d+/.exec(q[0])[0], 10) === k; })[0];
+if (r) return r.n;
+return pisos.length > k ? pisos[k].n : null;
+}
+return null;
+}
+var ROTULO_TIPO = { planta: "Planta baixa", cobertura: "Planta de cobertura", reservatorio: "Planta do reservatório", layout: "Planta de layout", corte: "Corte", fachada: "Fachada", situacao: "Situação", locacao: "Locação", detalhe: "Detalhe", "": "Desenho" };
+function regioes(dxf, niveis, o) {
+o = o || {};
+var Ts = titulos(dxf), usados = {};
+var ehPlanta = { planta: 1, cobertura: 1, reservatorio: 1, layout: 1 };
+function ilhasDe(cfgI) {
+return ilhas(dxf, cfgI).filter(function (q) { return q.n >= num(o.minLinhas, MIN_LINHAS) && Math.min(q.x1 - q.x0, q.y1 - q.y0) >= num(o.minLado, MIN_LADO); });
+}
+function ilhaDoTitulo(t, L) {
+var melhor = -1, dm = 4;
+L.forEach(function (r, i) {
+var dx = t.x < r.x0 ? r.x0 - t.x : t.x > r.x1 ? t.x - r.x1 : 0, dy = t.y < r.y0 ? r.y0 - t.y : t.y > r.y1 ? t.y - r.y1 : 0, d = Math.sqrt(dx * dx + dy * dy);
+if (d < dm) { dm = d; melhor = i; }
+});
+return melhor;
+}
+var tentativas = o.vao != null || o.longa != null ? [{ vao: num(o.vao, VAO), longa: num(o.longa, LONGA), celula: o.celula }]
+: [{ vao: VAO, longa: LONGA }, { vao: VAO, longa: 20 }, { vao: 1.0, longa: 20, celula: 0.25 }, { vao: 0.75, longa: 20, celula: 0.25 }];
+var Is = null, nota = -1, cand = [];
+tentativas.forEach(function (cfgI) {
+var L = ilhasDe(cfgI), cont = {}, n = 0, linhas = 0, area = 0;
+Ts.forEach(function (t) { if (!ehPlanta[t.tipo]) return; var i = ilhaDoTitulo(t, L); if (i >= 0) cont[i] = (cont[i] || 0) + 1; });
+Object.keys(cont).forEach(function (k) { if (cont[k] !== 1) return; n++; linhas += L[k].n; area += (L[k].x1 - L[k].x0) * (L[k].y1 - L[k].y0); });
+cand.push({ L: L, n: n, linhas: linhas, area: area });
+if (n > nota) nota = n;
+});
+var bons = cand.filter(function (c) { return c.n === nota; }), maxLin = 0;
+bons.forEach(function (c) { if (c.linhas > maxLin) maxLin = c.linhas; });
+bons.forEach(function (c) { if (c.linhas >= maxLin * 0.97 && (!Is || c.area < Is.area - 1e-6)) Is = c; });
+Is = Is ? Is.L : [];
+var MG = 0.3;
+var regs = Is.map(function (q, i) {
+return { id: "r" + (i + 1), x0: r3(q.x0 - MG), y0: r3(q.y0 - MG), x1: r3(q.x1 + MG), y1: r3(q.y1 + MG), n: q.n, titulo: "", tipo: "", pav: "", nivelId: null, importar: false };
+});
+Ts.forEach(function (t, ti) {
+var im = ilhaDoTitulo(t, regs), melhor = im >= 0 ? regs[im] : null;
+if (!melhor) return;
+var peso = { planta: 5, cobertura: 5, reservatorio: 5, layout: 4, corte: 2, fachada: 2, situacao: 3, locacao: 3, detalhe: 1 };
+if (!melhor.titulo || (peso[t.tipo] || 0) > (peso[melhor.tipo] || 0)) { melhor.titulo = t.txt; melhor.tipo = t.tipo; melhor.pav = t.pav; usados[ti] = 1; }
+});
+var ocupado = {};
+regs.forEach(function (r) {
+var nv = (r.tipo === "planta" || r.tipo === "cobertura" || r.tipo === "reservatorio" || r.tipo === "layout") ? nivelDoPav(r.pav, niveis) : null;
+r.nivelId = nv ? nv.id : null;
+r.rotulo = r.titulo || ROTULO_TIPO[r.tipo || ""];
+});
+["planta", "cobertura", "reservatorio", "layout"].forEach(function (tp) {
+regs.forEach(function (r) {
+if (r.tipo !== tp || r.nivelId == null || ocupado[r.nivelId]) return;
+ocupado[r.nivelId] = 1; r.importar = true;
+});
+});
+return regs;
+}
+function recortar(dxf, ret) {
+var x0 = Math.min(ret.x0, ret.x1), x1 = Math.max(ret.x0, ret.x1), y0 = Math.min(ret.y0, ret.y1), y1 = Math.max(ret.y0, ret.y1);
+var segs = [], i, s;
+var src = (dxf && dxf.segmentos) || [];
+for (i = 0; i < src.length; i++) {
+s = src[i];
+var dx = s.x2 - s.x1, dy = s.y2 - s.y1, t0 = 0, t1 = 1, p = [-dx, dx, -dy, dy], q = [s.x1 - x0, x1 - s.x1, s.y1 - y0, y1 - s.y1], k, r, fora = false;
+for (k = 0; k < 4; k++) {
+if (p[k] === 0) { if (q[k] < 0) { fora = true; break; } }
+else { r = q[k] / p[k]; if (p[k] < 0) { if (r > t1) { fora = true; break; } if (r > t0) t0 = r; } else { if (r < t0) { fora = true; break; } if (r < t1) t1 = r; } }
+}
+if (fora || !(t1 >= t0)) continue;
+var g = { x1: s.x1 + t0 * dx, y1: s.y1 + t0 * dy, x2: s.x1 + t1 * dx, y2: s.y1 + t1 * dy, layer: s.layer };
+if (s.curva) g.curva = true; if (s.bloco) g.bloco = s.bloco;
+segs.push(g);
+}
+var textos = ((dxf && dxf.textos) || []).filter(function (t) { return t && t.x >= x0 && t.x <= x1 && t.y >= y0 && t.y <= y1; });
+return { segmentos: segs, textos: textos, extents: segs.length ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null, unidade: dxf && dxf.unidade, layers: {} };
+}
+function pontas(segs, max) {
+var P = [], vistos = {}, i, s, L, k;
+for (i = 0; i < segs.length; i++) {
+s = segs[i]; if (s.curva || s.bloco) continue;
+L = Math.abs(s.x2 - s.x1) + Math.abs(s.y2 - s.y1); if (L < 0.4) continue;
+var ax = Math.abs(s.x2 - s.x1), ay = Math.abs(s.y2 - s.y1);
+if (!(ax < 0.01 || ay < 0.01)) continue;
+k = Math.round(s.x1 / PASSO_VOTO) + "," + Math.round(s.y1 / PASSO_VOTO); if (!vistos[k]) { vistos[k] = 1; P.push([s.x1, s.y1]); }
+k = Math.round(s.x2 / PASSO_VOTO) + "," + Math.round(s.y2 / PASSO_VOTO); if (!vistos[k]) { vistos[k] = 1; P.push([s.x2, s.y2]); }
+}
+if (P.length > max) { var passo = P.length / max, Q = []; for (i = 0; i < max; i++) Q.push(P[Math.floor(i * passo)]); P = Q; }
+return P;
+}
+function alinhar(ref, outro, o) {
+o = o || {};
+var A = pontas((ref && ref.segmentos) || [], num(o.max, 1000)), Bp = pontas((outro && outro.segmentos) || [], num(o.max, 1000));
+if (A.length < 8 || Bp.length < 8) return { dx: 0, dy: 0, votos: 0, segundo: 0, confianca: 0, ok: false };
+var votos = {}, i, j, k, melhor = null, vm = 0, M = 2097152, OFF = 1048576, ix, iy;
+for (i = 0; i < A.length; i++) for (j = 0; j < Bp.length; j++) {
+ix = Math.round((A[i][0] - Bp[j][0]) / PASSO_VOTO) + OFF; iy = Math.round((A[i][1] - Bp[j][1]) / PASSO_VOTO) + OFF;
+if (ix < 0 || ix >= M || iy < 0 || iy >= M) continue;
+k = ix * M + iy;
+votos[k] = (votos[k] || 0) + 1;
+}
+for (k in votos) if (votos[k] > vm) { vm = votos[k]; melhor = +k; }
+if (melhor == null) return { dx: 0, dy: 0, votos: 0, segundo: 0, confianca: 0, ok: false };
+var my = (melhor % M) - OFF, mx = Math.round((melhor - (melhor % M)) / M) - OFF, seg = 0, qx, qy;
+for (k in votos) { qy = (+k % M) - OFF; qx = Math.round((+k - (+k % M)) / M) - OFF; if (Math.abs(qx - mx) <= 2 && Math.abs(qy - my) <= 2) continue; if (votos[k] > seg) seg = votos[k]; }
+var menor = Math.min(A.length, Bp.length), conf = Math.max(0, Math.min(1, (vm - seg) / Math.max(1, vm))) * Math.min(1, vm / (menor * 0.12));
+return { dx: r3(mx * PASSO_VOTO), dy: r3(my * PASSO_VOTO), votos: vm, segundo: seg, confianca: Math.round(conf * 100) / 100, ok: vm >= 12 && vm >= seg * 1.5 && vm >= menor * 0.06 };
+}
+function posicao(refPos, refExt, ext, al) {
+return { dx: r3(refPos.dx + al.dx - refExt.x0 + ext.x0), dy: r3(refPos.dy - al.dy + refExt.y0 - ext.y0) };
+}
+function alinharPeloCanto(refExt, ext) { return { dx: r3(refExt.x0 - ext.x0), dy: r3(refExt.y0 - ext.y0), votos: 0, segundo: 0, confianca: 0, ok: false, canto: true }; }
+var CadSepara = {
+posicao: posicao, alinharPeloCanto: alinharPeloCanto,
+CEL: CEL, VAO: VAO, LONGA: LONGA, MIN_LINHAS: MIN_LINHAS, MIN_LADO: MIN_LADO, PASSO_VOTO: PASSO_VOTO, ROTULO_TIPO: ROTULO_TIPO,
+norm: norm, decodificar: decodificar, caixaDe: caixaDe, ilhas: ilhas, classificar: classificar, titulos: titulos,
+nivelDoPav: nivelDoPav, regioes: regioes, recortar: recortar, alinhar: alinhar
+};
+global.CadSepara = CadSepara;
+if (typeof module !== "undefined" && module.exports) module.exports = CadSepara;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/lastplanner.js ==== */
 try {
 (function (global) {
@@ -95541,748 +96116,5 @@ var ProjModelar = { gerar: gerar, PADRAO: PADRAO, FAM_LOUCA: FAM_LOUCA, _ordemNo
 global.ProjModelar = ProjModelar;
 if (typeof module !== "undefined" && module.exports) module.exports = ProjModelar;
 })(typeof window !== "undefined" ? window : globalThis);
-} catch (e) { setTimeout(function () { throw e; }); }
-/* ==== js/padraodet.js ==== */
-try {
-(function (global) {
-"use strict";
-var PADRAO_RA = {
-"versao": "2.1",
-"principios": [
-"Padrão visual do TQS em todo detalhamento de concreto armado (v2.0, 09/10/2026). Carimbo RA intocado.",
-"Pranchas separadas por TIPO, como o TQS emite: fôrma; vigas (quantas folhas precisar); pilares; lajes — armadura POSITIVA; lajes — armadura NEGATIVA; blocos/sapatas; vigas baldrame. Não misturar tipos nem fôrma com armação (exceção TQS: sapata isolada leva as cotas de fôrma junto da armação, ref. Unipar).",
-"Preto e branco na plotagem: a hierarquia vem SÓ da espessura (cor na tela = pena no CTB). As cores do TQS na tela (seção verde, chamada vermelha) não vão para o papel.",
-"Barra desdobrada = linha mais GROSSA da folha (TQS 0,59–0,60 mm); barra na posição dentro da elevação e estribo = média (0,38); contorno do concreto = fina (0,20–0,21); cotas e chamadas = finíssima.",
-"Barras longitudinais desenhadas DENTRO da elevação (traço médio, com a quantidade por trecho '2 Ø 16') e REPETIDAS FORA, desdobradas e cotadas: superiores/negativas acima da elevação, inferiores/positivas abaixo; reto escrito em cima, dobras escritas ao lado das pernas, notação embaixo.",
-"Título do elemento = nome grande + seção pequena ao lado ('V223 20/40'), SEM sublinhado; a seção b/h é repetida sobre cada vão, junto da seta de corte.",
-"Cortes 'Corte A', 'Corte B' à direita da elevação, alinhados pelo topo; estribo desenhado aberto logo abaixo do seu corte, cotado, com a notação embaixo.",
-"TABELA ÚNICA de aço na coluna da direita, agrupada por elemento (linha de título com o nome), e RESUMO AÇO CA 50-60 por bitola com 'Peso Total 50A = … kg' e 'Volume de Concreto = … m3' — SEM '+10%' (perda é do orçamento, não do desenho).",
-"Letra monolinha (traço único) fina, espaçada: romans.shx no DWG, RomanS TTF no PDF/SVG.",
-"Cotas em centímetros; níveis em metros com 2 casas e 'm' ('103,35m') sobre o triângulo.",
-"Numeração das posições (N1, N2…) por elemento, na ordem do TQS (barras longitudinais de cima para baixo, depois estribos e pele); barra igual na mesma peça = mesmo número.",
-"Notas gerais em toda prancha de armação, em blocos 'NOTAS' e 'NORMAS UTILIZADAS' acima do carimbo."
-],
-"penas_mm": [
-0.09,
-0.13,
-0.18,
-0.25,
-0.35,
-0.5,
-0.6,
-0.7
-],
-"cor_pena_ctb": {
-"1": {
-"cor": "vermelho",
-"pena": 0.13,
-"uso": "cotas, eixos, linhas de chamada (inclusive em leque), setas de corte, projeção dos apoios"
-},
-"2": {
-"cor": "amarelo",
-"pena": 0.18,
-"uso": "contorno do concreto na armação, ocultas/projeções, textos de barra (letra monolinha)"
-},
-"3": {
-"cor": "verde",
-"pena": 0.25,
-"uso": "concreto em vista (fôrma), texto geral"
-},
-"4": {
-"cor": "ciano",
-"pena": 0.35,
-"uso": "estribos (vista, corte e desenho do estribo), barras NA POSIÇÃO dentro da elevação, indicação de corte, títulos"
-},
-"5": {
-"cor": "azul",
-"pena": 0.5,
-"uso": "concreto cortado (fôrma), barra em seção; (até a v1.3 também as barras longitudinais — agora cor 30)"
-},
-"6": {
-"cor": "magenta",
-"pena": 0.7,
-"uso": "moldura, destaques muito fortes"
-},
-"7": {
-"cor": "branco/preto",
-"pena": 0.25,
-"uso": "textos, tabelas e CARIMBO RA (não mudar: muda o carimbo)"
-},
-"8": {
-"cor": "cinza",
-"pena": 0.13,
-"mantem_cor": true,
-"uso": "contexto (arquitetura, terreno, existente)"
-},
-"9": {
-"cor": "cinza claro",
-"pena": 0.09,
-"mantem_cor": true,
-"uso": "hachuras"
-},
-"30": {
-"cor": "laranja",
-"pena": 0.6,
-"uso": "BARRAS LONGITUDINAIS DESDOBRADAS (fora da peça), barras de laje, barras desdobradas de bloco/sapata/pilar — a linha mais grossa do desenho"
-},
-"42": {
-"cor": "dourado escuro",
-"pena": 0.18,
-"uso": "mesmo uso e mesma pena da cor 2 (v2.1, 09/10/2026: cor de TELA legível no fundo escuro do Model e no branco das folhas; a cor 2 fica no CTB para DWG antigo)"
-},
-"92": {
-"cor": "verde escuro",
-"pena": 0.25,
-"uso": "mesmo uso e mesma pena da cor 3 (v2.1, 09/10/2026: cor de TELA legível no fundo escuro do Model e no branco das folhas; a cor 3 fica no CTB para DWG antigo)"
-},
-"150": {
-"cor": "azul médio",
-"pena": 0.35,
-"uso": "mesmo uso e mesma pena da cor 4 (v2.1, 09/10/2026: cor de TELA legível no fundo escuro do Model e no branco das folhas; a cor 4 fica no CTB para DWG antigo)"
-},
-"200": {
-"cor": "violeta",
-"pena": 0.5,
-"uso": "mesmo uso e mesma pena da cor 5 (v2.1, 09/10/2026: cor de TELA legível no fundo escuro do Model e no branco das folhas; a cor 5 fica no CTB para DWG antigo)"
-}
-},
-"layers": [
-{
-"nome": "EST-FORMA-CORTE",
-"aci": 200,
-"tipo": "Continuous",
-"uso": "concreto cortado (planta de fôrma, cortes)",
-"aci_v2_0": 5
-},
-{
-"nome": "EST-FORMA-VISTA",
-"aci": 92,
-"tipo": "Continuous",
-"uso": "concreto em vista",
-"aci_v2_0": 3
-},
-{
-"nome": "EST-OCULTA",
-"aci": 42,
-"tipo": "TRACEJADA",
-"uso": "arestas ocultas, projeções, vigas invertidas",
-"aci_v2_0": 2
-},
-{
-"nome": "EST-ARM-CONTORNO",
-"aci": 42,
-"tipo": "Continuous",
-"uso": "contorno do concreto no desenho de armação (fino, sem cotas, SEM preenchimento)",
-"aci_v2_0": 2
-},
-{
-"nome": "EST-ARM-LONG",
-"aci": 30,
-"tipo": "Continuous",
-"uso": "barras longitudinais DESDOBRADAS fora da peça (superiores acima, inferiores abaixo) e barras de laje/bloco/sapata/pilar desdobradas. v2.0: aci 5→30 (0,60 mm, TQS nível 6)"
-},
-{
-"nome": "EST-ARM-LONG-ELEV",
-"aci": 150,
-"tipo": "Continuous",
-"uso": "barras longitudinais NA POSIÇÃO dentro da elevação da viga/pilar (TQS nível 4, 0,38 mm). Novo na v2.0",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-ARM-NEG",
-"aci": 30,
-"tipo": "TRACEJADA",
-"uso": "armadura negativa de laje quando aparecer na prancha da positiva (referência); na prancha própria de negativos, ver laje.negativa. v2.0: aci 5→30"
-},
-{
-"nome": "EST-ARM-ESTRIBO",
-"aci": 150,
-"tipo": "Continuous",
-"uso": "estribos e grampos (corte e desenho do estribo)",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-ARM-PELE",
-"aci": 150,
-"tipo": "TRACEJADA",
-"uso": "armadura de pele / costela (linha tracejada acompanhando a barra desdobrada)",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-ARM-SECAO",
-"aci": 200,
-"tipo": "Continuous",
-"uso": "barra em seção (ponto cheio nos cortes)",
-"aci_v2_0": 5
-},
-{
-"nome": "EST-ARM-TEXTO",
-"aci": 42,
-"tipo": "Continuous",
-"uso": "notação das barras, trechos de estribo, reto e dobras (letra monolinha)",
-"aci_v2_0": 2
-},
-{
-"nome": "EST-ARM-CHAMADA",
-"aci": 1,
-"tipo": "Continuous",
-"uso": "linhas de chamada das posições (em leque nos blocos, ref. Pato Branco) e chamadas '3 Ø 16' dos cortes. Novo na v2.0"
-},
-{
-"nome": "EST-COTA",
-"aci": 1,
-"tipo": "Continuous",
-"uso": "cotas e linhas de chamada"
-},
-{
-"nome": "EST-EIXO",
-"aci": 1,
-"tipo": "TRACO-PONTO",
-"uso": "eixos, linhas de centro e PROJEÇÃO DOS APOIOS que desce da elevação pelas barras desdobradas (ref. IFAL/UFU)"
-},
-{
-"nome": "EST-CORTE-IND",
-"aci": 150,
-"tipo": "TRACO-PONTO",
-"uso": "indicação de plano de corte (setas e letras)",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-NIVEL",
-"aci": 42,
-"tipo": "Continuous",
-"uso": "símbolo de nível",
-"aci_v2_0": 2
-},
-{
-"nome": "EST-HACHURA",
-"aci": 9,
-"tipo": "Continuous",
-"uso": "hachuras (lastro, solo, pilar que passa)"
-},
-{
-"nome": "EST-TEXTO",
-"aci": 7,
-"tipo": "Continuous",
-"uso": "textos e notas"
-},
-{
-"nome": "EST-TITULO",
-"aci": 150,
-"tipo": "Continuous",
-"uso": "títulos dos desenhos",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-TABELA",
-"aci": 7,
-"tipo": "Continuous",
-"uso": "tabelas de aço e resumo"
-},
-{
-"nome": "EST-CONTEXTO",
-"aci": 8,
-"tipo": "Continuous",
-"uso": "arquitetura, terreno, existente"
-},
-{
-"nome": "EST-CARIMBO",
-"aci": 7,
-"tipo": "Continuous",
-"uso": "carimbo/legenda RA — NÃO MUDA na v2.0"
-},
-{
-"nome": "EST-LINHA-FINA",
-"aci": 42,
-"tipo": "Continuous",
-"uso": "linhas finas secundárias: balões de eixo, símbolos, setas",
-"aci_v2_0": 2
-},
-{
-"nome": "EST-PREENCH",
-"aci": 254,
-"tipo": "Continuous",
-"cor_verdadeira": true,
-"uso": "preenchimentos em cor verdadeira (fundo branco de tabelas, máscaras) — o CTB não altera. v2.0: NÃO usar para pintar concreto (o cinza do estilo FNDE/Eberick saiu)"
-},
-{
-"nome": "EST-LIMITE",
-"aci": 150,
-"tipo": "TRACO-PONTO",
-"uso": "limites legais e de terreno (APP, divisa, recuo, faixa non aedificandi)",
-"aci_v2_0": 4
-},
-{
-"nome": "EST-VIEWPORT",
-"aci": 9,
-"tipo": "Continuous",
-"plota": false,
-"uso": "molduras de viewport (não plota)"
-}
-],
-"tipos_de_linha": {
-"TRACEJADA": {
-"padrao_mm": [
-3,
--1.5
-],
-"nbr8403": "linha tracejada — arestas/contornos não visíveis"
-},
-"TRACO-PONTO": {
-"padrao_mm": [
-9.6,
--1.6,
-0,
--1.6
-],
-"nbr8403": "linha traço-ponto fina — eixos; grossa — planos de corte"
-}
-},
-"textos": {
-"fonte": "romans.shx (DWG/AutoCAD) · RomanS TTF = C:\\Windows\\Fonts\\romans__.ttf (PDF/SVG do motor). Antes (v1.3): Arial.",
-"fonte_dwg": "romans.shx — traço único, nativo do AutoCAD 2026 (Fonts\\romans.shx), já usado pelo CYPE (estilo CYPETXT_romans) e presente no PDF de pilares da referência. Estilo de texto 'RA_TQS': romans.shx, altura 0 (variável), fator de largura 1,0, oblíquo 0.",
-"fonte_ttf": "RomanS (romans__.ttf, instalada em C:\\Windows\\Fonts com o AutoCAD) para o que o motor gera em SVG/PDF; se o renderizador não aceitar, isocpeur.ttf (ISOCPEUR, também em C:\\Windows\\Fonts).",
-"fonte_tabela": "a mesma RomanS; a tabela de aço do TQS exportado sai em fonte monoespaçada (Lucida Console = lucon.ttf nos PDFs Pato Branco/UFU p.105). Usar Lucida Console só se a coluna de números desalinhar na 1ª prancha.",
-"espacamento": "TQS nativo é monoespaçado: passo entre caracteres ≈ 1,0–1,2 × altura da maiúscula (medido na prévia 13, 'V101' e 'Corte A'). romans.shx é proporcional: no DWG usar MTEXT com tracking (\\T) — fator a definir na 1ª prancha (pendência), começando em \\T1.2; no SVG, letter-spacing equivalente.",
-"alturas_plotadas_mm": {
-"titulo_desenho": 4.2,
-"escala_sob_titulo": 3,
-"nome_viga_pilar": 8.5,
-"secao_ao_lado_do_nome": 3.8,
-"notacao_barra": 2.5,
-"cota": 2.5,
-"nota": 2.5,
-"tabela": 2.5,
-"letra_corte": 3.4,
-"balao_eixo": 3,
-"notacao_estribo_trecho": 2.1,
-"nome_apoio": 3.2,
-"tabela_cabecalho": 3.1,
-"titulo_pilar_lance": 5,
-"nivel": 3.8,
-"titulo_bloco_sapata": 6,
-"titulo_quadro": 7.5
-},
-"titulo": "SEM sublinhado. Viga: nome grande + seção b/h em cm menor ao lado, alinhados pela base ('V223 20/40'), acima e à esquerda da elevação; sem escala sob o nome (a escala vai no carimbo). Vistas: 'Corte A', 'Corte B' (maiúscula só na inicial) sobre o corte. Bloco/sapata: nome + linhas '(CÁLICE RUGOSO)', '(ESCALA 1:25)' embaixo (Pato Branco/Unipar); vistas 'PLANTA', 'CORTE A-A', 'CORTE B-B' em maiúsculas. Pilar: 'P1 Lance 2' / 'P2 Lances 2 a 4' no topo da coluna do pilar, escala '1:25' no pé. Laje: título da folha 'PRIMEIRO PAVIMENTO - ARMADURA POSITIVA' + 'ESCALA 1:50' no canto superior esquerdo; nome da laje 'L301' + 'h=12' no centro da laje.",
-"titulo_v13": "(até 1.3) sublinhado; à esquerda, abaixo do desenho; ex.: 'V509 19/75' — SUBSTITUÍDO pela regra 'titulo' acima"
-},
-"cotas": {
-"unidade": "cm",
-"casas": 0,
-"terminal": "PONTO CHEIO nas cotas de trecho (estribos, negativos) — TQS (prévias 12 e 13); traço curto nas cotas de fôrma de bloco/sapata (prévia 15/10). Diâmetro do ponto ≈ 0,5 × altura da maiúscula da notação (prévia 13) — conferir na 1ª prancha. (v1.3: traço oblíquo 45°)",
-"texto": "acima da linha, alinhado; em cota vertical, girado 90° lendo de baixo para cima",
-"extensao_alem_da_cota_mm": 1.5,
-"afastamento_da_origem_mm": 1,
-"cotas_por_peca": "barra desdobrada: SEM linha de cota — o reto é escrito acima do trecho reto e cada dobra escrita ao lado da perna (girada 90°); estribo desenhado: altura e largura internas escritas ao lado, gancho em itálico na ponta (prévia 12: '34' e '14'); trecho de estribo: linha de cota com pontos nos limites, '22 Ø 6.3 C/20' em cima e 'N4 (438)' embaixo; fôrma de bloco/sapata: cotas totais e parciais (Pato Branco).",
-"niveis": "em metros, 2 casas com vírgula e 'm' ('103,35m') sobre triângulo; cota de arrasamento 'C.A.=98,10' nos blocos; 'EL. 752,25m' aceito (Pato Branco)"
-},
-"notacao": {
-"barra": "{q} N{pos} Ø {bit} C={comp}",
-"barra_exemplo": "2 N1 Ø 16 C=1023",
-"barra_longa": "em barra longa o 'C=' pode descer para a 2ª linha centrada",
-"bitola": "sem zeros inúteis, ponto decimal: 5, 6.3, 8, 10, 12.5, 16, 20, 25 (formato %g). Espaço entre Ø e a bitola. (v1.2 FNDE 'ø10.0' DESCONTINUADO)",
-"estribo": "{q} N{pos} Ø {bit} C={comp}",
-"estribo_exemplo": "46 N4 Ø 6.3 C=112",
-"estribo_nota": "na VIGA o estribo desenhado leva só quantidade total, posição, bitola e comprimento — o espaçamento vai nos trechos da elevação. v1.3 tinha 'C/{esp}' aqui: agora em 'estribo_pilar'.",
-"estribo_pilar": "{q} N{pos} Ø {bit} C/{esp} C={comp}",
-"estribo_pilar_exemplo": "29 N7 Ø 6.3 C/12 C=150",
-"grampo_pilar": "{n}x{q} N{pos} Ø {bit} C/{esp}",
-"grampo_pilar_exemplo": "2x29 N8 Ø 6.3 C/12",
-"estribo_trecho_na_elevacao": "{q} Ø {bit} C/{esp}\nN{pos} ({comp_trecho})",
-"estribo_trecho_exemplo": "22 Ø 6.3 C/20 / N4 (438) — 1ª linha acima da linha de cota do trecho, 2ª abaixo",
-"barra_na_elevacao": "{q} Ø {bit}",
-"barra_na_elevacao_exemplo": "2 Ø 16 (sobre a barra superior em cada trecho) / 3 Ø 12.5 (sob a inferior)",
-"pele": "(costela)\n{q}x{n} N{pos} Ø {bit} C={comp}",
-"pele_exemplo": "(costela) / 2x3 N8 Ø 5 C=878",
-"segunda_camada": "({q} Ø 2aCAM)",
-"segunda_camada_exemplo": "(1 Ø 2aCAM) — escrito ao lado do reto da barra que vai na 2ª camada",
-"secao": "{q} Ø {bit} com chamada até a barra no corte",
-"secao_exemplo": "3 Ø 16",
-"laje": "{q} N{pos} Ø {bit} C/{esp} C={comp}",
-"laje_nota": "faixa de barras = UMA linha representativa com ganchos nas pontas; reto escrito sob a linha e ganchos nas pontas ('16 | 674 | 16'); notação paralela à barra",
-"malha_bloco_sapata": "{q} N{pos} Ø {bit} C/{esp} C={comp}",
-"malha_exemplo": "14 N1 Ø 10 C/11 C=168 (Unipar) · 2x3 N17 Ø 10 C/4 C=667 (Pato Branco)",
-"comprimento_variavel": "C=VAR (Pato Branco, barras de cálice)",
-"secao_viga": "{b}/{h}",
-"secao_viga_exemplo": "20/40 — ao lado do nome e repetida sobre cada vão junto da seta de corte",
-"regras": [
-"comprimento RETIFICADO em cm (soma das dobras)",
-"reto e dobras escritos no desenho da barra desdobrada",
-"ganchos e dobras pela NBR 6118 (diâmetro de dobramento); quadro 'DOBRAS E DIST. ENTRE BARRAS' quando a prancha tiver pilares",
-"posições numeradas por elemento; barra igual na mesma peça = mesmo número",
-"estribo desenhado à parte, aberto, com as medidas internas e o gancho",
-"Ø com espaço antes da bitola; bitola em %g"
-]
-},
-"escalas": {
-"planta_forma": "1:50",
-"corte_forma": "1:50",
-"planta_locacao": "1:50",
-"viga_elevacao": "1:50 no comprimento. A altura da viga no PDF de referência mede ~17 mm para 40 cm (≈1:25) — possível escala vertical diferenciada do TQS: CONFERIR na 1ª prancha antes de adotar.",
-"corte_viga": "1:25",
-"pilar_secao": "1:25; UFU usa 1:20",
-"pilar_elevacao": "1:25 no comprimento do lance; UFU 1:35",
-"bloco_sapata": "1:25",
-"laje_armacao": "1:50",
-"estribo": "sem escala (cotado)",
-"detalhe": "1:10",
-"isometrico": "sem escala"
-},
-"hachuras": {
-"concreto_em_corte_na_forma": "ANSI31 fino (EST-HACHURA), ou cinza 20% liso",
-"concreto_na_armacao": "SEM hachura e SEM preenchimento. O verde da seção é só a tela do TQS; o cinza do 'estilo FNDE' (Eberick) saiu na v2.0",
-"solo": "EARTH",
-"lastro_brita": "pontos/GRAVEL",
-"lastro_concreto_magro": "faixa hachurada em 45° sob o bloco/sapata, com o rótulo 'LASTRO DE CONCRETO MAGRO'",
-"madeira": "veio (WOOD)",
-"pilar_que_passa": "hachura 45° no quadro do pilar; pilar que nasce = em branco; pilar que morre = cheio preto",
-"laje_acima_do_nivel_geral": "45° para a direita, fina e espaçada",
-"laje_abaixo_do_nivel_geral": "45° para a esquerda"
-},
-"tabelas": {
-"por_elemento": [
-"AÇO",
-"POS",
-"BIT (mm)",
-"QUANT",
-"COMPRIMENTO UNIT (cm)",
-"COMPRIMENTO TOTAL (cm)"
-],
-"por_elemento_layout": "TABELA ÚNICA por folha, no topo da coluna da direita. Cabeçalho em 2 linhas: 'COMPRIMENTO' sobre 'UNIT' e 'TOTAL', unidades '(mm)'/'(cm)' na 3ª linha. Cada elemento abre com uma linha de título só com o nome (V222, P1 Lance 2, pav1 - Armadura positiva) e as posições em ordem. ELEMENTO deixou de ser coluna (v1.3 tinha). Ref.: prévia 12, prévia 03.",
-"aco_codigo": "50A = CA-50 nervurado; 60B = CA-60; Unipar usa 60A. RA adota 50A / 60B.",
-"resumo": [
-"AÇO",
-"BIT (mm)",
-"COMPR (m)",
-"PESO (kg)"
-],
-"resumo_titulo": "RESUMO AÇO CA 50-60",
-"resumo_nota": "uma linha por aço+bitola; peso em kg inteiro; SEM coluna '+10%' (v1.3 tinha 'PESO +10% (kg)'). A perda de aço continua no orçamento/quantitativo, NUNCA no desenho.",
-"rodape_resumo": [
-"Peso Total 50A = … kg",
-"Peso Total 60B = … kg",
-"Volume de Concreto = … m3",
-"Área de Forma = … m2"
-],
-"tabela_volume_forma_bloco": [
-"Pavimento",
-"Quant",
-"Volume m3",
-"Área de forma m2"
-],
-"tabela_volume_forma_bloco_nota": "junto de cada bloco (Pato Branco prévia 15): linha do bloco + linha TOTAIS (quantidade de blocos iguais × volume)",
-"massa_linear_kg_m": {
-"5.0": 0.154,
-"6.3": 0.245,
-"8.0": 0.395,
-"10.0": 0.617,
-"12.5": 0.963,
-"16.0": 1.578,
-"20.0": 2.466,
-"25.0": 3.853,
-"32.0": 6.313
-},
-"massa_fonte": "NBR 7480 (massa nominal = π·d²/4 × 7850 kg/m³)"
-},
-"prancha": {
-"formato_padrao": "A1 (594×841) horizontal; A0 quando a planta pedir",
-"margens_mm": {
-"esquerda": 20,
-"direita": 10,
-"superior": 10,
-"inferior": 10
-},
-"legenda": "carimbo RA no canto inferior direito — EXATAMENTE o atual (ver chave 'carimbo')",
-"organizacao": [
-"VIGAS: uma viga por faixa horizontal, elevação a partir da esquerda; título 'V223 20/40' acima; negativos/superiores desdobrados acima da elevação e positivos/inferiores abaixo; projeção dos apoios descendo pelas barras; cortes 'Corte A/B' à direita da elevação alinhados pelo topo, estribo desenhado abaixo do corte; viga contínua longa pode ocupar a largura toda.",
-"PILARES: uma coluna vertical por pilar dentro de um quadro, título 'P2 Lances 2 a 4' no topo, níveis em m à esquerda, seção + estribo + grampos em cada lance, barras longitudinais verticais com a notação na vertical, arranque com a dobra cotada no pé; legenda passa/nasce/morre, 'DET. DOS GANCHOS' e 'DOBRAS E DIST. ENTRE BARRAS' abaixo da tabela.",
-"LAJES: planta da laje inteira em 1:50, uma prancha para POSITIVA e outra para NEGATIVA; título da folha no canto superior esquerdo; 'NOTAS' e 'NORMAS UTILIZADAS' em colunas à direita da planta.",
-"BLOCOS (Pato Branco prévia 15): por bloco, faixa com FÔRMA (planta + corte A-A + corte B-B, cotados) à esquerda e ARMADURA (planta + corte A-A + corte B-B, chamadas em leque) à direita, barras desdobradas ao lado; tabela de volume/fôrma sob a fôrma.",
-"SAPATAS (Unipar prévia 10): por sapata, planta com a fôrma cotada e uma barra representativa por direção, corte lateral à direita e corte frontal abaixo, barras desdobradas sob o corte; 'PREVER ARRANQUES'.",
-"tabela única de aço + resumo no topo da coluna da direita; notas acima do carimbo (Pato Branco/IFAL)",
-"respiro mínimo de 15 mm entre desenhos; nada encostando na moldura"
-],
-"pranchas_por_tipo": [
-"FÔRMA — planta de locação/fôrma e cortes de fôrma",
-"ARMAÇÃO DAS VIGAS (n folhas)",
-"ARMAÇÃO DOS PILARES",
-"ARMAÇÃO DAS LAJES — ARMADURA POSITIVA",
-"ARMAÇÃO DAS LAJES — ARMADURA NEGATIVA",
-"FÔRMA E ARMAÇÃO DOS BLOCOS / SAPATAS",
-"ARMAÇÃO DAS VIGAS BALDRAME"
-],
-"codigo_prancha": "FORMATO DO ESCRITÓRIO (RA), o que já sai no carimbo: código-base da obra + revisão + número da folha. O TQS usa EDI-PAV-VIG-004-R00 e a referência 'S - 04/32' — NÃO adotar: o código é campo do carimbo RA. O tipo da prancha vai escrito no campo 'CONTEÚDO DA PRANCHA' (ex.: 'ARMAÇÃO DAS VIGAS — 1/2').",
-"jogos": {
-"forma": [
-"planta de locação",
-"planta de fôrma",
-"cortes de fôrma",
-"detalhes de fôrma"
-],
-"armacao": [
-"vigas (elevação + barras desdobradas + cortes + estribos)",
-"pilares (coluna por lance)",
-"blocos/sapatas (fôrma + armadura lado a lado)",
-"lajes positivas",
-"lajes negativas",
-"vigas baldrame"
-]
-},
-"organizacao_folha": {
-"regra": "desenhos ENCOSTADOS À DIREITA, a 15–30 mm da coluna de notas/tabelas (borda direita ≈ 610 mm do papel A1); folhas de vigas com ~35 mm entre uma viga (com título) e a próxima e topo a ~40 mm; folhas de blocos/pilaretes com o conjunto centrado na altura; planta de fôrma no meio da folha com o corte abaixo. Nunca mudar escala nem tamanho de janela para organizar.",
-"v2_tqs": "Continua valendo onde não contraria o TQS: no TQS a elevação começa à esquerda e o conjunto viga + cortes + estribos termina junto da coluna da tabela (o que equivale a 'encostar à direita'). Os ~35 mm entre vigas continuam. Conferir na 1ª prancha v2.0.",
-"implementacao": "projeto_fundacao_concreto_V18/organizar_folha.py (Folha.add/emitir); medição: plotar_dwg_editado.py --levantar"
-}
-},
-"conteudo_minimo": {
-"planta_forma": [
-"locação dos pilares/pilaretes",
-"numeração de pilares, vigas, lajes",
-"seções b×h",
-"distâncias face a face",
-"espessura e nível das lajes",
-"furos, aberturas, rebaixos",
-"planos de corte"
-],
-"viga": [
-"título 'Vnnn b/h' sem sublinhado",
-"elevação com apoios nomeados e barras na posição com quantidade por trecho",
-"trechos de estribos '{q} Ø {b} C/{s}' / 'N{pos} ({trecho})'",
-"barras desdobradas fora da viga (superiores acima, inferiores abaixo) com reto, dobras e notação",
-"seção b/h sobre cada vão + setas de corte",
-"cortes com barras e chamadas '3 Ø 16'",
-"estribo desenhado e cotado com '{q} N{pos} Ø {b} C={c}'",
-"pele '(costela)' e '(1 Ø 2aCAM)' quando houver"
-],
-"bloco_estaca": [
-"título com nome, blocos iguais, tipo e '(ESCALA 1:25)'",
-"fôrma: planta, corte A-A, corte B-B cotados, níveis e arrasamento",
-"armadura: planta, corte A-A, corte B-B com chamadas em leque",
-"arranque do pilar",
-"barras desdobradas com notação",
-"embutimento e arrasamento da estaca",
-"lastro",
-"tabela volume/fôrma + TOTAIS"
-],
-"sapata": [
-"planta com fôrma cotada e barra representativa por direção",
-"cortes lateral e frontal",
-"barras desdobradas com ganchos",
-"lastro",
-"PREVER ARRANQUES"
-],
-"pilar_pilarete": [
-"coluna por lance com níveis em m",
-"seção 1:25 com barras e estribos em cada trecho",
-"estribo desenhado '{q} N{pos} Ø {b} C/{s} C={c}' e grampos '{n}x{q} N{pos} …'",
-"barras longitudinais verticais com notação",
-"arranque/emenda",
-"legenda passa/nasce/morre",
-"chumbadores/insertos quando houver"
-],
-"laje": [
-"prancha separada para positiva e negativa",
-"nome da laje + h",
-"faixa = linha única com ganchos e notação paralela",
-"reto e ganchos escritos",
-"linha de distribuição",
-"aberturas 'VAZIO' e 'BORDA LIVRE'"
-]
-},
-"notas_gerais_padrao": [
-"Concreto: fck ≥ {fck} MPa; a/c ≤ {ac}; classe de agressividade {caa}.",
-"Cobrimento nominal: {cobrimentos} (NBR 6118, Tab. 7.2); elementos em contato com o solo conforme a mesma tabela.",
-"Aço CA-50 e CA-60 (NBR 7480).",
-"Cotas em centímetros; níveis em metros.",
-"Dobramentos, ganchos, ancoragens e emendas conforme NBR 6118.",
-"Usar espaçadores plásticos ou de argamassa que garantam o cobrimento.",
-"Comprimentos retificados; conferir as medidas na obra antes do corte.",
-"Não emendar barras fora das posições indicadas sem consulta ao projetista."
-],
-"checklist_conferencia": [
-"toda barra tem notação completa no formato TQS (q, N, Ø b, C)",
-"toda posição aparece na tabela única e a tabela fecha com o desenho",
-"resumo do aço confere com a soma da tabela e NÃO tem '+10%'",
-"cortes indicados na elevação existem desenhados, com o estribo embaixo",
-"seção b/h sobre cada vão",
-"concreto sem preenchimento cinza; P&B na plotagem",
-"letra romans (DWG) / RomanS (PDF); alturas do padrão v2.0",
-"uma prancha por tipo (vigas, pilares, laje positiva, laje negativa, blocos/sapatas, baldrames, fôrma)",
-"nenhum texto sobre linha ou sobre outro texto",
-"escalas declaradas = escalas reais das viewports",
-"penas por layer conforme este padrão (CTB RA_Estrutural, com a cor 30)",
-"notas gerais preenchidas (fck, CAA, cobrimentos) e normas com edição vigente",
-"carimbo RA IDÊNTICO ao da última emissão (RA Engenharia, RT, ART, revisão)"
-],
-"estrutura_metalica": {
-"versao": "1.0",
-"descricao": "Estrutura metálica (galpão, pórticos, treliças): as camadas MET-* das pranchas do módulo Metálica caem nos layers EST-* deste padrão (PADRAO_ACO.camadas, js/acopranchas.js). Os valores abaixo valem só para o layer que o padrão da empresa não definir; o padrão da empresa (layers, penas e alturas de texto) manda.",
-"penas_por_layer": {
-"EST-FORMA-CORTE": { "mm": 0.5 },
-"EST-ARM-ESTRIBO": { "mm": 0.35 },
-"EST-FORMA-VISTA": { "mm": 0.25 },
-"EST-OCULTA": { "mm": 0.18, "tracejado": "3 1.5" },
-"EST-LINHA-FINA": { "mm": 0.18 },
-"EST-COTA": { "mm": 0.13 },
-"EST-EIXO": { "mm": 0.13, "tracejado": "9.6 1.6 0.4 1.6" },
-"EST-HACHURA": { "mm": 0.09 },
-"EST-CONTEXTO": { "mm": 0.13 },
-"EST-TABELA": { "mm": 0.25 },
-"EST-TITULO": { "mm": 0.35 }
-},
-"alturas_texto_mm": {
-"titulo_desenho": 4.2, "escala_sob_titulo": 3, "cota": 2.5, "nota": 2.5, "tabela": 2.5, "tabela_cabecalho": 3.1, "balao_eixo": 3,
-"notacao_estribo_trecho": 2.1, "nome_apoio": 3.2, "notacao_barra": 2.5, "nivel": 3.8, "titulo_quadro": 7.5, "letra_corte": 3.4
-}
-}
-};
-var CAMPOS = ["versao", "principios", "penas_mm", "cor_pena_ctb", "layers", "tipos_de_linha", "textos", "cotas", "notacao", "escalas", "hachuras", "tabelas", "prancha", "conteudo_minimo", "notas_gerais_padrao", "checklist_conferencia", "estrutura_metalica"];
-var UNIDADES = { cm: 1, m: 1, mm: 1 };
-var CHAVE = "padraoDetalhamento";
-function clone(o) { return JSON.parse(JSON.stringify(o)); }
-function num(v, d) { var n = +v; return isFinite(n) ? n : d; }
-function limita(v, a, b, d) { var n = num(v, d); return Math.max(a, Math.min(b, n)); }
-function padraoRA() { return clone(PADRAO_RA); }
-function normPadrao(p) {
-var base = padraoRA(), o = {};
-CAMPOS.forEach(function (k) { o[k] = (p && p[k] != null && typeof p[k] === typeof base[k]) ? clone(p[k]) : base[k]; });
-Object.keys(base.cor_pena_ctb).forEach(function (aci) {
-var b = base.cor_pena_ctb[aci], c = o.cor_pena_ctb[aci];
-if (!c || typeof c !== "object") { o.cor_pena_ctb[aci] = clone(b); return; }
-var pe = num(c.pena, NaN);
-c.pena = (pe >= 0.05 && pe <= 2) ? Math.round(pe * 100) / 100 : b.pena;
-});
-var al = o.textos && o.textos.alturas_plotadas_mm, alb = base.textos.alturas_plotadas_mm;
-if (!al || typeof al !== "object") o.textos.alturas_plotadas_mm = al = clone(alb);
-Object.keys(alb).forEach(function (k) { var v = num(al[k], NaN); al[k] = (v >= 1 && v <= 10) ? v : alb[k]; });
-if (!UNIDADES[o.cotas.unidade]) o.cotas.unidade = base.cotas.unidade;
-o.cotas.casas = Math.round(limita(o.cotas.casas, 0, 3, base.cotas.casas));
-["barra", "estribo"].forEach(function (k) { if (typeof o.notacao[k] !== "string" || o.notacao[k].indexOf("{") < 0) o.notacao[k] = base.notacao[k]; });
-if (!o.layers || !o.layers.length) o.layers = base.layers;
-return o;
-}
-function importarJSON(texto) {
-var d = typeof texto === "string" ? JSON.parse(texto) : texto;
-if (!d || typeof d !== "object" || !d.layers || !d.cor_pena_ctb) throw new Error("O arquivo não é um padrão de detalhamento (faltam layers e penas).");
-return normPadrao(d);
-}
-function exportarJSON(p) { return JSON.stringify(normPadrao(p), null, 1); }
-function layerDe(p, nome) {
-var ls = (p && p.layers) || PADRAO_RA.layers;
-for (var i = 0; i < ls.length; i++) if (ls[i].nome === nome) return ls[i];
-return null;
-}
-function linhaDe(p, nome) {
-var P = normPadrao(p), l = layerDe(P, nome);
-if (!l) return null;
-var cp = P.cor_pena_ctb[String(l.aci)] || {}, tl = P.tipos_de_linha[l.tipo];
-var dash = tl ? tl.padrao_mm.map(function (v) { return v === 0 ? 0.4 : Math.abs(v); }).join(" ") : null;
-return { layer: l.nome, aci: l.aci, mm: num(cp.pena, 0.25), dash: dash, cor: cp.cor || "", plota: l.plota !== false };
-}
-function fmtBit(v) { var n = Math.round(num(v, 0) * 10) / 10; return n % 1 ? n.toFixed(1) : String(n); }
-function fmtBitola(bit) { return "Ø " + fmtBit(bit); }
-function preencher(fmt, d) { return String(fmt).replace(/\{(\w+)\}/g, function (_, k) { return d[k] == null ? "" : String(d[k]); }); }
-function fmtBarra(p, b) {
-var n = normPadrao(p).notacao;
-return preencher(n.barra, { q: b.q, pos: b.pos, bit: fmtBit(b.bit), comp: Math.round(num(b.comp, 0)) });
-}
-function fmtEstribo(p, b) {
-var n = normPadrao(p).notacao;
-return preencher(n.estribo, { q: b.q, pos: b.pos, bit: fmtBit(b.bit), esp: fmtBit(b.esp), comp: Math.round(num(b.comp, 0)) });
-}
-function massaLinear(p, bit) {
-var t = normPadrao(p).tabelas.massa_linear_kg_m, b = num(bit, 0);
-var ks = Object.keys(t);
-for (var i = 0; i < ks.length; i++) if (Math.abs(+ks[i] - b) < 1e-6) return +t[ks[i]];
-return Math.round(Math.PI * Math.pow(b / 1000, 2) / 4 * 7850 * 1000) / 1000;
-}
-function resumoAco(p, barras, perda) {
-var pr = perda == null ? 0.10 : num(perda, 0.10), mapa = {}, linhas = [], tot = {};
-(barras || []).forEach(function (b) {
-var aco = b.aco || "CA-50", bit = num(b.bit, 0), k = aco + "|" + bit;
-var m = mapa[k] || (mapa[k] = { aco: aco, bit: bit, compr_m: 0 });
-m.compr_m += num(b.q, 0) * num(b.comp, 0) / 100;
-});
-Object.keys(mapa).forEach(function (k) {
-var m = mapa[k];
-m.compr_m = Math.round(m.compr_m * 100) / 100;
-m.peso_kg = Math.round(m.compr_m * massaLinear(p, m.bit) * 10) / 10;
-m.peso_perda_kg = Math.round(m.peso_kg * (1 + pr) * 10) / 10;
-tot[m.aco] = Math.round(((tot[m.aco] || 0) + m.peso_perda_kg) * 10) / 10;
-linhas.push(m);
-});
-linhas.sort(function (a, b) { return a.aco < b.aco ? -1 : a.aco > b.aco ? 1 : a.bit - b.bit; });
-return { linhas: linhas, totais_com_perda: tot, perda: pr };
-}
-function estilo2D(p) {
-var P = normPadrao(p), esc = parseInt(String(P.escalas.planta_forma).split(":")[1], 10);
-var term = String(P.cotas.terminal);
-var marca = /tra[cç]o (curto|obl[ií]quo)|obl[ií]quo|tick/i.test(term) ? "obliquo" : (/seta/i.test(term) ? "seta" : "ponto");
-return { escala: esc > 0 ? esc : 50, pena: "media", preenchimento: "hachura", cotas: true, cotaParcial: true, marcaCota: marca,
-textoCota: P.textos.alturas_plotadas_mm.cota, unidade: P.cotas.unidade, casas: P.cotas.casas, niveis: true, marcasCorte: true, titulo: true };
-}
-function amostraSVG(p) {
-var P = normPadrao(p), at = P.textos.alturas_plotadas_mm;
-function tr(nome, extra) {
-var l = linhaDe(P, nome) || { mm: 0.25, dash: null };
-return ' stroke="#111" fill="none" stroke-width="' + l.mm + '"' + (l.dash ? ' stroke-dasharray="' + l.dash + '"' : "") + (extra || "");
-}
-function tx(x, y, t, h, anc, peso) {
-return '<text x="' + x + '" y="' + y + '" font-family="RomanS, ISOCPEUR, Arial" font-size="' + h + '" text-anchor="' + (anc || "start") + '"' + (peso ? ' font-weight="bold"' : "") + ">" + esc(t) + "</text>";
-}
-var s = [];
-s.push('<line x1="4" y1="34" x2="126" y2="34"' + tr("EST-EIXO") + "/>");
-s.push('<rect x="10" y="26" width="110" height="16"' + tr("EST-ARM-CONTORNO") + "/>");
-s.push('<polyline points="12,12 12,8 118,8 118,12"' + tr("EST-ARM-LONG") + "/>");
-s.push(tx(65, 6, fmtBarra(P, { q: 2, pos: 1, bit: 10, comp: 486 }), at.notacao_barra, "middle"));
-s.push('<polyline points="12,52 12,56 118,56 118,52"' + tr("EST-ARM-LONG") + "/>");
-s.push(tx(65, 61.5, fmtBarra(P, { q: 3, pos: 2, bit: 12.5, comp: 494 }), at.notacao_barra, "middle"));
-for (var x = 16; x <= 114; x += 7) s.push('<line x1="' + x + '" y1="27.5" x2="' + x + '" y2="40.5"' + tr("EST-ARM-ESTRIBO") + "/>");
-s.push(tx(65, 23.5, fmtEstribo(P, { q: 15, pos: 3, bit: 5, esp: 15, comp: 120 }), at.notacao_barra, "middle"));
-s.push('<line x1="10" y1="47" x2="120" y2="47"' + tr("EST-COTA") + "/>");
-s.push('<line x1="9" y1="48" x2="11" y2="46"' + tr("EST-COTA") + "/><line x1=\"119\" y1=\"48\" x2=\"121\" y2=\"46\"" + tr("EST-COTA") + "/>");
-s.push(tx(65, 46.2, P.cotas.unidade === "cm" ? "220" : (P.cotas.unidade === "mm" ? "2200" : "2,20"), at.cota, "middle"));
-s.push('<rect x="138" y="22" width="16" height="24"' + tr("EST-ARM-CONTORNO") + "/>");
-s.push('<rect x="140.5" y="24.5" width="11" height="19"' + tr("EST-ARM-ESTRIBO") + "/>");
-[[142, 26], [150, 26], [142, 42], [146, 42], [150, 42]].forEach(function (q) { s.push('<circle cx="' + q[0] + '" cy="' + q[1] + '" r="0.9" fill="#111"/>'); });
-s.push(tx(146, 52, "CORTE A", at.letra_corte * 0.8, "middle", true));
-var hn = at.nome_viga_pilar, hs = at.secao_ao_lado_do_nome || hn * 0.45;
-s.push(tx(4, 74, "V1", hn, "start", true));
-s.push(tx(4 + hn * 1.35, 74, "20/50", hs, "start"));
-s.push(tx(4, 78.6, "ESC 1:" + (estilo2D(P).escala), Math.min(at.escala_sob_titulo, 3)));
-return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 165 80" width="100%" style="background:#fff">' + s.join("") + "</svg>";
-}
-function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function ler(eid) {
-var S = global.Store;
-if (!S || !S.lerPrefs) return padraoRA();
-var pr = S.lerPrefs(eid) || {}, x = pr[CHAVE];
-return x && x.padrao ? normPadrao(x.padrao) : padraoRA();
-}
-function salvar(eid, p) {
-var S = global.Store;
-if (!S || !S.lerPrefs || !S.salvarPrefs) return false;
-var pr = S.lerPrefs(eid) || {};
-pr[CHAVE] = { padrao: normPadrao(p), em: Date.now() };
-S.salvarPrefs(eid, pr);
-return true;
-}
-function personalizado(eid) {
-var S = global.Store;
-if (!S || !S.lerPrefs) return false;
-var x = (S.lerPrefs(eid) || {})[CHAVE];
-return !!(x && x.padrao);
-}
-var PadraoDet = {
-CHAVE: CHAVE, CAMPOS: CAMPOS,
-padraoRA: padraoRA, normPadrao: normPadrao, importarJSON: importarJSON, exportarJSON: exportarJSON,
-layerDe: layerDe, linhaDe: linhaDe,
-fmtBitola: fmtBitola, fmtBarra: fmtBarra, fmtEstribo: fmtEstribo,
-massaLinear: massaLinear, resumoAco: resumoAco, estilo2D: estilo2D, amostraSVG: amostraSVG,
-ler: ler, salvar: salvar, personalizado: personalizado
-};
-global.PadraoDet = PadraoDet;
-if (typeof module !== "undefined" && module.exports) module.exports = PadraoDet;
-})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-1.js.map

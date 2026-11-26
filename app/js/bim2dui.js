@@ -119,6 +119,22 @@
       var D = D2(); if (!D || !D.Acima || !this._acimaVale(d)) return null;
       return D.Acima.topo(this.acimaCfg(d.id), d.nivel.y, yCorte, this.niveis());
     },
+    /* INSTALAÇÕES ACIMA DO CORTE (26/11/2026) — até onde a planta mostra tubo e peça acima do plano de corte.
+       Roteiro do defeito: a faixa era fixa em 3 m acima do corte. Com pé-direito de 2,80 m, a caixa d'água e
+       o barrilete lançados na COBERTURA entravam (tracejados) na planta do pavimento de baixo, e a pessoa lia
+       como "ficou tudo no mesmo plano". O que está do nível de cima para cima é da planta DELE.
+       Agora: até 1 cm abaixo do nível de cima (o tubo sob a laje continua, tracejado); sem nível acima — a
+       planta do último piso — valem os 3 m de sempre. ⚠ A porta é por planta: Propriedades › Extensões ›
+       "Instalações acima do corte" › "Até 3 m acima do corte". */
+    /* a escolha mora no NÍVEL (estado.plantas), como a altura do corte: vale para a planta dele e para as vistas novas (d2v-) do mesmo nível */
+    instAcimaModo: function (d) { var pp = (d && d.nivel && this.estado().plantas[d.nivel.id]) || {}; return pp.instAcima === "3m" ? "3m" : "nivel"; },
+    instTopo: function (d) {
+      var yc = d.nivel.y + d.altura, t3 = yc + 3;
+      if (this.instAcimaModo(d) === "3m") return t3;
+      var prox = null;
+      this.niveis().forEach(function (n) { if (n.y > yc + 1e-6 && (prox === null || n.y < prox)) prox = n.y; });
+      return prox === null ? t3 : Math.min(t3, prox - 0.01);
+    },
     idPlanta: function (nivelId) { return "d2p-" + String(nivelId).replace(/[^\w-]/g, "_"); },
     idCorte: function (cid) { return "d2c-" + cid; },
     ehVista2d: function (id) { return /^d2[pcve]-/.test(String(id || "")); },   /* d2e- = ELEVAÇÃO gerada do modelo (norte/sul/leste/oeste), sem marca na planta e sem a prévia do modelador */
@@ -338,8 +354,8 @@
             if (e5 && e5.estado && e5.estado.instalacoes && (e5.estado.instalacoes.trechos.length || e5.estado.instalacoes.pecas.length))
               /* faixa das instalações: até 0,80 m ABAIXO do nível (o esgoto e o pluvial
                  correm sob o piso e são desenhados na planta do pavimento, como no
-                 projeto hidrossanitário) e até 3 m acima do corte (forro/laje: tracejado) */
-              out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: d.nivel.y + d.altura + 3, rede: I5.rede(e5.estado, b5.familiaAvaliar),
+                 projeto hidrossanitário) e, acima do corte (forro/laje: tracejado), até o nível de cima — instTopo */
+              out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: this.instTopo(d), rede: I5.rede(e5.estado, b5.familiaAvaliar),
                 legenda: !!(global.BimInstUI && global.BimInstUI.legendaLigada && global.BimInstUI.legendaLigada()) });   /* P12: legenda de tubulação (ligável) */
             /* NÍVEL DE DETALHE (js/biminstnivel.js): abaixo do Alto o tubo já vem no DESENHO, em linha única na pena e
                cor do sistema, com os símbolos do nível (BIM.vista2d) — o traço grosso e as bolotas de conexão desta
@@ -895,7 +911,8 @@
     cancelarTraco: function (calado) {
       if (!this._pick) return;
       var c = this._cache[this._pick.id]; if (c && c.el) { c.el.removeAttribute("data-d2-pick"); var g = c.el.querySelector(".d2-pick"); if (g) g.parentNode.removeChild(g); }
-      this._pick = null; if (!calado) status("Corte cancelado.");
+      var eraCad = this._pick.modo === "cad";
+      this._pick = null; if (!calado) status(eraCad ? "Alinhamento cancelado." : "Corte cancelado.");
     },
     _travar: function (a, p, livre) {
       if (livre) return p;
@@ -904,12 +921,13 @@
     },
     _mostrarPick: function (id, ev) {
       var c = this._cache[id], p = this._ptSvg(id, ev); if (!c || !p || !c.svg) return;
-      var a = this._pick.pts[0], q = this._travar(a, p, ev.shiftKey);
+      var a = this._pick.pts[0], q = this._pick.modo === "cad" ? p : this._travar(a, p, ev.shiftKey);   /* alinhar desenho: o destino é livre */
       var g = c.svg.querySelector(".d2-pick");
       if (!g) { g = document.createElementNS("http://www.w3.org/2000/svg", "line"); g.setAttribute("class", "d2-pick"); g.setAttribute("vector-effect", "non-scaling-stroke"); c.svg.appendChild(g); }
       g.setAttribute("x1", a[0]); g.setAttribute("y1", a[1]); g.setAttribute("x2", q[0]); g.setAttribute("y2", q[1]);
     },
     _clicarPick: function (id, ev) {
+      if (this._pick.modo === "cad") { this._clicarPickCad(id, ev); return; }
       var p = this._ptSvg(id, ev); if (!p) return;
       var pk = this._pick;
       if (!pk.pts.length) { pk.pts.push(p); status("Agora o 2º ponto (Shift solta o ângulo)."); return; }
@@ -988,7 +1006,10 @@
       if (x && Array.isArray(x.s)) this._cadMem[lid] = x;
       return x;
     },
-    vincularCad: function (id, nome, dxf) {
+    /* opts (SEPARAR POR PAVIMENTO, js/cadsepara.js): { pos:{dx,dy} — onde o canto do recorte cai na planta (sem ele: centro do
+       modelo, como sempre) · grupo — a marca dos recortes do MESMO arquivo, que andam juntos ao alinhar } */
+    vincularCad: function (id, nome, dxf, opts) {
+      opts = opts || {};
       var d = this.def(id); if (!d || d.tipo !== "planta") return { ok: false, erro: "O vínculo CAD vai numa planta baixa: abra uma planta primeiro." };
       var segs = (dxf && dxf.segmentos) || [], ex = dxf && dxf.extents;
       if (!segs.length || !ex) return { ok: false, erro: "O desenho não tem linhas." };
@@ -1001,17 +1022,77 @@
       /* começa com o centro do desenho no centro do modelo: depois ajusta em Propriedades */
       var p = B() && B().pavimentos2d ? B().pavimentos2d() : null;
       if (p && p.caixa) { dx = (p.caixa.min[0] + p.caixa.max[0]) / 2 - w / 2; dy = (p.caixa.min[2] + p.caixa.max[2]) / 2 + h / 2; }
-      var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+      if (opts.pos && isFinite(+opts.pos.dx) && isFinite(+opts.pos.dy)) { dx = +opts.pos.dx; dy = +opts.pos.dy; }
+      /* ⚠ o contador: vários recortes do mesmo arquivo são gravados no mesmo milissegundo — só Date+sorteio já repetiu id em teste */
+      this._cadSeq = (this._cadSeq || 0) + 1;
+      var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36) + this._cadSeq.toString(36);
       var dados = { s: s, t: t };
       this._cadMem[lid] = dados;
       var gravou = true;
       try { localStorage.setItem(this._cadChave(lid), JSON.stringify(dados)); } catch (e) { gravou = false; }
       var e = this.estado(); if (!e.cad || typeof e.cad !== "object") e.cad = {};
       var L = e.cad[d.nivel.id] || (e.cad[d.nivel.id] = []);
-      L.push({ id: lid, nome: String(nome || "Desenho CAD").slice(0, 80), w: r3(w), h: r3(h), dx: r3(dx), dy: r3(dy), rot: 0, vis: true, n: s.length / 4, nt: t.length, cortado: cortado, temp: !gravou });
+      var reg = { id: lid, nome: String(nome || "Desenho CAD").slice(0, 80), w: r3(w), h: r3(h), dx: r3(dx), dy: r3(dy), rot: 0, vis: true, n: s.length / 4, nt: t.length, cortado: cortado, temp: !gravou };
+      if (opts.grupo) reg.grupo = String(opts.grupo).slice(0, 40);
+      L.push(reg);
       this._gravar(); this._avisarMudou();
-      if (!gravou) toast("O desenho é grande para guardar neste aparelho: ele fica só até fechar o OrçaPRO.", "aviso");
-      return { ok: true, id: lid, segmentos: s.length / 4, textos: t.length, cortado: cortado, gravou: gravou };
+      if (!gravou && !opts.calado) toast("O desenho é grande para guardar neste aparelho: ele fica só até fechar o OrçaPRO.", "aviso");
+      return { ok: true, id: lid, segmentos: s.length / 4, textos: t.length, cortado: cortado, gravou: gravou, dx: reg.dx, dy: reg.dy };
+    },
+    /* os vínculos que andam com este: ele e, se "mover junto" estiver ligado, os outros recortes do mesmo arquivo (um por pavimento).
+       Roteiro: as plantas separadas saem EMPILHADAS; mover só a do térreo para casar com o modelo desempilharia as outras. */
+    _cadDoGrupo: function (v) {
+      if (!v.grupo || v.junto === false) return [v];
+      var c = this.estado().cad || {}, out = [];
+      Object.keys(c).forEach(function (k) { (c[k] || []).forEach(function (x) { if (x.grupo === v.grupo) out.push(x); }); });
+      return out.length ? out : [v];
+    },
+    /* desloca o vínculo (e o grupo dele) em metros da planta; redesenha as plantas abertas */
+    moverCad: function (lid, ddx, ddy) {
+      var v = this._cadAchar(lid); if (!v || !isFinite(ddx) || !isFinite(ddy)) return 0;
+      var G = this._cadDoGrupo(v), self = this;
+      G.forEach(function (x) { x.dx = Math.round(((+x.dx || 0) + ddx) * 1000) / 1000; x.dy = Math.round(((+x.dy || 0) + ddy) * 1000) / 1000; });
+      this._gravar();
+      Object.keys(this._cache).forEach(function (k) { var dk = self.def(k); if (dk && dk.tipo === "planta") self.redesenhar(k, false); });
+      return G.length;
+    },
+    /* ALINHAR POR PONTO: clique um ponto do desenho CAD (encaixa na ponta de linha mais próxima) e depois onde ele deve ficar */
+    alinharCad: function (idPlanta, lid) {
+      var c = this._cache[idPlanta], v = this._cadAchar(lid); if (!c || !c.el || !v) return false;
+      if (this._pick) this.cancelarTraco(true);
+      this._pick = { id: idPlanta, pts: [], modo: "cad", lid: lid };
+      c.el.setAttribute("data-d2-pick", "1");
+      status("Alinhar desenho: clique um ponto do desenho CAD (um canto de parede). Esc cancela.");
+      var self = this;
+      if (!this._escPick) {
+        this._escPick = function (ev) { if (ev.key === "Escape" && self._pick) { self.cancelarTraco(); ev.stopPropagation(); } };
+        document.addEventListener("keydown", this._escPick, true);
+      }
+      return true;
+    },
+    /* a ponta de linha do vínculo mais próxima de p (planta), até `raio` m; senão o próprio p */
+    _cadPonta: function (nivelId, lid, p, raio) {
+      var melhor = null, dm = raio * raio;
+      this._cadDesenho(nivelId).forEach(function (g) {
+        if (g.id !== lid) return;
+        for (var i = 0; i + 1 < g.seg.length; i += 2) { var dx = g.seg[i] - p[0], dy = g.seg[i + 1] - p[1], q = dx * dx + dy * dy; if (q < dm) { dm = q; melhor = [g.seg[i], g.seg[i + 1]]; } }
+      });
+      return melhor || p;
+    },
+    _clicarPickCad: function (id, ev) {
+      var p = this._ptSvg(id, ev), pk = this._pick, d = this.def(id); if (!p || !d) return;
+      if (!pk.pts.length) {
+        /* o encaixe acompanha o zoom: ~12 px de tela em metros da planta */
+        var c = this._cache[id], raio = 0.3;
+        try { var m = c.svg.getScreenCTM(); if (m && m.a) raio = Math.max(0.02, 12 / Math.abs(m.a)); } catch (e) {}
+        pk.pts.push(this._cadPonta(d.nivel.id, pk.lid, p, raio));
+        status("Agora clique ONDE esse ponto deve ficar (no modelo ou na planta). Esc cancela.");
+        return;
+      }
+      var a = pk.pts[0], lid = pk.lid;
+      this.cancelarTraco(true);
+      var n = this.moverCad(lid, p[0] - a[0], p[1] - a[1]);
+      status("Desenho alinhado" + (n > 1 ? ": os " + n + " pavimentos do mesmo arquivo andaram juntos." : "."));
     },
     _cadAchar: function (lid) {
       var c = this.estado().cad || {}, r = null;
@@ -1091,7 +1172,8 @@
       if (d.tipo === "planta") {
         secoes.push({ nome: "Extensões (faixa de vista)", params: [
           { id: "altura", rotulo: "Altura do corte", unidade: "m", tipo: "numero", passo: 0.05, valor: d.altura },
-          { id: "abaixo", rotulo: "Ver abaixo do piso", unidade: "m", tipo: "numero", passo: 0.05, valor: d.abaixo }
+          { id: "abaixo", rotulo: "Ver abaixo do piso", unidade: "m", tipo: "numero", passo: 0.05, valor: d.abaixo },
+          { id: "instAcima", rotulo: "Instalações acima do corte", tipo: "lista", valor: this.instAcimaModo(d), opcoes: [{ id: "nivel", rotulo: "Até o nível de cima" }, { id: "3m", rotulo: "Até 3 m acima do corte" }] }
         ] });
       } else {
         secoes.push({ nome: "Extensões", params: [
@@ -1126,6 +1208,8 @@
           vc.push({ id: p + "dx", rotulo: "Deslocamento X", unidade: "m", tipo: "numero", passo: 0.05, valor: v.dx });
           vc.push({ id: p + "dy", rotulo: "Deslocamento Y", unidade: "m", tipo: "numero", passo: 0.05, valor: v.dy });
           vc.push({ id: p + "rot", rotulo: "Rotação", unidade: "°", tipo: "numero", passo: 1, valor: v.rot || 0 });
+          vc.push({ id: p + "alinhar", rotulo: "Posição", tipo: "botao", rotuloBotao: "Alinhar por ponto…", fn: function () { self.alinharCad(id, v.id); } });
+          if (v.grupo) vc.push({ id: p + "junto", rotulo: "Mover junto os outros pavimentos", tipo: "sim-nao", valor: v.junto !== false });
           vc.push({ id: p + "excluir", rotulo: "Vínculo", tipo: "botao", rotuloBotao: "Remover vínculo", fn: function () { self.excluirCad(v.id); self.redesenhar(id, false); status("Vínculo CAD removido."); } });
         });
         if (this._cfg.vincular) vc.push({ id: "cad-novo", rotulo: "DWG / DXF", tipo: "botao", rotuloBotao: "Vincular desenho CAD…", fn: function () { self._cfg.vincular(id); } });
@@ -1151,9 +1235,17 @@
       if (/^cc:/.test(String(pid)) && global.BimCoresCatUI && global.BimCoresCatUI.mudarVista(id, pid, valor)) return;   /* CORES POR CATEGORIA */
       var M6 = this._p6(); if (M6 && M6.mudar(id, pid, valor)) return;   /* P6 */
       var e = this.estado();
-      var mc = /^cad-(\w+)-(vis|dx|dy|rot)$/.exec(pid);
+      var mc = /^cad-(\w+)-(vis|dx|dy|rot|junto)$/.exec(pid);
       if (mc) {
         var v = this._cadAchar(mc[1]); if (!v) return;
+        /* deslocamento digitado: os outros pavimentos do mesmo arquivo andam junto (moverCad) — senão desempilham */
+        if (mc[2] === "dx" || mc[2] === "dy") {
+          var novo = num(valor, +v[mc[2]] || 0), dif = novo - (+v[mc[2]] || 0);
+          var nG = this.moverCad(v.id, mc[2] === "dx" ? dif : 0, mc[2] === "dy" ? dif : 0);
+          if (nG > 1) status("Os " + nG + " pavimentos do mesmo arquivo andaram juntos (para mover só este, desligue \"Mover junto os outros pavimentos\").");
+          return;
+        }
+        if (mc[2] === "junto") { v.junto = !!valor; this._gravar(); return; }
         v[mc[2]] = mc[2] === "vis" ? !!valor : num(valor, v[mc[2]] || 0);
         this._gravar(); this.redesenhar(id, false); return;
       }
@@ -1167,6 +1259,13 @@
         e.acima[id] = D4.cfg(cur);
         this._gravar(); if (ma[1] !== "rotulo") this.atualizar(id); else this.redesenhar(id, false);   /* sem perder o zoom */
         status(cur.on ? (ma[1] === "rotulo" ? "Rótulo das peças acima do corte: " + D4.ROTULOS[e.acima[id].rotulo] + "." : "Peças acima do corte em projeção tracejada, " + (e.acima[id].modo === "altura" ? "até " + D2().fmtNum(e.acima[id].altura, 2) + " m do piso." : "até o nível de cima.")) : "Peças acima do corte escondidas nesta vista.");
+        return;
+      }
+      if (pid === "instAcima" && d.nivel) {
+        var pi = e.plantas[d.nivel.id] || (e.plantas[d.nivel.id] = {});
+        pi.instAcima = valor === "3m" ? "3m" : "nivel";
+        this._gravar(); this.redesenhar(id, true);
+        status(pi.instAcima === "3m" ? "Instalações acima do corte: até 3 m — o que está no pavimento de cima aparece tracejado nesta planta." : "Instalações acima do corte: até o nível de cima — o que é do pavimento de cima fica na planta dele.");
         return;
       }
       if (pid === "altura" || pid === "abaixo") {
