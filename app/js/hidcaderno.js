@@ -723,8 +723,10 @@
       II.linhasLoucas(c.modelo.estado, c.modelo.avaliarFam, [0, 1, 0], function (fi) {
         /* R05: além das louças, a silhueta dos MÓVEIS do modelo abaixo do plano de corte (bancada, ilha, armário, máquina) — o contexto do ambiente, como na folha da Tânia */
         var id = txt(fi.famId), ap = II.APARELHO_RE.test(id), mob = !ap && !K.foraDaPlanta.test(id) && fi.y < pv.cota + corte;
-        return (ap || mob) && fi.x >= box.x0 && fi.x <= box.x1 && fi.z >= box.z0 && fi.z <= box.z1 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; })
-        .forEach(function (sg) { var q = clipSeg(sg[0][0], sg[0][2], sg[1][0], sg[1][2], box); if (!q) return; loucas.push([[q[0], pv.cota + corte - 0.01, q[1]], [q[2], pv.cota + corte - 0.01, q[3]]]); });   /* R05: recorta na caixa (a bancada corrida passava da caixa e sumia inteira) */
+        /* 27/11/2026: a planta do ambiente de UM sistema não leva o contorno da instalação do outro (ralo/caixa na água, registro na de esgoto) — HidPranchas.famForaDoGrupo */
+        if (II.famForaDoGrupo && II.famForaDoGrupo(id, grupoPorId(hi.grupo))) return false;
+        return (ap || mob) && fi.x >= box.x0 && fi.x <= box.x1 && fi.z >= box.z0 && fi.z <= box.z1 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; }
+        , grupoPorId(hi.grupo)).forEach(function (sg) { var q = clipSeg(sg[0][0], sg[0][2], sg[1][0], sg[1][2], box); if (!q) return; loucas.push([[q[0], pv.cota + corte - 0.01, q[1]], [q[2], pv.cota + corte - 0.01, q[3]]]); });   /* R05: recorta na caixa (a bancada corrida passava da caixa e sumia inteira) */
     } catch (e) { aviso.push("louças pelo contorno real falharam (" + (e && e.message) + ")"); }
     return { box: box, paredes: paredes, pilares: pilares, loucas: loucas, cotaPiso: pv.cota, yCorte: pv.cota + corte, arqCor: (K2 && K2.arq && K2.arq.preench) || "#e4e4e4", arqContorno: (K2 && K2.arq && K2.arq.contorno) || "#8c8c8c", corLouca: (K2 && K2.arq && K2.arq.louca) || "#9a9a9a", avisos: aviso };
   }

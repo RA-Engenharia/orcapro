@@ -28226,13 +28226,33 @@ out.push([pt(t0), pt(t1)]);
 });
 return out;
 }
-function linhasLoucas(estado, aval, viewer, filtro) {
+function famForaDoGrupo(famId, grupo) {
+if (!grupo || !grupo.sis) return false;
+var id = txt(famId);
+if (APARELHO_RE.test(id)) return false;
+if (/^hid-(tubo|conexao|sn-)/.test(id)) return true;
+var ok = {}; arr(grupo.sis).forEach(function (s) { ok[s] = 1; });
+var HF = dep("HidFamilias", "./hidfamilias.js"), F = null; try { F = HF && HF.porId ? HF.porId(id) : null; } catch (e) { F = null; }
+if (F) {
+if (F.categoria === "loucas" || F.categoria === "mobiliario") return false;
+var sis = arr(F.sistemas).filter(function (s) { return s !== "eletrica"; });
+return sis.length > 0 && !sis.some(function (s) { return ok[s]; });
+}
+var HB = dep("HidBiblioteca", "./biminstbiblioteca.js"), f = null, cs = null;
+try { f = HB && HB.familia ? HB.familia(id) : null; cs = f && HB.catSeletor ? HB.catSeletor(f) : null; } catch (e2) { cs = null; }
+return cs === "conexao" || cs === "acessorio";
+}
+var PARTES_ESGOTO = { sifao: 1, bolsa: 1 };
+function solidoSoEsgoto(s) { var p = arr(s && s.partes); return p.length > 0 && p.every(function (x) { return PARTES_ESGOTO[x]; }); }
+function linhasLoucas(estado, aval, viewer, filtro, grupo) {
 var out = [];
 if (typeof aval !== "function") return out;
+var semEsgoto = !!(grupo && arr(grupo.sis).indexOf("esgoto") < 0);
 arr(estado && estado.familias).forEach(function (fi) {
 if (filtro && !filtro(fi)) return;
 var av = null; try { av = aval(fi.famId, fi.tipoId, fi.inst || {}); } catch (e) { av = null; }
 if (!av || !av.ok) return;
+if (semEsgoto && arr(av.solidos).some(solidoSoEsgoto)) { var a2 = {}; for (var ka in av) if (Object.prototype.hasOwnProperty.call(av, ka)) a2[ka] = av[ka]; a2.solidos = arr(av.solidos).filter(function (s) { return !solidoSoEsgoto(s); }); av = a2; }
 linhasFamilia(fi, av, viewer).forEach(function (sg) { out.push(sg); });
 });
 return out;
@@ -29538,7 +29558,7 @@ par3d.push({ pl: pl, y0: Math.max(w.y0, pv.cota), y1: Math.min(w.y1, yT + K2.per
 });
 var piso = [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]].map(function (q) { return P({ x: q[0], y: pv.cota, z: q[1] }); });
 var loucas = [];
-try { loucas = linhasLoucas(est, c.modelo.avaliarFam, P.viewer, function (fi) { return dentro(fi) && fi.y >= b0 - KI.tolPiso_m && fi.y < b1; }); } catch (e) { loucas = []; }
+try { loucas = linhasLoucas(est, c.modelo.avaliarFam, P.viewer, function (fi) { return dentro(fi) && fi.y >= b0 - KI.tolPiso_m && fi.y < b1 && !famForaDoGrupo(fi.famId, c.grupo); }, c.grupo); } catch (e) { loucas = []; }
 if (c.grupo) loucas = loucas.filter(function (sg) { return sg[0][1] <= yT + 0.5 && sg[1][1] <= yT + 0.5; });
 trs.forEach(function (t) {
 var k = null; try { k = G ? G.cotasTubo(t.material, t.dn) : null; } catch (e) { k = null; }
@@ -31480,7 +31500,7 @@ return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, a
 var _int = { paginarQuadro: paginarQuadro, largurasQuadro: largurasQuadro, juntarEsquemaQuadro: juntarEsquemaQuadro, letraQuadro: letraQuadro, auditarFolha: auditarFolha, ocupacaoSvg: ocupacaoSvg, caixaDoSvg: caixaDoSvg, gradeMosaico: gradeMosaico, escalaCelula: escalaCelula, montarMosaicos: montarMosaicos, juntarPoucoOcupadas: juntarPoucoOcupadas, tirarDuplicadas: tirarDuplicadas, ocultoDaVista: ocultoDaVista, setFoto3d: function (f) { FOTO3D = typeof f === "function" ? f : null; }, oclusaoVista: oclusaoVista, vistaAuto: vistaAuto, trechosDaVista: trechosDaVista, pavsEfetivos: pavsEfetivos, pavsDosAmbientes: pavsDosAmbientes, pavDoAmbiente: pavDoAmbiente, ambienteMolhado: ambienteMolhado, ambienteDoPav: ambienteDoPav, perspVazia: perspVazia, plantaComConteudo: plantaComConteudo, assinaturaCorte: assinaturaCorte, PROIBIDA_QUADRO: PROIBIDA_QUADRO, clipSegCaixa: clipSegCaixa, produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
 bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
 CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
-paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
+paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, famForaDoGrupo: famForaDoGrupo, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
 var HidPranchas = { folhaPiscina: folhaPiscina, temPiscina: temPiscina, PSC: PSC, _int: _int, VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
 configPadrao: configPadrao, normalizarConfig: normalizarConfig, ambientesAuto: ambientesAuto, paraDxf: paraDxf, conferirFolha: conferirFolha,
 CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, SISTEMAS_FOLHA: SISTEMAS_FOLHA, FORMATOS: FORMATOS_OK, _segQuad: segQuad, _aciDe: aciDe };
@@ -32940,8 +32960,9 @@ var corte = num(hi.corte, 1.2);
 try {
 II.linhasLoucas(c.modelo.estado, c.modelo.avaliarFam, [0, 1, 0], function (fi) {
 var id = txt(fi.famId), ap = II.APARELHO_RE.test(id), mob = !ap && !K.foraDaPlanta.test(id) && fi.y < pv.cota + corte;
-return (ap || mob) && fi.x >= box.x0 && fi.x <= box.x1 && fi.z >= box.z0 && fi.z <= box.z1 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; })
-.forEach(function (sg) { var q = clipSeg(sg[0][0], sg[0][2], sg[1][0], sg[1][2], box); if (!q) return; loucas.push([[q[0], pv.cota + corte - 0.01, q[1]], [q[2], pv.cota + corte - 0.01, q[3]]]); });
+if (II.famForaDoGrupo && II.famForaDoGrupo(id, grupoPorId(hi.grupo))) return false;
+return (ap || mob) && fi.x >= box.x0 && fi.x <= box.x1 && fi.z >= box.z0 && fi.z <= box.z1 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; }
+, grupoPorId(hi.grupo)).forEach(function (sg) { var q = clipSeg(sg[0][0], sg[0][2], sg[1][0], sg[1][2], box); if (!q) return; loucas.push([[q[0], pv.cota + corte - 0.01, q[1]], [q[2], pv.cota + corte - 0.01, q[3]]]); });
 } catch (e) { aviso.push("louças pelo contorno real falharam (" + (e && e.message) + ")"); }
 return { box: box, paredes: paredes, pilares: pilares, loucas: loucas, cotaPiso: pv.cota, yCorte: pv.cota + corte, arqCor: (K2 && K2.arq && K2.arq.preench) || "#e4e4e4", arqContorno: (K2 && K2.arq && K2.arq.contorno) || "#8c8c8c", corLouca: (K2 && K2.arq && K2.arq.louca) || "#9a9a9a", avisos: aviso };
 }

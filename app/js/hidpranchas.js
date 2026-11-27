@@ -438,14 +438,45 @@
     });
     return out;
   }
+  /* SÓ O SISTEMA DA FOLHA (27/11/2026 — o Rogério, no caderno HID-R00: o isométrico de ÁGUA mostrava em cinza a curva DN 100, joelhos, ralo
+     e caixa sifonada do esgoto, e o de esgoto mostrava os registros de água). O contorno cinza é o CONTEXTO do ambiente (louça, móvel); a
+     instalação sai da rede, em cor, já filtrada pelo grupo. Por isso, numa folha de um grupo de sistema:
+       - tubo e conexão genéricos (hid-tubo-*, hid-conexao-*, hid-sn-*) nunca entram no contorno (a rede já desenha os do grupo, em cor);
+       - família de instalação de OUTRO sistema (curva/ralo/caixa sifonada de esgoto na folha de água, registro e caixa d'água na de esgoto) fica fora;
+       - louça e metal (APARELHO_RE) e móvel continuam: são a referência do ambiente nas duas folhas.
+     Sem grupo (perspectiva geral do ambiente) nada muda. */
+  function famForaDoGrupo(famId, grupo) {
+    if (!grupo || !grupo.sis) return false;
+    var id = txt(famId);
+    if (APARELHO_RE.test(id)) return false;
+    if (/^hid-(tubo|conexao|sn-)/.test(id)) return true;
+    var ok = {}; arr(grupo.sis).forEach(function (s) { ok[s] = 1; });
+    var HF = dep("HidFamilias", "./hidfamilias.js"), F = null; try { F = HF && HF.porId ? HF.porId(id) : null; } catch (e) { F = null; }
+    if (F) {
+      /* louça (bacia, lavatório, tanque) e mobiliário (pia) servem às duas folhas; peça de instalação só na folha do SEU sistema */
+      if (F.categoria === "loucas" || F.categoria === "mobiliario") return false;
+      var sis = arr(F.sistemas).filter(function (s) { return s !== "eletrica"; });
+      return sis.length > 0 && !sis.some(function (s) { return ok[s]; });
+    }
+    /* família do escritório (importada do Revit): a categoria do Revit diz se é conexão/acessório de tubo */
+    var HB = dep("HidBiblioteca", "./biminstbiblioteca.js"), f = null, cs = null;
+    try { f = HB && HB.familia ? HB.familia(id) : null; cs = f && HB.catSeletor ? HB.catSeletor(f) : null; } catch (e2) { cs = null; }
+    return cs === "conexao" || cs === "acessorio";
+  }
   /* as linhas de todas as famílias (louças, metais, equipamentos) do pavimento numa caixa do plano */
-  function linhasLoucas(estado, aval, viewer, filtro) {
+  /* partes de ESGOTO dentro da louça (js/hidlouca.js): o sifão sanfonado da pia/tanque e a bolsa de ligação da bacia saem da folha de ÁGUA.
+     O sifão do lavatório vem fundido com a torneira na parte "metais" e fica (é a louça). */
+  var PARTES_ESGOTO = { sifao: 1, bolsa: 1 };
+  function solidoSoEsgoto(s) { var p = arr(s && s.partes); return p.length > 0 && p.every(function (x) { return PARTES_ESGOTO[x]; }); }
+  function linhasLoucas(estado, aval, viewer, filtro, grupo) {
     var out = [];
     if (typeof aval !== "function") return out;
+    var semEsgoto = !!(grupo && arr(grupo.sis).indexOf("esgoto") < 0);
     arr(estado && estado.familias).forEach(function (fi) {
       if (filtro && !filtro(fi)) return;
       var av = null; try { av = aval(fi.famId, fi.tipoId, fi.inst || {}); } catch (e) { av = null; }
       if (!av || !av.ok) return;
+      if (semEsgoto && arr(av.solidos).some(solidoSoEsgoto)) { var a2 = {}; for (var ka in av) if (Object.prototype.hasOwnProperty.call(av, ka)) a2[ka] = av[ka]; a2.solidos = arr(av.solidos).filter(function (s) { return !solidoSoEsgoto(s); }); av = a2; }
       linhasFamilia(fi, av, viewer).forEach(function (sg) { out.push(sg); });
     });
     return out;
@@ -1948,7 +1979,7 @@
     /* louças, metais e equipamentos: as LINHAS da malha real (silhueta e vincos vistos desta direção), em meio-tom — a louça
        é transparente e o esgoto que passa atrás dela aparece inteiro */
     var loucas = [];
-    try { loucas = linhasLoucas(est, c.modelo.avaliarFam, P.viewer, function (fi) { return dentro(fi) && fi.y >= b0 - KI.tolPiso_m && fi.y < b1; }); } catch (e) { loucas = []; }
+    try { loucas = linhasLoucas(est, c.modelo.avaliarFam, P.viewer, function (fi) { return dentro(fi) && fi.y >= b0 - KI.tolPiso_m && fi.y < b1 && !famForaDoGrupo(fi.famId, c.grupo); }, c.grupo); } catch (e) { loucas = []; }
     /* HIDRO-3D: no caderno por grupo a louça/móvel acima do recorte (chaminé da churrasqueira, armário alto) sai do enquadramento: o isométrico mostra o que está na altura da instalação */
     if (c.grupo) loucas = loucas.filter(function (sg) { return sg[0][1] <= yT + 0.5 && sg[1][1] <= yT + 0.5; });
     /* tubos com o DE real, conexões brancas, caixas */
@@ -4114,7 +4145,7 @@
   var _int = { paginarQuadro: paginarQuadro, largurasQuadro: largurasQuadro, juntarEsquemaQuadro: juntarEsquemaQuadro, letraQuadro: letraQuadro, auditarFolha: auditarFolha, ocupacaoSvg: ocupacaoSvg, caixaDoSvg: caixaDoSvg, gradeMosaico: gradeMosaico, escalaCelula: escalaCelula, montarMosaicos: montarMosaicos, juntarPoucoOcupadas: juntarPoucoOcupadas, tirarDuplicadas: tirarDuplicadas, ocultoDaVista: ocultoDaVista, setFoto3d: function (f) { FOTO3D = typeof f === "function" ? f : null; }, oclusaoVista: oclusaoVista, vistaAuto: vistaAuto, trechosDaVista: trechosDaVista, pavsEfetivos: pavsEfetivos, pavsDosAmbientes: pavsDosAmbientes, pavDoAmbiente: pavDoAmbiente, ambienteMolhado: ambienteMolhado, ambienteDoPav: ambienteDoPav, perspVazia: perspVazia, plantaComConteudo: plantaComConteudo, assinaturaCorte: assinaturaCorte, PROIBIDA_QUADRO: PROIBIDA_QUADRO, clipSegCaixa: clipSegCaixa, produtoDoAcessorio: produtoDoAcessorio, setPosicionador: function (v) { POS_ATIVO = !!v; }, posicionador: posicionador, caixaLivre: caixaLivre, blocoVista: blocoVista, soHidro: soHidro, linhasQuadro: linhasQuadro, K2: K2, nomeAparelhoFn: nomeAparelhoFn, linhasLegendaPontos: linhasLegendaPontos, medirTabela: medirTabela, desenharQr: desenharQr, portalDe: portalDe, linkAmbientes: linkAmbientes, rotuloQrAmb: rotuloQrAmb, rasterDe: rasterDe, fotoPlanta: fotoPlanta, paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
     bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
     CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
-    paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
+    paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, cadeiasElevacao: cadeiasElevacao, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, famForaDoGrupo: famForaDoGrupo, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
   var HidPranchas = { folhaPiscina: folhaPiscina, temPiscina: temPiscina, PSC: PSC, _int: _int, VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
     configPadrao: configPadrao, normalizarConfig: normalizarConfig, ambientesAuto: ambientesAuto, paraDxf: paraDxf, conferirFolha: conferirFolha,
     CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, SISTEMAS_FOLHA: SISTEMAS_FOLHA, FORMATOS: FORMATOS_OK, _segQuad: segQuad, _aciDe: aciDe };
