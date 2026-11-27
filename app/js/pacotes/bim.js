@@ -123554,6 +123554,12 @@ var enc0 = global.HidSelecaoUI.encaixeDoClique(c.sistema);
 if (enc0) { p = { x: enc0.P.x, y: enc0.P.y, z: enc0.P.z }; ev = Object.assign({}, ev || {}, { _encaixe: true, _alvo: enc0.alvo }); }
 }
 var alvo = ev && (ev._corte || ev._forcar || ev._encaixe) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
+var cantoMsg = "";
+if (alvo && ed.p1 && S && S.gravidade && alvo.tipo === "ponta" && global.HidMao && global.HidMao.cantoParaMeio) {
+var aC = global.HidMao.cantoParaMeio(est, alvo, c.sistema, this._inicio && this._inicio.alvo ? this._inicio.alvo : ed.p1);
+if (aC) { alvo = aC; p = { x: aC.x, y: aC.y, z: aC.z }; cantoMsg = " — o canto do ramal tem dois tubos: entra no tubo " + aC.trecho + " " + Math.round(global.HidMao.DESLOC_CANTO * 100) + " cm " + (aC.lado === "montante" ? "antes" : "depois") + " do canto, com junção a 45°"; }
+}
+this._cantoMsg = cantoMsg;
 var refP = null;
 if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
 refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema, null, ed.p1 || null);
@@ -123699,6 +123705,12 @@ var dyE = r6(alvo.y + folgaJ - yH), rE = this._renivelarTraco(est, dyE, base, S)
 if (rE.ok) { renivel = rE; p1 = { x: p1.x, y: r6(p1.y + dyE), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyE), z: q.z }; }); yH = r6(yH + dyE); abaixo = false; }
 else renivel = rE;
 }
+var folgaA = alvo && alvo.tipo === "meio" ? num(c.inclinacao, 2) / 100 * 0.35 : 0;
+var acimaE = alvo && S.gravidade && !this._sobe && (alvo.tipo === "meio" || alvo.tipo === "ponta") && yH > alvo.y + folgaA + I.TOL && global.HidMao && yH - (alvo.y + folgaA) < global.HidMao.LIMIAR_DEGRAU;
+if (acimaE && (!renivel || !renivel.ok) && tr0 && tr0.flex && !livre && !(ev && ev._corte)) {
+var dyA = r6(alvo.y + folgaA - yH), rA = this._renivelarTraco(est, dyA, base, S);
+if (rA.ok) { renivel = rA; p1 = { x: p1.x, y: r6(p1.y + dyA), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyA), z: q.z }; }); yH = r6(yH + dyA); }
+}
 var subiuBoca = false, rebaixoT = null, avisoEntrada = null;
 if (bocaT) {
 var iT = num(c.inclinacao, 0) / 100, fx = pts.length ? pts[pts.length - 1] : p1;
@@ -123802,7 +123814,7 @@ if (bateC) msg += " ⚠ o traço " + bateC + " — confira (Ctrl+Z desfaz)";
 } catch (eC9) {}
 }
 if (this._traco) criados.forEach(function (o9) { if (self._traco.ids.indexOf(o9.id) < 0) self._traco.ids.push(o9.id); });
-if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
+if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + (self._cantoMsg || "") + ". Clique o início do próximo, ou Esc."); }
 else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
 this._ultimaSaida = fim.y - base;
 ctx.marcar();
@@ -124107,7 +124119,7 @@ var g = this._ligacao, b = B(); if (!g || !b) return;
 var o = g.opcoes[g.i];
 try { b.editarPreviaInst(o.ops); } catch (e) {}
 try { this._setasPrevia(o.ops); } catch (eS) {}
-var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
+var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + (this._cantoMsg || "") + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
 ". Clique ou Enter confirma" + (g.opcoes.length > 1 ? "; Tab troca de opção" : "") + "; Esc cancela.";
 status(t); try { g.ctx.hint(t); } catch (eH) {}
 },

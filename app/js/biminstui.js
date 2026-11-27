@@ -1074,6 +1074,14 @@
         if (enc0) { p = { x: enc0.P.x, y: enc0.P.y, z: enc0.P.z }; ev = Object.assign({}, ev || {}, { _encaixe: true, _alvo: enc0.alvo }); }
       }
       var alvo = ev && (ev._corte || ev._forcar || ev._encaixe) && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true), ed.p1 || null);
+      /* ⚠ CANTO DO RAMAL (27/11/2026, js/hidmao.js cantoParaMeio): o esgoto que TERMINA no nó de dois tubos (o canto) entra no corpo do tubo a jusante,
+         20 cm depois do canto, com a junção a 45° — antes virava tê sem dois tubos alinhados (à mão) ou cruzeta (Ligar A → B) */
+      var cantoMsg = "";
+      if (alvo && ed.p1 && S && S.gravidade && alvo.tipo === "ponta" && global.HidMao && global.HidMao.cantoParaMeio) {
+        var aC = global.HidMao.cantoParaMeio(est, alvo, c.sistema, this._inicio && this._inicio.alvo ? this._inicio.alvo : ed.p1);
+        if (aC) { alvo = aC; p = { x: aC.x, y: aC.y, z: aC.z }; cantoMsg = " — o canto do ramal tem dois tubos: entra no tubo " + aC.trecho + " " + Math.round(global.HidMao.DESLOC_CANTO * 100) + " cm " + (aC.lado === "montante" ? "antes" : "depois") + " do canto, com junção a 45°"; }
+      }
+      this._cantoMsg = cantoMsg;
       /* N23 (23/10/2026): SNAP NO PROLONGAMENTO — sem alvo de ligação perto, o cursor na RETA de um tubo deitado (além da ponta dele, a
          até 15 cm de lado) ALINHA o ponto com ele e toma a cota dele como altura de referência (js/biminstconectar.js). Não é ligação:
          o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
@@ -1275,6 +1283,15 @@
         if (rE.ok) { renivel = rE; p1 = { x: p1.x, y: r6(p1.y + dyE), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyE), z: q.z }; }); yH = r6(yH + dyE); abaixo = false; }
         else renivel = rE;
       }
+      /* ⚠ ESGOTO CHEGANDO POUCO ACIMA DO TUBO DE DESTINO (27/11/2026, bancada): a queda na vertical antes da junção a 45° saía DE VOLTA pela diagonal do
+         traço (tubo sobreposto + joelhos a mais). Até LIMIAR_DEGRAU, o traço que saiu do aparelho DESCE inteiro o que sobra (a perna embutida estica),
+         como o "abaixo" sobe; mais que isso é uma queda de verdade (outro pavimento) e fica como antes. */
+      var folgaA = alvo && alvo.tipo === "meio" ? num(c.inclinacao, 2) / 100 * 0.35 : 0;   // hid:ok o mesmo caminho da entrada a 45° do "abaixo"
+      var acimaE = alvo && S.gravidade && !this._sobe && (alvo.tipo === "meio" || alvo.tipo === "ponta") && yH > alvo.y + folgaA + I.TOL && global.HidMao && yH - (alvo.y + folgaA) < global.HidMao.LIMIAR_DEGRAU;
+      if (acimaE && (!renivel || !renivel.ok) && tr0 && tr0.flex && !livre && !(ev && ev._corte)) {
+        var dyA = r6(alvo.y + folgaA - yH), rA = this._renivelarTraco(est, dyA, base, S);
+        if (rA.ok) { renivel = rA; p1 = { x: p1.x, y: r6(p1.y + dyA), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyA), z: q.z }; }); yH = r6(yH + dyA); }
+      }
       var subiuBoca = false, rebaixoT = null, avisoEntrada = null;
       if (bocaT) {
         /* na frente da boca: vertical até a cota dela (mais a queda da bolsa) e entra reto; se o traço veio abaixo da boca, o trecho sobe (avisa) */
@@ -1399,7 +1416,7 @@
       }
       /* o traço em curso guarda o que nasceu (o renivelar seguinte mexe nele inteiro); chegou num destino → acabou */
       if (this._traco) criados.forEach(function (o9) { if (self._traco.ids.indexOf(o9.id) < 0) self._traco.ids.push(o9.id); });
-      if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
+      if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + (self._cantoMsg || "") + ". Clique o início do próximo, ou Esc."); }
       else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
       this._ultimaSaida = fim.y - base;
       ctx.marcar();
@@ -1756,7 +1773,7 @@
       var o = g.opcoes[g.i];
       try { b.editarPreviaInst(o.ops); } catch (e) {}
       try { this._setasPrevia(o.ops); } catch (eS) {}
-      var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
+      var t = "Ligar A → B: opção " + (g.i + 1) + " de " + g.opcoes.length + " — " + o.nome + (this._cantoMsg || "") + ", " + fmt(o.comprimento, 2) + " m" + (o.avisos.length ? " (" + o.avisos.length + " aviso(s))" : "") +
         ". Clique ou Enter confirma" + (g.opcoes.length > 1 ? "; Tab troca de opção" : "") + "; Esc cancela.";
       status(t); try { g.ctx.hint(t); } catch (eH) {}
     },

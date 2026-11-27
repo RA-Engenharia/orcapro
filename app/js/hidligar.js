@@ -332,6 +332,9 @@
       var antes = [];
       if (entra45) {
         ops.push({ op: "trecho", id: par.prefixo + "j45", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num((ops[ops.length - 1] || {}).dn, 40), p1: entra45.P, p2: entra45.J });   // hid:ok tolerância de desenho / DN de reserva (geometria, não norma)
+        /* a rota pode chegar na ponta da diagonal virando 90° (a diagonal da junção vai para o outro lado): a mesma correção da chegada na caixa */
+        var jL = Math.hypot(entra45.J.x - entra45.P.x, entra45.J.z - entra45.P.z), alJ = jL > 0.01 ? alinharChegada(ops, entra45.J, { x: (entra45.J.x - entra45.P.x) / jL, z: (entra45.J.z - entra45.P.z) / jL }, estado, avaliarFam, [A.famInst], (entra45.P.y - entra45.J.y) / jL, [B.trecho]) : null;   // hid:ok 1 cm
+        if (alJ) ops = alJ.ops;
         antes = dividir(estado, B.trecho, entra45.J);
       } else if (B.tipo === "meio" && B.trecho) {
         /* o ponto de chegada é o do trecho dividido: a última ponta da rota toca o meio dele */
@@ -353,6 +356,11 @@
         if (vt0) { ops = pre.concat(ops).concat(vt0.ops.slice(2)); avVent = vt0.aviso; noVent = vt0.no; } else ops = pre.concat(ops);
       }
       if (altSaida) { ops = [JSON.parse(JSON.stringify(altSaida))].concat(ops); o.avisos = arr(o.avisos); o.avisos.push("a saída da " + txt((I.PECAS[PkA.peca] || {}).nome).toLowerCase() + " " + PkA.id + " foi virada para o lado da ligação (a peça girou " + Math.round(PkA.rotY * 180 / Math.PI) + "°)"); }
+      if (bocaB) {
+        var dbx = bocaB.boca.x - bocaB.P.x, dbz = bocaB.boca.z - bocaB.P.z, dbL = Math.hypot(dbx, dbz);
+        var alC = dbL > 0.01 ? alinharChegada(ops, bocaB.P, { x: dbx / dbL, z: dbz / dbL }, estado, avaliarFam, [A.famInst], (bocaB.P.y - bocaB.boca.y) / dbL, null, bocaB.boca) : null;   // hid:ok 1 cm
+        if (alC) { ops = alC.ops; if (alC.P) bocaB.P = alC.P; o.avisos = arr(o.avisos); o.avisos.push("a chegada na caixa " + txt(PkB0.id) + " foi alinhada com a boca por um desvio a 45° (sem joelho 90° no horizontal)"); }
+      }
       if (bocaB) ops.push({ op: "trecho", id: par.prefixo + "boca", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num(bocaB.boca.dn, 40), p1: bocaB.P, p2: { x: bocaB.boca.x, y: bocaB.boca.y, z: bocaB.boca.z } });   // hid:ok DN de reserva
       ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
       /* a VENTILAÇÃO deriva no meio do toco: depois de unir os colineares (o toco e o 1º trecho da rota viram um tubo), esse tubo é dividido no nó */
@@ -441,6 +449,56 @@
     T("2", P0, { x: topoX, y: Math.max(yTopo, r4(P0.y + 0.3)), z: topoZ }, { continua: "p2" });   // hid:ok 30 cm mínimos de coluna (desenho)
     return { ops: out, no: M, aviso: melhor ? "ventilação DN " + KV.dn + " da caixa " + PkA.id + " sobe na parede " + melhor.id + " (" + (melhor.d * 100).toFixed(0) + " cm) até +" + KV.alto.toFixed(2).replace(".", ",") + " m — continuar até o terminal ou a coluna de ventilação"
                                        : "ventilação DN " + KV.dn + " da caixa " + PkA.id + ": nenhuma parede a menos de " + KV.alcance.toFixed(1).replace(".", ",") + " m com caminho livre de outros tubos — a coluna sobe ao lado da caixa; confira" };
+  }
+  /* ⚠ CHEGADA ALINHADA NA BOCA (27/11/2026, bancada tools/hid-bancada-mao.js): a rota do HidRota termina no ponto P, a 15 cm da entrada da caixa, e
+     o trecho da boca segue o eixo `dir` dela. Quando a última reta chega de LADO (90° no plano), a boca nascia com um joelho 90° no horizontal — a
+     NBR 8160 (mudança de direção no trecho horizontal com peça de ângulo central ≤ 45°) e o próprio verificador do modelo reprovam. Aqui: voltando
+     pela rota, o primeiro ponto Pk de onde UMA diagonal a 45° do eixo chega na linha da boca (X = P − dir·s, s ≥ 0), sem virar mais de 45° em Pk e
+     sem cruzar tubo nem louça, troca os trechos de Pk até P por Pk → X → P. A cota corre reta de Pk.y a P.y (o caminho fica mais curto: a
+     declividade só aumenta). Não achou → a rota fica como veio (o aviso do verificador continua). */
+  function alinharChegada(ops, P, dir, estado, avaliarFam, ignFam, iBoca, ignTr, fim) {
+    function r4Cima(v) { return Math.ceil(v * 10000 - 1e-6) / 10000; }   /* para CIMA no 0,1 mm: arredondar para baixo deitaria a reta abaixo da mínima */   // hid:ok 0,1 mm (a casa da cota)
+    var tr = ops.filter(function (x) { return x.op === "trecho"; }), EPSP = 0.002;   // hid:ok 2 mm: o mesmo nó (arredondamento a 0,1 mm)
+    function mesmo(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.z - b.z) <= EPSP && Math.abs(a.y - b.y) <= 0.01; }   // hid:ok 1 cm na cota: o nó da rota
+    function hzv(t) { var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L = Math.hypot(dx, dz); return L > 0.005 ? { x: dx / L, z: dz / L, L: L } : null; }   // hid:ok 5 mm: trecho vertical
+    var cadeia = [], alvo = P;
+    for (var g = 0; g < 8; g++) {   // hid:ok até 8 trechos para trás (a chegada, não a rota inteira)
+      var t = tr.filter(function (x) { return cadeia.indexOf(x) < 0 && mesmo(x.p2, alvo); })[0];
+      if (!t || !hzv(t)) break;
+      cadeia.push(t); alvo = t.p1;
+    }
+    if (!cadeia.length) return null;
+    var u0 = hzv(cadeia[0]), C45 = Math.SQRT1_2 - 1e-6;   // hid:ok tolerância numérica do cosseno de 45°
+    if (u0.x * dir.x + u0.z * dir.z > 0.999) {   /* já chega no eixo: só mexe se a virada de ANTES dele passar de 45° (a junção a 45° do meio do tubo) */   // hid:ok cos ≈ 1
+      var u1 = cadeia[1] ? hzv(cadeia[1]) : null; if (!u1 || u1.x * u0.x + u1.z * u0.z >= C45) return null;
+    }
+    var Ib = BI(), iMinDN = num(Ib && Ib.inclinacaoMinima ? Ib.inclinacaoMinima(cadeia[0].sistema || "esgoto", num(cadeia[0].dn, 40)) : null, 0) / 100;   /* a declividade mínima do DN (NBR 8160, HidNormas) */   // hid:ok DN de reserva
+    for (var k = 0; k < cadeia.length; k++) {
+      var Pk = cadeia[k].p1, ex = P.x - Pk.x, ez = P.z - Pk.z, a = ex * dir.x + ez * dir.z, w = Math.abs(ex * -dir.z + ez * dir.x), s = a - w;
+      if (s < -1e-6 || w < 0.01) continue;   // hid:ok 1 cm: sem desvio lateral não há diagonal
+      s = Math.max(0, s);
+      var X = { x: r4(P.x - dir.x * s), z: r4(P.z - dir.z * s) }, dg = Math.hypot(X.x - Pk.x, X.z - Pk.z); if (dg < 0.05) continue;   // hid:ok 5 cm: diagonal curta demais para o joelho
+      var ud = { x: (X.x - Pk.x) / dg, z: (X.z - Pk.z) / dg };
+      /* em Pk: o trecho que chega (o de antes da cadeia) não pode virar mais de 45° para a diagonal; vertical (a perna) pode */
+      var antes = tr.filter(function (x) { return cadeia.indexOf(x) < 0 && mesmo(x.p2, Pk); })[0], ua = antes ? hzv(antes) : null;
+      if (ua && ua.x * ud.x + ua.z * ud.z < C45) continue;
+      var Lt = dg + s, y0 = Pk.y, y1 = P.y; if (y1 > y0 + 1e-6) continue;   // hid:ok tolerância numérica
+      /* o reto final X → P na declividade da boca (vira um tubo só com ela, sem luva); a diagonal leva o resto e não pode ficar mais deitada que ela */
+      var iB0 = Math.max(num(iBoca, (y0 - y1) / Lt), iMinDN), Lf = fim ? Math.hypot(fim.x - P.x, fim.z - P.z) : 0, yP = fim ? r4Cima(Math.max(y1, fim.y + iB0 * Lf)) : y1;   /* com a boca (fim): a reta X → boca inteira na declividade (o toco da boca vira parte dela) */
+      var Xp = { x: X.x, y: r4Cima(yP + iB0 * s), z: X.z }, Pn = { x: P.x, y: yP, z: P.z }; if ((y0 - Xp.y) / dg < iB0 - 1e-4) continue;   // hid:ok 0,01 %
+      var segs = [{ a: Pk, b: Xp, sistema: cadeia[0].sistema }];
+      if (s > 0.005) segs.push({ a: Xp, b: Pn, sistema: cadeia[0].sistema });   // hid:ok 5 mm
+      var Hm = typeof global !== "undefined" && global.HidMao ? global.HidMao : (typeof window !== "undefined" ? window.HidMao : null);
+      if (Hm && Hm._int && Hm._int.colide) { var mot = Hm._int.colide(estado, avaliarFam, segs, cadeia[0].dn, arr(ignTr), ignFam); if (mot) continue; }
+      var novos = [], base = cadeia[0];
+      segs.forEach(function (sg, i) { var n = JSON.parse(JSON.stringify(base)); n.id = base.id + (i ? "-al" + i : "-al"); n.p1 = { x: sg.a.x, y: sg.a.y, z: sg.a.z }; n.p2 = { x: sg.b.x, y: sg.b.y, z: sg.b.z }; delete n.comprimento; novos.push(n); });
+      var fora = cadeia.slice(0, k + 1), i0 = ops.indexOf(fora[fora.length - 1]);
+      var out = ops.filter(function (x) { return fora.indexOf(x) < 0; });
+      var pos = Math.min(Math.max(0, out.indexOf(ops[i0 - 1]) + 1), out.length);
+      Array.prototype.splice.apply(out, [pos, 0].concat(novos));
+      return { ops: out, trocados: fora.length, s: s, P: Pn };
+    }
+    return null;
   }
   function unirColineares(ops, existentes) {
     var tr = ops.filter(function (x) { return x.op === "trecho"; }), mudou = true, fixo = {};

@@ -264,7 +264,40 @@
   }
   function copiaB(b, y) { var c = JSON.parse(JSON.stringify(b)); c.y = r6(y); return c; }
 
-  var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, _int: { colide: colide, embutido: embutido } };
+  /* --------------------------------------------------------------- CANTO DO RAMAL → CORPO DO TUBO A JUSANTE (27/11/2026)
+     Esgoto terminando no NÓ em que dois tubos já se encontram (o canto de um ramal): o nó virava um TÊ sem dois tubos alinhados (o verificador
+     avisa "tê assumido") e, no Ligar A → B, até cruzeta. O certo é a derivação entrar no corpo do tubo que SAI do canto (a jusante), logo depois
+     da bolsa da conexão, onde a ferramenta já põe a junção a 45° a favor do fluxo. → alvo { tipo: "meio", trecho, x, y, z, dn, doCanto: true } ou null
+     (ponta livre, tubo a jusante vertical ou curto: fica como está). */
+  var DESLOC_CANTO = 0.20;   // hid:ok 20 cm do nó: a bolsa da conexão do canto + a folga até a junção (geometria, o mesmo da perna lateral do HidLigar)
+  function cantoParaMeio(estado, alvo, sistema, de) {
+    if (!alvo || alvo.tipo !== "ponta" || alvo.trecho == null) return null;
+    var tr = arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t && t.p1 && t.p2 && (!sistema || t.sistema === sistema); });
+    var no = { x: num(alvo.x, 0), y: num(alvo.y, 0), z: num(alvo.z, 0) }, juntos = tr.filter(function (t) { return d3(t.p1, no) <= tol() || d3(t.p2, no) <= tol(); });
+    if (juntos.length !== 2) return null;
+    function ponta(t) { var a = d3(t.p1, no) <= tol() ? t.p1 : t.p2; return { no: a, outra: a === t.p1 ? t.p2 : t.p1 }; }
+    var sai = juntos.filter(function (t) { var q = ponta(t); return q.outra.y <= q.no.y + EPS; }), chega = juntos.filter(function (t) { return sai.indexOf(t) < 0; });
+    if (sai.length !== 1 || chega.length !== 1) { sai = juntos.filter(function (t) { var q = ponta(t); return q.outra.y <= q.no.y + EPS; }).slice(0, 1); chega = juntos.filter(function (t) { return t !== sai[0]; }); }
+    function no2(t, longe) {   /* o ponto a DESLOC_CANTO do canto, no tubo t (deitado e comprido o bastante) */
+      if (!t || hz(t.p1, t.p2) <= 0.005) return null;   // hid:ok 5 mm: deitado
+      var q = ponta(t), L = d3(q.no, q.outra); if (L < 2 * DESLOC_CANTO) return null;
+      var u = DESLOC_CANTO / L;
+      return { tipo: "meio", trecho: t.id, dn: t.dn, doCanto: true, lado: longe, x: r6(q.no.x + (q.outra.x - q.no.x) * u), y: r6(q.no.y + (q.outra.y - q.no.y) * u), z: r6(q.no.z + (q.outra.z - q.no.z) * u) };
+    }
+    /* o traço que vem de  até o ponto não pode cruzar o OUTRO tubo do canto em planta (senão: o tubo a montante, do lado de quem chega) */
+    function cruza(pt, outro) {
+      if (!de || !outro) return false;
+      var a = de, b = pt, c = outro.p1, d = outro.p2;
+      function o(p, q, r) { return (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x); }
+      var d1 = o(c, d, a), d2 = o(c, d, b), d3_ = o(a, b, c), d4 = o(a, b, d);
+      return ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3_ > 1e-9 && d4 < -1e-9) || (d3_ < -1e-9 && d4 > 1e-9));   // hid:ok tolerância numérica da interseção
+    }
+    var jus = no2(sai[0], "jusante"), mon = no2(chega[0], "montante");
+    if (jus && !cruza(jus, chega[0])) return jus;
+    if (mon && !cruza(mon, sai[0])) return mon;
+    return jus || mon || null;
+  }
+  var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, cantoParaMeio: cantoParaMeio, DESLOC_CANTO: DESLOC_CANTO, _int: { colide: colide, embutido: embutido } };
   global.HidMao = HidMao;
   if (typeof module !== "undefined" && module.exports) module.exports = HidMao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -7367,6 +7367,8 @@ if (sis === "pluvial") ops.forEach(function (x) { if (x.op === "trecho") { x.sis
 var antes = [];
 if (entra45) {
 ops.push({ op: "trecho", id: par.prefixo + "j45", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num((ops[ops.length - 1] || {}).dn, 40), p1: entra45.P, p2: entra45.J });
+var jL = Math.hypot(entra45.J.x - entra45.P.x, entra45.J.z - entra45.P.z), alJ = jL > 0.01 ? alinharChegada(ops, entra45.J, { x: (entra45.J.x - entra45.P.x) / jL, z: (entra45.J.z - entra45.P.z) / jL }, estado, avaliarFam, [A.famInst], (entra45.P.y - entra45.J.y) / jL, [B.trecho]) : null;
+if (alJ) ops = alJ.ops;
 antes = dividir(estado, B.trecho, entra45.J);
 } else if (B.tipo === "meio" && B.trecho) {
 var fim = null; ops.forEach(function (x) { if (x.op === "trecho" && Math.hypot(x.p2.x - B.x, x.p2.z - B.z) < 0.05) fim = x.p2; });
@@ -7387,6 +7389,11 @@ var pre = lat ? [tocoO, lat] : [tocoO];
 if (vt0) { ops = pre.concat(ops).concat(vt0.ops.slice(2)); avVent = vt0.aviso; noVent = vt0.no; } else ops = pre.concat(ops);
 }
 if (altSaida) { ops = [JSON.parse(JSON.stringify(altSaida))].concat(ops); o.avisos = arr(o.avisos); o.avisos.push("a saída da " + txt((I.PECAS[PkA.peca] || {}).nome).toLowerCase() + " " + PkA.id + " foi virada para o lado da ligação (a peça girou " + Math.round(PkA.rotY * 180 / Math.PI) + "°)"); }
+if (bocaB) {
+var dbx = bocaB.boca.x - bocaB.P.x, dbz = bocaB.boca.z - bocaB.P.z, dbL = Math.hypot(dbx, dbz);
+var alC = dbL > 0.01 ? alinharChegada(ops, bocaB.P, { x: dbx / dbL, z: dbz / dbL }, estado, avaliarFam, [A.famInst], (bocaB.P.y - bocaB.boca.y) / dbL, null, bocaB.boca) : null;
+if (alC) { ops = alC.ops; if (alC.P) bocaB.P = alC.P; o.avisos = arr(o.avisos); o.avisos.push("a chegada na caixa " + txt(PkB0.id) + " foi alinhada com a boca por um desvio a 45° (sem joelho 90° no horizontal)"); }
+}
 if (bocaB) ops.push({ op: "trecho", id: par.prefixo + "boca", sistema: sis, material: (ops[ops.length - 1] || {}).material || "pvc_esgoto", dn: dnA || num(bocaB.boca.dn, 40), p1: bocaB.P, p2: { x: bocaB.boca.x, y: bocaB.boca.y, z: bocaB.boca.z } });
 ops = unirColineares(ops, arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return String(t.id) !== String(B.trecho) && String(t.id) !== String(A.trecho); }));
 if (noVent) {
@@ -7454,6 +7461,48 @@ if (melhor && melhor.d > 0.03) { var Pw = { x: r4(melhor.F.x), y: r4(y0 + 0.01 *
 T("2", P0, { x: topoX, y: Math.max(yTopo, r4(P0.y + 0.3)), z: topoZ }, { continua: "p2" });
 return { ops: out, no: M, aviso: melhor ? "ventilação DN " + KV.dn + " da caixa " + PkA.id + " sobe na parede " + melhor.id + " (" + (melhor.d * 100).toFixed(0) + " cm) até +" + KV.alto.toFixed(2).replace(".", ",") + " m — continuar até o terminal ou a coluna de ventilação"
 : "ventilação DN " + KV.dn + " da caixa " + PkA.id + ": nenhuma parede a menos de " + KV.alcance.toFixed(1).replace(".", ",") + " m com caminho livre de outros tubos — a coluna sobe ao lado da caixa; confira" };
+}
+function alinharChegada(ops, P, dir, estado, avaliarFam, ignFam, iBoca, ignTr, fim) {
+function r4Cima(v) { return Math.ceil(v * 10000 - 1e-6) / 10000; }
+var tr = ops.filter(function (x) { return x.op === "trecho"; }), EPSP = 0.002;
+function mesmo(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.z - b.z) <= EPSP && Math.abs(a.y - b.y) <= 0.01; }
+function hzv(t) { var dx = t.p2.x - t.p1.x, dz = t.p2.z - t.p1.z, L = Math.hypot(dx, dz); return L > 0.005 ? { x: dx / L, z: dz / L, L: L } : null; }
+var cadeia = [], alvo = P;
+for (var g = 0; g < 8; g++) {
+var t = tr.filter(function (x) { return cadeia.indexOf(x) < 0 && mesmo(x.p2, alvo); })[0];
+if (!t || !hzv(t)) break;
+cadeia.push(t); alvo = t.p1;
+}
+if (!cadeia.length) return null;
+var u0 = hzv(cadeia[0]), C45 = Math.SQRT1_2 - 1e-6;
+if (u0.x * dir.x + u0.z * dir.z > 0.999) {
+var u1 = cadeia[1] ? hzv(cadeia[1]) : null; if (!u1 || u1.x * u0.x + u1.z * u0.z >= C45) return null;
+}
+var Ib = BI(), iMinDN = num(Ib && Ib.inclinacaoMinima ? Ib.inclinacaoMinima(cadeia[0].sistema || "esgoto", num(cadeia[0].dn, 40)) : null, 0) / 100;
+for (var k = 0; k < cadeia.length; k++) {
+var Pk = cadeia[k].p1, ex = P.x - Pk.x, ez = P.z - Pk.z, a = ex * dir.x + ez * dir.z, w = Math.abs(ex * -dir.z + ez * dir.x), s = a - w;
+if (s < -1e-6 || w < 0.01) continue;
+s = Math.max(0, s);
+var X = { x: r4(P.x - dir.x * s), z: r4(P.z - dir.z * s) }, dg = Math.hypot(X.x - Pk.x, X.z - Pk.z); if (dg < 0.05) continue;
+var ud = { x: (X.x - Pk.x) / dg, z: (X.z - Pk.z) / dg };
+var antes = tr.filter(function (x) { return cadeia.indexOf(x) < 0 && mesmo(x.p2, Pk); })[0], ua = antes ? hzv(antes) : null;
+if (ua && ua.x * ud.x + ua.z * ud.z < C45) continue;
+var Lt = dg + s, y0 = Pk.y, y1 = P.y; if (y1 > y0 + 1e-6) continue;
+var iB0 = Math.max(num(iBoca, (y0 - y1) / Lt), iMinDN), Lf = fim ? Math.hypot(fim.x - P.x, fim.z - P.z) : 0, yP = fim ? r4Cima(Math.max(y1, fim.y + iB0 * Lf)) : y1;
+var Xp = { x: X.x, y: r4Cima(yP + iB0 * s), z: X.z }, Pn = { x: P.x, y: yP, z: P.z }; if ((y0 - Xp.y) / dg < iB0 - 1e-4) continue;
+var segs = [{ a: Pk, b: Xp, sistema: cadeia[0].sistema }];
+if (s > 0.005) segs.push({ a: Xp, b: Pn, sistema: cadeia[0].sistema });
+var Hm = typeof global !== "undefined" && global.HidMao ? global.HidMao : (typeof window !== "undefined" ? window.HidMao : null);
+if (Hm && Hm._int && Hm._int.colide) { var mot = Hm._int.colide(estado, avaliarFam, segs, cadeia[0].dn, arr(ignTr), ignFam); if (mot) continue; }
+var novos = [], base = cadeia[0];
+segs.forEach(function (sg, i) { var n = JSON.parse(JSON.stringify(base)); n.id = base.id + (i ? "-al" + i : "-al"); n.p1 = { x: sg.a.x, y: sg.a.y, z: sg.a.z }; n.p2 = { x: sg.b.x, y: sg.b.y, z: sg.b.z }; delete n.comprimento; novos.push(n); });
+var fora = cadeia.slice(0, k + 1), i0 = ops.indexOf(fora[fora.length - 1]);
+var out = ops.filter(function (x) { return fora.indexOf(x) < 0; });
+var pos = Math.min(Math.max(0, out.indexOf(ops[i0 - 1]) + 1), out.length);
+Array.prototype.splice.apply(out, [pos, 0].concat(novos));
+return { ops: out, trocados: fora.length, s: s, P: Pn };
+}
+return null;
 }
 function unirColineares(ops, existentes) {
 var tr = ops.filter(function (x) { return x.op === "trecho"; }), mudou = true, fixo = {};
@@ -7682,7 +7731,34 @@ var bb = copiaB(b, y); bb.dRebaixo = falta;
 return { ok: true, boca: bb, y: r6(y), rebaixo: r4(falta) };
 }
 function copiaB(b, y) { var c = JSON.parse(JSON.stringify(b)); c.y = r6(y); return c; }
-var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, _int: { colide: colide, embutido: embutido } };
+var DESLOC_CANTO = 0.20;
+function cantoParaMeio(estado, alvo, sistema, de) {
+if (!alvo || alvo.tipo !== "ponta" || alvo.trecho == null) return null;
+var tr = arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t && t.p1 && t.p2 && (!sistema || t.sistema === sistema); });
+var no = { x: num(alvo.x, 0), y: num(alvo.y, 0), z: num(alvo.z, 0) }, juntos = tr.filter(function (t) { return d3(t.p1, no) <= tol() || d3(t.p2, no) <= tol(); });
+if (juntos.length !== 2) return null;
+function ponta(t) { var a = d3(t.p1, no) <= tol() ? t.p1 : t.p2; return { no: a, outra: a === t.p1 ? t.p2 : t.p1 }; }
+var sai = juntos.filter(function (t) { var q = ponta(t); return q.outra.y <= q.no.y + EPS; }), chega = juntos.filter(function (t) { return sai.indexOf(t) < 0; });
+if (sai.length !== 1 || chega.length !== 1) { sai = juntos.filter(function (t) { var q = ponta(t); return q.outra.y <= q.no.y + EPS; }).slice(0, 1); chega = juntos.filter(function (t) { return t !== sai[0]; }); }
+function no2(t, longe) {
+if (!t || hz(t.p1, t.p2) <= 0.005) return null;
+var q = ponta(t), L = d3(q.no, q.outra); if (L < 2 * DESLOC_CANTO) return null;
+var u = DESLOC_CANTO / L;
+return { tipo: "meio", trecho: t.id, dn: t.dn, doCanto: true, lado: longe, x: r6(q.no.x + (q.outra.x - q.no.x) * u), y: r6(q.no.y + (q.outra.y - q.no.y) * u), z: r6(q.no.z + (q.outra.z - q.no.z) * u) };
+}
+function cruza(pt, outro) {
+if (!de || !outro) return false;
+var a = de, b = pt, c = outro.p1, d = outro.p2;
+function o(p, q, r) { return (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x); }
+var d1 = o(c, d, a), d2 = o(c, d, b), d3_ = o(a, b, c), d4 = o(a, b, d);
+return ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3_ > 1e-9 && d4 < -1e-9) || (d3_ < -1e-9 && d4 > 1e-9));
+}
+var jus = no2(sai[0], "jusante"), mon = no2(chega[0], "montante");
+if (jus && !cruza(jus, chega[0])) return jus;
+if (mon && !cruza(mon, sai[0])) return mon;
+return jus || mon || null;
+}
+var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, cantoParaMeio: cantoParaMeio, DESLOC_CANTO: DESLOC_CANTO, _int: { colide: colide, embutido: embutido } };
 global.HidMao = HidMao;
 if (typeof module !== "undefined" && module.exports) module.exports = HidMao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -4,18 +4,18 @@
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=2d4811d826",
+  "js/pacotes/bim.js?v=69cb4b04e8",
   "js/bim-pacote.js?v=ff23a63aa4",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
-  "js/pacotes/hidro.js?v=1c9029c1bc"
+  "js/pacotes/hidro.js?v=6e216212fb"
  ],
  "tamanhos": {
   "js/pacotes/nucleo-1.js": 5727940,
   "js/pacotes/nucleo-2.js": 5718819,
-  "js/pacotes/bim.js?v=2d4811d826": 24989452,
+  "js/pacotes/bim.js?v=69cb4b04e8": 24990707,
   "js/bim-pacote.js?v=ff23a63aa4": 1085145,
   "js/metalcalcvista-pacote.js?v=122abc30d5": 174083,
-  "js/pacotes/hidro.js?v=1c9029c1bc": 8867717
+  "js/pacotes/hidro.js?v=6e216212fb": 8873648
  },
  "pulados": [
   "venda/perfis-clientes.js"
