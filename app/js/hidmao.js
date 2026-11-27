@@ -114,6 +114,26 @@
     return motivo;
   }
 
+  /* --------------------------------------------------------------- FUROS DE PASSAGEM (27/11/2026)
+     Um trecho deitado que CRUZA o eixo de uma parede em planta (de um lado ao outro dela) precisa de furo de passagem na obra: o aviso diz qual
+     parede e o DN, para o projetista ver na planta. Correr DENTRO da parede (ao longo dela) não é furo. */
+  function furos(estado, famAval, segs, dn) {
+    var H = HR(), obs = null; try { obs = H && H.obstaculosDoBim ? H.obstaculosDoBim(estado, famAval) : null; } catch (eO) { obs = null; }
+    var out = [], vistos = {};
+    arr(obs && obs.paredes).forEach(function (w) {
+      if (!w || !w.p1 || !w.p2) return;
+      var y0 = num(w.base, 0), y1 = y0 + num(w.altura, 99);   // hid:ok parede sem altura = do piso ao teto (sem limite)
+      segs.forEach(function (sg) {
+        if (vistos[w.id] || Math.abs(sg.a.y - sg.b.y) > 0.01) return;   // hid:ok 1 cm: só o trecho deitado atravessa a parede
+        var y = (sg.a.y + sg.b.y) / 2; if (y < y0 || y > y1) return;
+        var d1 = lado(w.p1, w.p2, sg.a), d2 = lado(w.p1, w.p2, sg.b), d3_ = lado(sg.a, sg.b, w.p1), d4 = lado(sg.a, sg.b, w.p2);
+        if (d1 * d2 < -1e-12 && d3_ * d4 < -1e-12) { vistos[w.id] = 1; out.push("a rota atravessa a parede " + txt(w.id) + ": furo de passagem para o tubo DN " + num(dn, 25)); }   // hid:ok tolerância numérica · DN de reserva
+      });
+    });
+    return out;
+    function lado(p, q, r) { return (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x); }
+  }
+
   /* --------------------------------------------------------------- LIGAÇÃO PELA PAREDE (água)
      A = ponto de parede do aparelho { tipo:"aparelho"|"conector", x,y,z, parede:{x,z,d}, famInst } ; B = { tipo: "meio"|"ponta"|"vertical"|
      "aparelho"|"conector", ... }. A ordem não importa na água (sem escoamento). o = { sistema, material, dn, prefixo, opTrecho(p1,p2) } */
@@ -128,7 +148,14 @@
     var TS = arr(estado && estado.instalacoes && estado.instalacoes.trechos), pts = [], ign = [], extras = [], nome = "", avisos = [];
     function tr(id) { return TS.filter(function (t) { return String(t.id) === String(id); })[0] || null; }
     function caminho(lista) { var out = []; lista.forEach(function (q) { var ult = out[out.length - 1]; if (!ult || d3(ult, q) > 0.005) out.push({ x: r4(q.x), y: r6(q.y), z: r4(q.z) }); }); return out; }   // hid:ok 5 mm: ponto repetido
-    var Ap = { x: A.x, y: A.y, z: A.z };
+    var Ap = { x: A.x, y: A.y, z: A.z }, ppMeio = null;
+    /* ponto ↔ ponto: toco no ponto A, (sobe/desce até a altura do trecho deitado), os vértices do meio nessa altura, a vertical no ponto B, o toco dele */
+    function rotaPP(yR) {
+      var l = [Ap, Pa, { x: Pa.x, y: yR, z: Pa.z }];
+      ppMeio.forEach(function (q) { l.push({ x: q.x, y: yR, z: q.z }); });
+      l.push({ x: Pb.x, y: yR, z: Pb.z }, { x: Pb.x, y: B.y, z: Pb.z }, { x: B.x, y: B.y, z: B.z });
+      return caminho(l);
+    }
 
     if (B.tipo === "meio" || B.tipo === "ponta") {
       var T = tr(B.trecho); if (!T) return { ok: false, erro: "não achei o tubo " + txt(B.trecho) };
@@ -185,18 +212,48 @@
       var nB = { x: B.parede.x, z: B.parede.z }, Pb = embutido(B, dn), cosN = n.x * nB.x + n.z * nB.z;
       var yH = nivelPonto(A.y, B.y), mesma = cosN > 0.99 && Math.abs((Pb.x - Pa.x) * n.x + (Pb.z - Pa.z) * n.z) <= ALINHADO;   // hid:ok paralelas
       if (mesma) {
-        var Pb2 = { x: Pb.x, y: A.y, z: Pb.z };
-        pts = caminho([Ap, Pa, Pb2, { x: Pb.x, y: B.y, z: Pb.z }, { x: B.x, y: B.y, z: B.z }]);
+        ppMeio = [];
         nome = "pela parede: corre embutido e sobe/desce no ponto de destino";
         void yH;
-      } else if (Math.abs(cosN) < 0.05) {   // hid:ok geometria do desenho / tolerância (não é norma)
-        /* paredes do canto: o encontro das duas linhas embutidas */
+      } else if (cosN < -0.99) {   // hid:ok paralelas, de frente uma para a outra
+        /* 27/11/2026 — AS DUAS FACES DA MESMA PAREDE (banheiro de costas para a cozinha, lavatório × pia): a rota corre embutida até a frente do
+           outro ponto e ATRAVESSA a parede a 90° (furo de passagem), na altura do ponto de origem; depois sobe/desce embutida até o destino. */
+        var sep = (Pb.x - Pa.x) * n.x + (Pb.z - Pa.z) * n.z;
+        if (!(sep > -ALINHADO) || sep > PERTO_LINHA) return { ok: false, erro: "os pontos estão em paredes paralelas que não são as duas faces da mesma parede (" + Math.round(Math.abs(sep) * 100) + " cm)" };
+        var ouB = (Pb.x - Pa.x) * u.x + (Pb.z - Pa.z) * u.z, Qf = { x: r4(Pa.x + u.x * ouB), y: A.y, z: r4(Pa.z + u.z * ouB) };
+        ppMeio = [Qf];
+        nome = "pela parede até a frente do ponto, atravessa a parede (furo de passagem) e sobe/desce embutido";
+      } else if (cosN < 0.99) {   // hid:ok não paralelas
+        /* paredes do canto (90°) ou em ângulo (27/11/2026: a 45°): o encontro das duas linhas embutidas. A virada no canto precisa de conexão de
+           catálogo — joelho de 90° ou de 45° (as de água do PVC soldável); outro ângulo de parede não tem peça e a rota é recusada com o ângulo. */
         var uB = { x: -nB.z, z: nB.x }, den = u.x * uB.z - u.z * uB.x; if (Math.abs(den) < EPS) return { ok: false, erro: "paredes paralelas fora de linha" };
         var t0 = ((Pb.x - Pa.x) * uB.z - (Pb.z - Pa.z) * uB.x) / den, Cq = { x: r4(Pa.x + u.x * t0), y: A.y, z: r4(Pa.z + u.z * t0) };
         if (Math.abs(t0) > 8 || hz(Cq, Pb) > 8) return { ok: false, erro: "o canto entre as paredes fica longe" };   // hid:ok 8 m de alcance
-        pts = caminho([Ap, Pa, Cq, { x: Pb.x, y: A.y, z: Pb.z }, { x: Pb.x, y: B.y, z: Pb.z }, { x: B.x, y: B.y, z: B.z }]);
+        var dIda = unit(Cq.x - Pa.x, Cq.z - Pa.z), dVolta = unit(Pb.x - Cq.x, Pb.z - Cq.z);
+        if (dIda && dVolta) {
+          var cosV = dIda.x * dVolta.x + dIda.z * dVolta.z, angV = Math.round(Math.acos(Math.max(-1, Math.min(1, cosV))) * 180 / Math.PI);   // hid:ok rad → graus
+          if (!(Math.abs(cosV) < 0.05 || Math.abs(cosV - Math.SQRT1_2) < 0.05)) return { ok: false, erro: "no encontro das paredes a rota viraria " + angV + "°: só há joelho de 90° e de 45° (desenhe à mão)" };   // hid:ok ~3°: 90° ou 45°
+          if (Math.abs(cosV - Math.SQRT1_2) < 0.05) avisos.push("as paredes se encontram em ângulo: a virada no canto é um joelho de 45°");   // hid:ok ~3°
+        }
+        ppMeio = [Cq];
         nome = "pela parede até o canto e pela outra parede até o ponto";
-      } else return { ok: false, erro: "os pontos estão em paredes que não se encontram em ângulo reto" };
+      } else return { ok: false, erro: "os pontos estão em paredes paralelas fora de linha" };
+      /* 27/11/2026 — ÁGUA QUENTE × ÁGUA FRIA NA MESMA FAIXA: a rota corre na altura do ponto de origem; se ali ela bate num tubo (a água fria do
+         mesmo aparelho, que corre na mesma parede), o trecho deitado passa ACIMA ou ABAIXO dele — subindo/descendo embutido no ponto de origem —
+         com o afastamento de dois raios + a folga entre tubos do traçado automático (HidRota GEO.folga). Até 3 passos para cada lado. */
+      var GH = HR() && HR().GEO, passo = r4(num(dn, 25) / 1000 + num(GH && GH.folga, 0.03)), yRs = [A.y];   // hid:ok raio = DN/2000 × 2 · folga de reserva = a do HidRota
+      for (var kD = 1; kD <= 3; kD++) yRs.push(A.y + passo * kD, A.y - passo * kD);   // hid:ok até 3 passos
+      var escolhido = null;
+      for (var iY = 0; iY < yRs.length && !escolhido; iY++) {
+        var cand = rotaPP(yRs[iY]); if (iY === 0) pts = cand;
+        var sgC = []; for (var jC = 1; jC < cand.length; jC++) sgC.push({ a: cand[jC - 1], b: cand[jC], sistema: sis });
+        var curtoC = sgC.some(function (sg, k) { return k > 0 && k < sgC.length - 1 && d3(sg.a, sg.b) < tol() + 0.005; });   // hid:ok o mesmo limite do fechar()
+        if (!curtoC && !colide(estado, famAval, sgC.slice(1), dn, ign, [A.famInst, B.famInst])) escolhido = { pts: cand, y: yRs[iY] };
+      }
+      if (escolhido) {
+        pts = escolhido.pts;
+        if (Math.abs(escolhido.y - A.y) > 0.001) avisos.push("na altura do ponto a rota bateria noutro tubo: o trecho deitado passa " + Math.round(Math.abs(escolhido.y - A.y) * 100) + " cm " + (escolhido.y > A.y ? "acima" : "abaixo") + " (sobe/desce embutido no ponto de origem)");   // hid:ok m → cm
+      }
     } else return { ok: false, erro: "destino sem ligação direta pela parede" };
 
     return fechar();
@@ -209,6 +266,7 @@
     var famIgn = [A.famInst, B.famInst];
     var bate = colide(estado, famAval, segs.slice(1), dn, ign, famIgn);   /* o 1º trecho é o toco do próprio ponto */
     if (bate) return { ok: false, erro: "a rota pela parede " + bate };
+    furos(estado, famAval, segs, dn).forEach(function (f) { avisos.push(f); });
     var ops = [], seq = 0, pref = txt(o.prefixo || ("mao" + Date.now().toString(36) + "-"));   // hid:ok geometria do desenho / tolerância (não é norma)
     segs.forEach(function (s) {
       var op = o.opTrecho ? o.opTrecho(s.a, s.b) : { op: "trecho", sistema: sis, material: o.material, dn: dn, p1: s.a, p2: s.b };
@@ -297,7 +355,7 @@
     if (mon && !cruza(mon, sai[0])) return mon;
     return jus || mon || null;
   }
-  var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, cantoParaMeio: cantoParaMeio, DESLOC_CANTO: DESLOC_CANTO, _int: { colide: colide, embutido: embutido } };
+  var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, furos: furos, renivelar: renivelar, entradaCaixa: entradaCaixa, cantoParaMeio: cantoParaMeio, DESLOC_CANTO: DESLOC_CANTO, _int: { colide: colide, embutido: embutido } };
   global.HidMao = HidMao;
   if (typeof module !== "undefined" && module.exports) module.exports = HidMao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
