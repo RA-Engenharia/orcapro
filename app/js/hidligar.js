@@ -178,7 +178,10 @@
     if (A.parede) con.parede = A.parede;
     var par = { estrategias: opts.estrategias || (sisRota === "esgoto" ? ["piso", "forro"] : ["parede", "piso", "forro"]), prefixo: PREFIXO + (opts.seq || (++SEQ) + "-"), dn: {}, terreo: opts.terreo !== false,
                tracadoParcial: false /* rota:parcial só vale no traçado automático de AMBIENTE; a ligação pontual (1 aparelho → 1 destino) recusa com o motivo, nunca "liga" sem o tubo */ };
-    if (tocoA) par.quedaMin = 0.001;   /* a ponta do toco da caixa já está na cota da rota: sem a descida mínima do ponto de APARELHO (é tubo, não louça) */   // hid:ok 1 mm: só para não ser zero
+    /* ⚠ 6 mm, não 1 mm (26/11/2026): com 1 mm a "descida" do toco até o ramal saía com 0,9 mm, o modelador recusa tubo de até 5 mm e a estratégia
+       inteira caía — caixa sifonada → tubo de queda nunca ligava ("o modelador recusou lg-piso-es-4"). Com 6 mm ela existe e o arremate abaixo (vt)
+       a tira: a caixa desce com o prolongador ou o toco inclina e funde no 1º horizontal (um tubo só, nenhuma luva). */
+    if (tocoA) par.quedaMin = 0.006;   /* a ponta do toco da caixa já está na cota da rota: sem a descida mínima do ponto de APARELHO (é tubo, não louça) */   // hid:ok 6 mm: acima do menor tubo que o modelador aceita (5 mm)
     /* o id do "aparelho" é o da FAMÍLIA do ponto: a conferência tubo × louça sabe que o toco que chega nele é dela */
     var apId = A.famInst != null ? String(A.famInst) : "A";
     if (dnA > 0) par.dn[apId + ":c"] = dnA;
@@ -408,7 +411,11 @@
     var t1 = JSON.parse(JSON.stringify(toco)), t2 = JSON.parse(JSON.stringify(toco)); t1.p2 = M; t2.id = toco.id + "-2"; t2.p1 = M;   /* t1 mantém o id do toco (quem procura o toco acha) */
     /* os tubos que o caminho da ventilação não pode atravessar: os da rota desta ligação e os que já existem */
     var outros = arr(rota).filter(function (q) { return q && q.op === "trecho" && q.id !== toco.id; }).concat(arr(estado && estado.instalacoes && estado.instalacoes.trechos));
-    function livre(a, b) { return outros.every(function (q) { if (!q.p1 || !q.p2) return true; var enc = [q.p1, q.p2].some(function (r) { return Math.hypot(r.x - a.x, r.y - a.y, r.z - a.z) < 0.02; }); return enc || distSeg(a, b, q.p1, q.p2) >= (num(q.dn, 50) + KV.dn) / 2000 + 0.01; }); }   // hid:ok 1 cm de folga (geometria)
+    /* ⚠ 26/11/2026 (test-hid-conectores, depois que caixa → tubo de queda passou a fechar): a coluna subia por dentro do LAVATÓRIO — o caminho só
+       desviava de tubos. A louça/equipamento também bloqueia (o mesmo tuboEmVolume do traçado automático). */
+    var volsV = []; try { volsV = BI().volumesFamilias ? BI().volumesFamilias(estado, avaliarFam) : []; } catch (eVv) { volsV = []; }
+    function livreFam(a, b) { var I0 = BI(); return !I0.tuboEmVolume || volsV.every(function (v) { return !I0.tuboEmVolume(v, a, b, KV.dn / 2000, [], 0); }); }
+    function livre(a, b) { return livreFam(a, b) && outros.every(function (q) { if (!q.p1 || !q.p2) return true; var enc = [q.p1, q.p2].some(function (r) { return Math.hypot(r.x - a.x, r.y - a.y, r.z - a.z) < 0.02; }); return enc || distSeg(a, b, q.p1, q.p2) >= (num(q.dn, 50) + KV.dn) / 2000 + 0.01; }); }   // hid:ok 1 cm de folga (geometria)
     var obs = null; try { obs = H.obstaculosDoBim(estado, avaliarFam); } catch (e) { obs = null; }
     var cands = [], y0 = r4(M.y + KV.subida);
     arr(obs && obs.paredes).forEach(function (w) {
@@ -452,7 +459,7 @@
     }
     return ops;
   }
-  var HidLigar = { VERSAO: 1, bate45: bate45, unirColineares: unirColineares, ligar: ligar, destino: destino, dividir: dividir };
+  var HidLigar = { VERSAO: 1, bate45: bate45, unirColineares: unirColineares, ligar: ligar, destino: destino, dividir: dividir, opsRebaixo: opsRebaixo };   /* opsRebaixo: o traço à mão (js/biminstui.js) rebaixa a caixa como aqui */
   global.HidLigar = HidLigar;
   if (typeof module !== "undefined" && module.exports) module.exports = HidLigar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

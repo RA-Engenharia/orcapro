@@ -7243,7 +7243,7 @@ var con = { id: "c", sistema: sisRota, dn: dnA || num(A.dn, 0), x: A.x, y: A.y, 
 if (A.parede) con.parede = A.parede;
 var par = { estrategias: opts.estrategias || (sisRota === "esgoto" ? ["piso", "forro"] : ["parede", "piso", "forro"]), prefixo: PREFIXO + (opts.seq || (++SEQ) + "-"), dn: {}, terreo: opts.terreo !== false,
 tracadoParcial: false };
-if (tocoA) par.quedaMin = 0.001;
+if (tocoA) par.quedaMin = 0.006;
 var apId = A.famInst != null ? String(A.famInst) : "A";
 if (dnA > 0) par.dn[apId + ":c"] = dnA;
 var entra45 = null;
@@ -7427,7 +7427,9 @@ if (jaTem) return null;
 var M = { x: r4((toco.p1.x + toco.p2.x) / 2), y: r4((toco.p1.y + toco.p2.y) / 2), z: r4((toco.p1.z + toco.p2.z) / 2) };
 var t1 = JSON.parse(JSON.stringify(toco)), t2 = JSON.parse(JSON.stringify(toco)); t1.p2 = M; t2.id = toco.id + "-2"; t2.p1 = M;
 var outros = arr(rota).filter(function (q) { return q && q.op === "trecho" && q.id !== toco.id; }).concat(arr(estado && estado.instalacoes && estado.instalacoes.trechos));
-function livre(a, b) { return outros.every(function (q) { if (!q.p1 || !q.p2) return true; var enc = [q.p1, q.p2].some(function (r) { return Math.hypot(r.x - a.x, r.y - a.y, r.z - a.z) < 0.02; }); return enc || distSeg(a, b, q.p1, q.p2) >= (num(q.dn, 50) + KV.dn) / 2000 + 0.01; }); }
+var volsV = []; try { volsV = BI().volumesFamilias ? BI().volumesFamilias(estado, avaliarFam) : []; } catch (eVv) { volsV = []; }
+function livreFam(a, b) { var I0 = BI(); return !I0.tuboEmVolume || volsV.every(function (v) { return !I0.tuboEmVolume(v, a, b, KV.dn / 2000, [], 0); }); }
+function livre(a, b) { return livreFam(a, b) && outros.every(function (q) { if (!q.p1 || !q.p2) return true; var enc = [q.p1, q.p2].some(function (r) { return Math.hypot(r.x - a.x, r.y - a.y, r.z - a.z) < 0.02; }); return enc || distSeg(a, b, q.p1, q.p2) >= (num(q.dn, 50) + KV.dn) / 2000 + 0.01; }); }
 var obs = null; try { obs = H.obstaculosDoBim(estado, avaliarFam); } catch (e) { obs = null; }
 var cands = [], y0 = r4(M.y + KV.subida);
 arr(obs && obs.paredes).forEach(function (w) {
@@ -7470,9 +7472,219 @@ a.p2 = b.p2; tr.splice(j, 1); ops.splice(ops.indexOf(b), 1); mudou = true;
 }
 return ops;
 }
-var HidLigar = { VERSAO: 1, bate45: bate45, unirColineares: unirColineares, ligar: ligar, destino: destino, dividir: dividir };
+var HidLigar = { VERSAO: 1, bate45: bate45, unirColineares: unirColineares, ligar: ligar, destino: destino, dividir: dividir, opsRebaixo: opsRebaixo };
 global.HidLigar = HidLigar;
 if (typeof module !== "undefined" && module.exports) module.exports = HidLigar;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/hidmao.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function HR() { return dep("HidRota", "./hidrota.js"); }
+function HB() { return dep("HidBocas", "./hidbocas.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { var n = Number(v); return isFinite(n) ? n : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function txt(v) { return v == null ? "" : String(v); }
+function d3(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
+function hz(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.z - b.z, 2)); }
+var EPS = 1e-6;
+var LIMIAR_DEGRAU = 0.15;
+var EMBUTIR = 0.05;
+var ALINHADO = 0.025;
+var PERTO_LINHA = 0.60;
+var FOLGA_PONTA = 0.05;
+function sisAgua(s) { return s === "agua_fria" || s === "agua_quente"; }
+function tol() { var I = BI(); return (I && I.TOL) || 0.02; }
+function embutido(A, dn) {
+var n = A.parede, e = Math.max(EMBUTIR, num(dn, 25) / 2000 + 0.01) + Math.max(0, num(n.d, 0));
+return { x: r4(A.x + n.x * e), y: A.y, z: r4(A.z + n.z * e), e: e };
+}
+function unit(x, z) { var L = Math.sqrt(x * x + z * z); return L > EPS ? { x: x / L, z: z / L, L: L } : null; }
+function dnDoPonto(estado, alvo, sistema) {
+if (!alvo) return null;
+if (num(alvo.dn, 0) > 0) return num(alvo.dn, 0);
+if (alvo.famInst == null) return null;
+var K = dep("HidKit", "./hidkit.js"), N = dep("HidNormas", "./hidnormas.js");
+var fi = arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(alvo.famInst); })[0];
+if (!K || !N || !fi || !K.tipoDaFamilia || !N.consulta) return null;
+var ap = null; try { ap = K.tipoDaFamilia(fi.famId, fi.tipoId); if (ap && K.aparelhoNorma) ap = K.aparelhoNorma(ap); } catch (e) { ap = null; }
+if (!ap) return null;
+var chaves = sistema === "esgoto" ? ["es.aparelhos"] : (sisAgua(sistema) ? ["af.aparelhos.dn_min", "af.aparelhos.dn_min_fabricante", "af.aparelhos"] : []);
+for (var i = 0; i < chaves.length; i++) {
+var c = null; try { c = N.consulta(chaves[i], { aparelho: ap }, "dn_min"); } catch (e2) { c = null; }
+if (c && c.ok && num(c.valor, 0) > 0) return num(c.valor, 0);
+}
+return null;
+}
+function nivelPonto(yTrab, yPonto) {
+return Math.abs(num(yTrab, 0) - num(yPonto, 0)) < LIMIAR_DEGRAU ? num(yPonto, 0) : num(yTrab, 0);
+}
+function colide(estado, famAval, segs, dn, ignorarTrechos, ignorarFam) {
+var I = BI(), H = HR(), G = H && H._int, r = num(dn, 25) / 2000, motivo = null;
+var ign = {}; arr(ignorarTrechos).forEach(function (id) { ign[String(id)] = 1; });
+var pontas = []; segs.forEach(function (s) { pontas.push(s.a, s.b); });
+function tocaNasPontas(t) { return pontas.some(function (q) { return d3(q, t.p1) <= tol() + EPS || d3(q, t.p2) <= tol() + EPS; }); }
+if (G && G.segSeg3) arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) {
+if (motivo || ign[String(t.id)] || !t.p1 || !t.p2) return;
+var rt = num(t.dn, 0) / 2000;
+segs.forEach(function (s) {
+if (motivo) return;
+if (tocaNasPontas(t) && t.sistema === s.sistema) return;
+if (G.segSeg3(s.a, s.b, t.p1, t.p2) < r + rt - 0.002) motivo = "cruza o tubo " + txt(t.id) + " (" + txt(t.sistema).replace("_", " ") + ")";
+});
+});
+var vols = []; try { vols = I && I.volumesFamilias ? I.volumesFamilias(estado, famAval) : []; } catch (eV) { vols = []; }
+var ignF = {}; arr(ignorarFam).forEach(function (id) { if (id != null) ignF[String(id)] = 1; });
+vols.forEach(function (v) {
+if (motivo || ignF[String(v.id)]) return;
+segs.forEach(function (s) {
+if (motivo) return;
+var L = d3(s.a, s.b), n = Math.max(2, Math.ceil(L / 0.01));
+for (var i = 1; i < n; i++) {
+var q = { x: s.a.x + (s.b.x - s.a.x) * i / n, y: s.a.y + (s.b.y - s.a.y) * i / n, z: s.a.z + (s.b.z - s.a.z) * i / n };
+var dx = q.x - v.cx, dz = q.z - v.cz, u = dx * v.ux + dz * v.uz, w = -dx * v.uz + dz * v.ux;
+if (Math.abs(u) < v.hl + r - 0.002 && Math.abs(w) < v.hw + r - 0.002 && q.y > v.y0 - r + 0.002 && q.y < v.y1 + r - 0.002) { motivo = "atravessa " + txt(v.famId || v.id); return; }
+}
+});
+});
+return motivo;
+}
+function ligarParede(estado, famAval, A, B, o) {
+o = o || {}; var I = BI(); if (!I) return { ok: false, erro: "motor das instalações não carregado" };
+var sis = o.sistema || A.sistema || B.sistema;
+if (!sisAgua(sis)) return { ok: false, erro: "a rota direta pela parede é da água (fria/quente)" };
+function ehPonto(p) { return p && (p.tipo === "aparelho" || p.tipo === "conector") && p.parede; }
+if (!ehPonto(A) && ehPonto(B)) { var tx = A; A = B; B = tx; }
+if (!ehPonto(A)) return { ok: false, erro: "nenhum dos dois é ponto de parede" };
+var dn = num(o.dn, 25), n = { x: A.parede.x, z: A.parede.z }, u = { x: -n.z, z: n.x }, Pa = embutido(A, dn);
+var TS = arr(estado && estado.instalacoes && estado.instalacoes.trechos), pts = [], ign = [], extras = [], nome = "", avisos = [];
+function tr(id) { return TS.filter(function (t) { return String(t.id) === String(id); })[0] || null; }
+function caminho(lista) { var out = []; lista.forEach(function (q) { var ult = out[out.length - 1]; if (!ult || d3(ult, q) > 0.005) out.push({ x: r4(q.x), y: r6(q.y), z: r4(q.z) }); }); return out; }
+var Ap = { x: A.x, y: A.y, z: A.z };
+if (B.tipo === "meio" || B.tipo === "ponta") {
+var T = tr(B.trecho); if (!T) return { ok: false, erro: "não achei o tubo " + txt(B.trecho) };
+if (T.sistema !== sis) return { ok: false, erro: "o tubo " + T.id + " é de outro sistema" };
+var d = unit(T.p2.x - T.p1.x, T.p2.z - T.p1.z); if (!d || Math.abs(T.p1.y - T.p2.y) > 0.01) return { ok: false, erro: "o tubo " + T.id + " não é deitado" };
+if (B.tipo === "ponta" && Math.abs(d.x * n.x + d.z * n.z) > 0.05) {
+var Pp = d3({ x: B.x, y: B.y, z: B.z }, T.p1) <= d3({ x: B.x, y: B.y, z: B.z }, T.p2) ? T.p1 : T.p2, oP = (Pp.x - Pa.x) * n.x + (Pp.z - Pa.z) * n.z;
+if (Math.abs(oP) > ALINHADO) return { ok: false, erro: "o tubo " + T.id + " não corre ao longo da parede do ponto e a ponta dele está fora da parede" };
+var Lp = { x: r4(Pa.x + n.x * oP), z: r4(Pa.z + n.z * oP) };
+pts = caminho([Ap, { x: Lp.x, y: A.y, z: Lp.z }, { x: Lp.x, y: Pp.y, z: Lp.z }, { x: Pp.x, y: Pp.y, z: Pp.z }]);
+ign.push(T.id); nome = "pela parede até a ponta do tubo " + T.id;
+return fechar();
+}
+if (Math.abs(d.x * n.x + d.z * n.z) > 0.05) return { ok: false, erro: "o tubo " + T.id + " não corre ao longo da parede do ponto" };
+var yT = T.p1.y, off = (T.p1.x - Pa.x) * n.x + (T.p1.z - Pa.z) * n.z;
+if (Math.abs(off) > PERTO_LINHA) return { ok: false, erro: "o tubo " + T.id + " está longe da parede do ponto (" + Math.round(Math.abs(off) * 100) + " cm)" };
+var linha = Math.abs(off) <= ALINHADO && Pa.e + off > 0.01 ? { x: r4(Pa.x + n.x * off), z: r4(Pa.z + n.z * off) } : { x: Pa.x, z: Pa.z };
+var s = (linha.x - T.p1.x) * d.x + (linha.z - T.p1.z) * d.z, X = null, ponta = null;
+if (B.tipo === "ponta") ponta = d3({ x: B.x, y: B.y, z: B.z }, T.p1) <= d3({ x: B.x, y: B.y, z: B.z }, T.p2) ? T.p1 : T.p2;
+else if (s > FOLGA_PONTA && s < d.L - FOLGA_PONTA) X = { x: r4(T.p1.x + d.x * s), y: yT, z: r4(T.p1.z + d.z * s) };
+else ponta = s <= FOLGA_PONTA ? T.p1 : T.p2;
+var Lin = { x: linha.x, y: A.y, z: linha.z }, Lt = { x: linha.x, y: yT, z: linha.z };
+if (X) {
+pts = caminho([Ap, Lin, Lt].concat(hz(Lt, X) > 0.005 ? [X] : []));
+if (hz(Lt, X) <= 0.005) pts[pts.length - 1] = { x: X.x, y: r6(yT), z: X.z };
+extras = I.dividirTrecho ? I.dividirTrecho(estado, T.id, pts[pts.length - 1]) : [];
+nome = "pela parede: tê no tubo " + T.id + " e descida embutida até o ponto";
+} else {
+var E = { x: ponta.x, y: ponta.y, z: ponta.z }, oE = (E.x - linha.x) * n.x + (E.z - linha.z) * n.z;
+var quina = Math.abs(oE) <= ALINHADO ? null : { x: r4(E.x - n.x * oE), y: yT, z: r4(E.z - n.z * oE) };
+pts = caminho([Ap, Lin, Lt].concat(quina ? [quina] : []).concat([E]));
+ign.push(T.id);
+nome = "pela parede: o tubo " + T.id + " continua até a descida do ponto";
+}
+ign.push(T.id);
+} else if (B.tipo === "vertical") {
+var V = tr(B.trecho); if (!V) return { ok: false, erro: "não achei a coluna " + txt(B.trecho) };
+var y0 = Math.min(V.p1.y, V.p2.y), y1 = Math.max(V.p1.y, V.p2.y), yL = A.y;
+if (!(yL > y0 + FOLGA_PONTA && yL < y1 - FOLGA_PONTA)) return { ok: false, erro: "a coluna " + V.id + " não passa na altura do ponto" };
+var w = { x: V.p1.x - Pa.x, z: V.p1.z - Pa.z }, on = w.x * n.x + w.z * n.z, ou = w.x * u.x + w.z * u.z;
+if (Math.abs(on) > PERTO_LINHA) return { ok: false, erro: "a coluna " + V.id + " está longe da parede do ponto" };
+var Pv = { x: V.p1.x, y: yL, z: V.p1.z };
+if (Math.abs(on) <= ALINHADO && Pa.e + on > 0.01) pts = caminho([Ap, { x: r4(Pa.x + n.x * on), y: yL, z: r4(Pa.z + n.z * on) }, Pv]);
+else { var Q = { x: r4(Pa.x + u.x * ou), y: yL, z: r4(Pa.z + u.z * ou) }; pts = caminho([Ap, Pa, Q, Pv]); }
+if (Math.abs(ou) < 0.005 && Math.abs(on) <= ALINHADO) return { ok: false, erro: "a coluna está no próprio ponto" };
+ign.push(V.id);
+nome = "pela parede até a coluna " + V.id + " (tê na coluna)";
+} else if (ehPonto(B)) {
+var nB = { x: B.parede.x, z: B.parede.z }, Pb = embutido(B, dn), cosN = n.x * nB.x + n.z * nB.z;
+var yH = nivelPonto(A.y, B.y), mesma = cosN > 0.99 && Math.abs((Pb.x - Pa.x) * n.x + (Pb.z - Pa.z) * n.z) <= ALINHADO;
+if (mesma) {
+var Pb2 = { x: Pb.x, y: A.y, z: Pb.z };
+pts = caminho([Ap, Pa, Pb2, { x: Pb.x, y: B.y, z: Pb.z }, { x: B.x, y: B.y, z: B.z }]);
+nome = "pela parede: corre embutido e sobe/desce no ponto de destino";
+void yH;
+} else if (Math.abs(cosN) < 0.05) {
+var uB = { x: -nB.z, z: nB.x }, den = u.x * uB.z - u.z * uB.x; if (Math.abs(den) < EPS) return { ok: false, erro: "paredes paralelas fora de linha" };
+var t0 = ((Pb.x - Pa.x) * uB.z - (Pb.z - Pa.z) * uB.x) / den, Cq = { x: r4(Pa.x + u.x * t0), y: A.y, z: r4(Pa.z + u.z * t0) };
+if (Math.abs(t0) > 8 || hz(Cq, Pb) > 8) return { ok: false, erro: "o canto entre as paredes fica longe" };
+pts = caminho([Ap, Pa, Cq, { x: Pb.x, y: A.y, z: Pb.z }, { x: Pb.x, y: B.y, z: Pb.z }, { x: B.x, y: B.y, z: B.z }]);
+nome = "pela parede até o canto e pela outra parede até o ponto";
+} else return { ok: false, erro: "os pontos estão em paredes que não se encontram em ângulo reto" };
+} else return { ok: false, erro: "destino sem ligação direta pela parede" };
+return fechar();
+function fechar() {
+if (pts.length < 2) return { ok: false, erro: "pontos coincidentes" };
+var segs = []; for (var i = 1; i < pts.length; i++) segs.push({ a: pts[i - 1], b: pts[i], sistema: sis });
+var curto = segs.filter(function (s, k) { return k > 0 && k < segs.length - 1 && d3(s.a, s.b) < tol() + 0.005; })[0];
+if (curto) return { ok: false, erro: "a rota direta teria um trecho de " + Math.round(d3(curto.a, curto.b) * 1000) + " mm entre duas conexões" };
+var famIgn = [A.famInst, B.famInst];
+var bate = colide(estado, famAval, segs.slice(1), dn, ign, famIgn);
+if (bate) return { ok: false, erro: "a rota pela parede " + bate };
+var ops = [], seq = 0, pref = txt(o.prefixo || ("mao" + Date.now().toString(36) + "-"));
+segs.forEach(function (s) {
+var op = o.opTrecho ? o.opTrecho(s.a, s.b) : { op: "trecho", sistema: sis, material: o.material, dn: dn, p1: s.a, p2: s.b };
+op.id = pref + (++seq); ops.push(op);
+});
+var comp = segs.reduce(function (acc, s) { return acc + d3(s.a, s.b); }, 0);
+return { ok: true, ops: extras.concat(ops), comprimento: r4(comp), nome: nome, avisos: avisos, pontos: pts };
+}
+}
+function renivelar(trechos, dy, fixos, o) {
+o = o || {}; dy = num(dy, 0); if (Math.abs(dy) < EPS) return { ops: [] };
+function fixo(q) { return arr(fixos).some(function (f) { return d3(f, q) <= 0.001; }); }
+var ops = [], erro = null;
+arr(trechos).forEach(function (t) {
+if (erro) return;
+var a = { x: t.p1.x, y: fixo(t.p1) ? t.p1.y : r6(t.p1.y + dy), z: t.p1.z }, b = { x: t.p2.x, y: fixo(t.p2) ? t.p2.y : r6(t.p2.y + dy), z: t.p2.z };
+var deitado = hz(t.p1, t.p2) > 0.005, eraVert = !deitado;
+if (deitado && (fixo(t.p1) !== fixo(t.p2))) { erro = "o trecho " + t.id + " tem uma ponta presa (no aparelho) e outra que andaria"; return; }
+if (eraVert) {
+var L0 = t.p1.y - t.p2.y, L1 = a.y - b.y;
+if (Math.abs(L1) < tol() + 0.005 && Math.abs(L0) >= tol()) { erro = "a vertical " + t.id + " ficaria com " + Math.round(Math.abs(L1) * 1000) + " mm"; return; }
+if (L0 * L1 < 0) { erro = "a vertical " + t.id + " inverteria"; return; }
+}
+if (deitado && o.piso != null && o.cobrimento != null) {
+var r = num(t.dn, 50) / 2000, lim = num(o.piso, 0) - num(o.cobrimento, 0);
+var acima = Math.max(a.y, b.y) + r;
+if (Math.max(t.p1.y, t.p2.y) < num(o.piso, 0) && acima > lim + 0.0005) { erro = "o tubo " + t.id + " subiria para dentro do contrapiso (cobrimento " + Math.round(num(o.cobrimento, 0) * 1000) + " mm)"; return; }
+}
+var nt = JSON.parse(JSON.stringify(t)); nt.op = "trecho"; nt.p1 = a; nt.p2 = b; delete nt.comprimento;
+ops.push(nt);
+});
+return erro ? { erro: erro } : { ops: ops };
+}
+function entradaCaixa(estado, pk, de, dn, yChega, bocaId) {
+var H = HB(); if (!H || !pk) return { ok: false, erro: "sem catálogo de bocas" };
+var e = H.entradasLivres(estado, pk, de, dn); if (!e.ok) return { ok: false, erro: e.erro, dnDiferente: e.dnDiferente, dnBoca: e.dnBoca, semBoca: e.semBoca };
+var b = e.bocas[0]; if (bocaId != null) { var bs = e.bocas.filter(function (q) { return String(q.id) === String(bocaId); }); if (bs.length) b = bs[0]; }
+var yTop = num(b.y, 0), yMin = H.yMinEntrada(estado, pk, dn), y = Math.min(yTop, num(yChega, yTop));
+if (y >= yMin - EPS) return { ok: true, boca: copiaB(b, y), y: r6(y), rebaixo: 0 };
+var lim = Math.max(0, num(H.limiteRebaixo(pk), 0) - num(pk.rebaixo, 0)), falta = Math.ceil((yMin - y) * 200 - 1e-6) / 200;
+if (falta > lim + EPS) return { ok: false, erro: "o tubo chega " + Math.round((yMin - y) * 1000) + " mm abaixo do fecho hídrico da " + txt(pk.id) + (lim > EPS ? " e o prolongador de catálogo só desce " + Math.round(lim * 1000) + " mm" : " e ela não tem prolongador no catálogo"), falta: yMin - y };
+var bb = copiaB(b, y); bb.dRebaixo = falta;
+return { ok: true, boca: bb, y: r6(y), rebaixo: r4(falta) };
+}
+function copiaB(b, y) { var c = JSON.parse(JSON.stringify(b)); c.y = r6(y); return c; }
+var HidMao = { VERSAO: 1, LIMIAR_DEGRAU: LIMIAR_DEGRAU, dnDoPonto: dnDoPonto, nivelPonto: nivelPonto, ligarParede: ligarParede, renivelar: renivelar, entradaCaixa: entradaCaixa, _int: { colide: colide, embutido: embutido } };
+global.HidMao = HidMao;
+if (typeof module !== "undefined" && module.exports) module.exports = HidMao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/hidkitdados.js ==== */

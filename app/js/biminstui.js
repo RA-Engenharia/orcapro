@@ -1026,6 +1026,10 @@
         var ax = t.p2.x - t.p1.x, az = t.p2.z - t.p1.z, L2 = ax * ax + az * az; if (!(L2 > 0)) return;
         var u = ((p.x - t.p1.x) * ax + (p.z - t.p1.z) * az) / L2; if (u <= 0.02 || u >= 0.98) return;
         var q = { x: t.p1.x + ax * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + az * u };
+        /* ⚠ MEIO DE UM TUBO EM OUTRA ALTURA (26/11/2026, bancada): o ramal a 1,20 m corre na mesma parede, por cima, do traço a 0,58 m — em planta ele está
+           "a 0 cm" e todo clique solto ao longo da parede virava tê nele. Longe da altura de trabalho (mais de 30 cm) não puxa: quem quer ligar nele
+           clica no tubo (o pontinho de encaixe da tela, js/hidselecaoui.js, já vem com a altura certa). */
+        if (!(I.SISTEMAS[sistema] && I.SISTEMAS[sistema].gravidade) && yTrab != null && isFinite(yTrab) && Math.abs(q.y - yTrab) > 0.30) return;   // hid:ok 30 cm: fora da faixa da altura de trabalho (só a água: o esgoto corre todo sob o piso)
         ver({ tipo: "meio", x: r4(q.x), y: r4(q.y), z: r4(q.z), dn: t.dn, trecho: t.id }, dPlan(q), 3);
       });
       /* C1 (13/11/2026): a PONTA de um tubo que já chega numa caixa/ralo fica DENTRO da captura dela — o clique ali é na peça (ligar mais um
@@ -1088,9 +1092,19 @@
             else ctx.hint("O conector pede DN " + alvo.dn + ", que " + (M0 ? M0.nome : c.material) + " não tem na lista comercial: o tubo segue DN " + c.dn + " e a redução entra no nó.");
           }
         }
+        /* ⚠ DN PELO APARELHO (26/11/2026, js/hidmao.js dnDoPonto): começar num ponto de aparelho pega o DN do ramal dele (lavatório DN 40 no esgoto) —
+           antes o traço à mão saía no DN da ferramenta (o esgoto DN 100 de quem acabou de ligar o vaso). O mesmo que o Ligar A → B já fazia. */
+        var dnMsg = "";
+        if (alvo && alvo.tipo === "aparelho" && global.HidMao && !(alvo.famInst != null && alvo.dn > 0 && alvo.dn === c.dn)) {
+          var dnAp = global.HidMao.dnDoPonto(est, alvo, c.sistema), Mdn = I.MATERIAIS[c.material];
+          if (dnAp && dnAp !== c.dn && Mdn && (Mdn.dns || []).indexOf(dnAp) >= 0) { c.dn = dnAp; if (S.gravidade) c.inclinacao = this.inclinacaoDn(c.sistema, dnAp); dnMsg = " DN " + dnAp + " (o do aparelho)."; }
+        }
         /* desenhando A PARTIR do destino (tubo de queda, coluna, outro tubo): o esgoto SOBE para o aparelho */
         this._sobe = !!(alvo && S.gravidade && (alvo.tipo === "vertical" || alvo.tipo === "meio" || (alvo.tipo === "ponta" && this._pontaDeCima(est, alvo))));
         var yT = r4(base + this.alturaTrabalho(this._sobe));
+        /* ⚠ DEGRAU DE 2 CM NA ÁGUA (26/11/2026, bancada do desenho à mão): a altura de trabalho 0,60 m saindo do ponto do lavatório a 0,58 m punha dois
+           joelhos a 2 cm um do outro. Diferença menor que HidMao.LIMIAR_DEGRAU: o traço corre na cota do PONTO (nenhuma vertical) */
+        if (alvo && alvo.tipo === "aparelho" && !S.gravidade && global.HidMao) yT = r4(global.HidMao.nivelPonto(yT, alvo.y));
         var q0 = alvo ? { x: alvo.x, y: alvo.tipo === "vertical" && !(ev && ev._corte) ? yT : alvo.y, z: alvo.z } : { x: r4(p.x), y: yT, z: r4(p.z) };   /* no corte, o tubo vertical na altura do cursor */
         /* começar numa caixa/ralo: a saída na cota de trabalho, se ela está dentro da captura da peça */
         if (alvo && alvo.tipo === "peca" && alvo.hub && !alvo.boca && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;   /* a BOCA de catálogo fica na cota dela */
@@ -1124,6 +1138,12 @@
         /* LIGAR A → B: o ponto de partida fica guardado — se o próximo clique for outro ponto de ligação, o traçado
            liga os dois sozinho (js/hidligar.js). Um clique solto no meio do caminho volta ao desenho ponto a ponto. */
         this._inicio = alvo ? { alvo: JSON.parse(JSON.stringify(alvo)), nIni: nIni, y: q0.y } : null;
+        /* O TRAÇO EM CURSO (26/11/2026, js/hidmao.js renivelar): quais trechos ele já tem e quais pontos não andam. Começou num APARELHO (a vertical
+           embutida estica) ou num ponto SOLTO → o traço inteiro pode subir/descer ao chegar no destino (nenhum degrau no fim). Começou num tubo, numa
+           coluna ou numa caixa: a cota está presa nela. */
+        this._traco = { ids: [], fixos: [], flex: !alvo || (alvo.tipo === "aparelho"), famInst: alvo && alvo.famInst != null ? alvo.famInst : null };
+        if (saida0 && oi && oi.length) { this._traco.ids = oi.map(function (o9) { return o9.id; }); this._traco.fixos = [{ x: alvo.x, y: alvo.y, z: alvo.z }, saida0[0]]; }
+        else if (alvo && alvo.tipo === "aparelho") this._traco.fixos = [{ x: alvo.x, y: alvo.y, z: alvo.z }];
         /* 15/11/2026: o DN do tubo/aparelho DE ONDE o traço sai. A caixa sifonada só recebe ramal de descarga (DN 40/50, NBR 8160): quem vem de um ramal DN 100 (bacia, ramal de esgoto) não entra nela */
         this._dnOrigem = (function () {
           var m = alvo && alvo.dn != null ? Number(alvo.dn) || 0 : 0;
@@ -1152,15 +1172,40 @@
           var tM = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
           if (tM) this._meioAgua = { u: { x: tM.p2.x - tM.p1.x, z: tM.p2.z - tM.p1.z }, P: { x: q0.x, z: q0.z }, material: c.material, dn: c.dn };
         }
-        if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var dv = I.dividirTrecho(est, alvo.trecho, q0); if (dv.length) { ed.ops.push(dv[0]); ctx.op(dv[1]); } }
+        if (alvo && alvo.tipo === "meio" && I.dividirTrecho) {
+          var tOrig = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+          var dv = I.dividirTrecho(est, alvo.trecho, q0);
+          if (dv.length) {
+            ed.ops.push(dv[0]); ctx.op(dv[1]);
+            /* ⚠ 26/11/2026: o Ligar A → B que nasce deste clique refaz a ligação no tubo INTEIRO — a divisão do 1º clique sai junto (senão sobrava um
+               nó sem derivação no tubo, e a rota mirava a metade dele) */
+            if (this._inicio && tOrig) { this._inicio.nIni += dv.length; this._inicio.tOrig = JSON.parse(JSON.stringify(tOrig)); this._inicio.idsDiv = dv.map(function (o9) { return o9.id; }); }
+          }
+        }
         ctx.inicio(q0);
-        ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + ". " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
+        ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + "." + dnMsg + " " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
           (S.gravidade ? (this._sobe ? ", subindo " : ", descendo ") + fmt(c.inclinacao, 2) + "%" : "") + ". Clique o próximo ponto: o traço anda a 90° e 45° (Alt, ou Ângulo livre em Propriedades, para outra direção).");
         this.pintarProps();
         return;
       }
       var p1 = { x: ed.p1.x, y: ed.p1.y, z: ed.p1.z };
       if (this._ligacao) { this.confirmarLigacao(); return; }   /* a prévia A → B aberta: o clique confirma */
+      /* ⚠ O MESMO PONTO DUAS VEZES (26/11/2026, bancada): clicar de novo no ponto de onde o traço saiu (ou no fim dele) desenhava toco + sobe 2 cm +
+         desce 2 cm + toco — uma cruzeta no ponto. O clique repetido não desenha nada. */
+      if (alvo && (Math.hypot(alvo.x - p1.x, alvo.z - p1.z) <= I.TOL + 1e-6 && (alvo.tipo !== "vertical") && Math.abs(num(alvo.y, p1.y) - p1.y) <= 0.10 ||
+          (this._inicio && this._inicio.alvo && alvo.tipo === this._inicio.alvo.tipo && Math.hypot(alvo.x - this._inicio.alvo.x, alvo.y - this._inicio.alvo.y, alvo.z - this._inicio.alvo.z) <= I.TOL + 1e-6))) {   // hid:ok 10 cm: o mesmo ponto (a perna embutida desce menos que isso no clique repetido)
+        ctx.hint("É o mesmo ponto de onde o traço saiu — clique o destino (outro ponto, tubo ou caixa), ou Esc."); return;
+      }
+      /* ⚠ RENIVELAR NA CHEGADA (26/11/2026, js/hidmao.js renivelar): o destino tem cota própria (o ponto de água do aparelho; o tubo de esgoto onde o
+         ramal entra) e o traço chegaria com um degrau no fim — joelhos a 2 cm (água) ou o esgoto SUBINDO para entrar no tubo. Se o traço começou num
+         aparelho (a vertical embutida estica) ou num ponto solto, ele INTEIRO sobe/desce o que falta, com a mesma declividade; nunca o esgoto para
+         dentro do contrapiso. Não deu: fica como antes (o degrau, com o aviso). */
+      var renivel = null, tr0 = this._traco;
+      if (alvo && !livre && tr0 && tr0.flex && global.HidMao && !(ev && ev._corte)) {
+        var dyR = null, yAlvo = num(alvo.y, NaN);
+        if (alvo.tipo === "aparelho" && !S.gravidade && isFinite(yAlvo) && Math.abs(yAlvo - p1.y) > I.TOL && Math.abs(yAlvo - p1.y) < global.HidMao.LIMIAR_DEGRAU) dyR = yAlvo - p1.y;
+        if (dyR != null) { renivel = this._renivelarTraco(est, dyR, base, S); if (renivel.ok) p1 = { x: p1.x, y: r6(p1.y + dyR), z: p1.z }; }
+      }
       /* NO CORTE: o clique traz a COTA — subir/descer na vertical, inclinado a 45° no plano do corte, ou seguir na horizontal */
       var corteP = ev && ev._corte && !alvo ? this.pontoCorte(p1, p, livre) : null;
       if (corteP && corteP.tipo === "horizontal" && ev._mudaPlano) corteP = null;   /* o Tab trocou o plano: o traço vai ao plano novo a 90° (planta) */
@@ -1177,7 +1222,9 @@
         var pkT = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
         if (pkT && global.HidBocas.bocas(est, pkT).length) {
           var eT = global.HidBocas.entradasLivres(est, pkT, p1, c.dn);
-          if (eT.ok && eT.bocas.length) bocaT = eT.bocas[0];
+          /* a ENTRADA que a pessoa clicou (o pontinho azul na boca, js/hidselecaoui.js) vale, se está livre; senão a mais alinhada */
+          /* ⚠ só a entrada VIRADA para o lado de onde o traço vem: a do outro lado faria o tubo atravessar o corpo da caixa (bancada 26/11/2026) */
+          if (eT.ok && eT.bocas.length) bocaT = (alvo.boca && eT.bocas.filter(function (b9) { var vx9 = p1.x - pkT.x, vz9 = p1.z - pkT.z, L9 = Math.hypot(vx9, vz9) || 1; return String(b9.id) === String(alvo.boca) && (b9.dir.x * vx9 + b9.dir.z * vz9) / L9 > 0.3; })[0]) || eT.bocas[0];   // hid:ok ~73°: a boca de frente para a chegada
           else if (eT.dnDiferente && num(eT.dnBoca, 0) > 0 && num(eT.dnBoca, 0) < num(c.dn, 0)) {
             /* 15/11/2026: o DN da ferramenta (esgoto 100) é MAIOR que o das entradas da caixa (40/50): o ramal de descarga entra na caixa no DN DELA (NBR 8160) —
                exceto o que vem de um ramal DN maior que a entrada (bacia, ramal de esgoto DN 100): esse não descarrega na caixa sifonada */
@@ -1220,10 +1267,32 @@
       /* o alvo está em outra cota: desce/sobe na vertical até ele (o joelho sai sozinho); no ponto de
          PAREDE a vertical corre embutida e um toco sai perpendicular no ponto */
       var abaixo = alvo && S.gravidade && !this._sobe && (alvo.tipo === "meio" || alvo.tipo === "ponta") && yH < alvo.y - I.TOL;
-      var subiuBoca = false;
+      /* ⚠ ESGOTO CHEGANDO ABAIXO DO TUBO DE DESTINO (26/11/2026): o traço sobe inteiro o que falta (renivelar) em vez de entrar no tubo subindo
+         contra o escoamento — no meio do tubo, com a folga da entrada a 45° */
+      if (abaixo && (!renivel || !renivel.ok) && tr0 && tr0.flex && !livre && !(ev && ev._corte) && global.HidMao) {
+        var folgaJ = alvo.tipo === "meio" ? num(c.inclinacao, 2) / 100 * 0.35 : 0;   // hid:ok 35 cm de caminho da entrada a 45° (a perna lateral + a diagonal da junção)
+        var dyE = r6(alvo.y + folgaJ - yH), rE = this._renivelarTraco(est, dyE, base, S);
+        if (rE.ok) { renivel = rE; p1 = { x: p1.x, y: r6(p1.y + dyE), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyE), z: q.z }; }); yH = r6(yH + dyE); abaixo = false; }
+        else renivel = rE;
+      }
+      var subiuBoca = false, rebaixoT = null, avisoEntrada = null;
       if (bocaT) {
         /* na frente da boca: vertical até a cota dela (mais a queda da bolsa) e entra reto; se o traço veio abaixo da boca, o trecho sobe (avisa) */
-        var iT = num(c.inclinacao, 0) / 100, yAnt = r4(bocaT.y + iT * LBOCA_T), fx = pts.length ? pts[pts.length - 1] : p1;
+        var iT = num(c.inclinacao, 0) / 100, fx = pts.length ? pts[pts.length - 1] : p1;
+        /* ⚠ A ENTRADA NA ALTURA EM QUE O TUBO CHEGA (26/11/2026, js/hidmao.js entradaCaixa): a entrada da caixa sifonada pode ficar mais baixa no corpo,
+           até o fecho hídrico (o Ligar A → B já fazia). Antes o traço à mão mirava SEMPRE o topo da entrada e subia contra o escoamento para entrar.
+           Abaixo do fecho: o corpo desce com o prolongador (rebaixo), e os tubos dela descem junto — como no Ligar A → B. */
+        if (global.HidMao && pkT) {
+          var eC = global.HidMao.entradaCaixa(est, pkT, p1, dnChegaT || c.dn, fx.y - iT * LBOCA_T, bocaT.id);
+          if (eC.ok) {
+            if (eC.rebaixo > 0) {
+              var oRb = global.HidLigar && global.HidLigar.opsRebaixo ? global.HidLigar.opsRebaixo(est, ctx.famAval, pkT, eC.rebaixo) : null;
+              if (oRb && oRb.ops) { rebaixoT = { ops: oRb.ops, dd: eC.rebaixo }; bocaT = eC.boca; }
+              else avisoEntrada = "a caixa precisaria descer " + fmt(eC.rebaixo * 100, 1) + " cm com o prolongador e o arraste recusou" + (oRb && oRb.erro ? " (" + oRb.erro + ")" : "");
+            } else bocaT = eC.boca;
+          } else if (eC.erro && !eC.dnDiferente) avisoEntrada = eC.erro;
+        }
+        var yAnt = r4(bocaT.y + iT * LBOCA_T);
         if (Math.abs(fx.y - yAnt) > I.TOL) { pts.push({ x: fx.x, y: yAnt, z: fx.z }); subiuBoca = yAnt > fx.y; }
         pts.push({ x: r4(bocaT.x), y: r4(bocaT.y), z: r4(bocaT.z) });
       }
@@ -1288,11 +1357,15 @@
       /* chegou no MEIO de um tubo: ele é DIVIDIDO no ponto (o tê ou a junção fica no nó) */
       if (!feito45 && alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
       /* ESPAÇO CURTO (13/11/2026): a virada que nem a conexão-conexão comporta anda o mínimo (BimInst.ajustarViradas) — nunca luva no lugar da curva */
-      var ajV = null; if (I.ajustarViradas && S.gravidade) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
+      var renOk = !!(renivel && renivel.ok && renivel.ops.length), rebOps = rebaixoT ? rebaixoT.ops : [];
+      /* (com o traço renivelado o estado de antes já não vale para as viradas dele: o ajuste da virada fica para o próximo clique) */
+      var ajV = null; if (I.ajustarViradas && S.gravidade && !renOk && !rebOps.length) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
       if (ajV && ajV.ajustes.length) { criados = ajV.novos; pts[pts.length - 1] = this._sobe && S.gravidade ? criados[criados.length - 1].p1 : criados[criados.length - 1].p2; }
       /* o ajuste da virada mexe num trecho JÁ desenhado: ele e o clique vão num LOTE (um Ctrl+Z desfaz os dois — revisão 13/11, achado 4) */
       var extrasV = ajV && ajV.ajustes.length ? ajV.extras : [];
-      if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
+      /* o traço renivelado e a caixa rebaixada mexem em peças JÁ desenhadas: vão no mesmo LOTE do clique (um Ctrl+Z desfaz tudo) */
+      if (renOk || rebOps.length) ctx.op({ op: "lote", id: "hid-mao-" + Date.now(), origem: "hidmao", ops: rebOps.concat(renOk ? renivel.ops : []).concat(criados) });
+      else if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
       else {
         criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
         ctx.op(criados[criados.length - 1]);                        /* um rebuild só, no fim */
@@ -1309,7 +1382,24 @@
       if (dnChegaT) msg += " - o tubo chega na caixa no DN da entrada (DN " + dnChegaT + ")";
       if (avisoBocaT) msg += " ⚠ " + avisoBocaT + ": o traço ficou como foi, ao centro da peça";
       if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
-      if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
+      if (renivel && renivel.ok) msg += " — o traço " + (renivel.dy > 0 ? "subiu " : "desceu ") + fmt(Math.abs(renivel.dy) * 100, 1) + " cm inteiro para chegar no destino sem degrau (a mesma declividade)";
+      else if (renivel && !renivel.ok && renivel.erro && (abaixo || (alvo && alvo.tipo === "aparelho"))) msg += " (não deu para renivelar o traço: " + renivel.erro + ")";
+      if (rebaixoT) msg += " — a caixa desceu " + fmt(rebaixoT.dd * 100, 1) + " cm com o prolongador (a entrada fica acima do fecho hídrico; os tubos dela desceram junto)";
+      else if (bocaT && !subiuBoca && Math.abs(bocaT.y - pts[pts.length - 1].y) < 1e-6 && global.HidMao) msg += ", entra na altura em que chega";
+      if (avisoEntrada) msg += " ⚠ " + avisoEntrada;
+      /* ⚠ CRUZOU ALGUMA COISA (26/11/2026): o traço ponto a ponto não conferia nada — passava por dentro de outro tubo ou da louça calado. Agora avisa
+         (não bloqueia: quem desenha à mão decide), com o nome do que cruzou. As famílias dos dois pontos e os tubos do próprio traço não contam. */
+      if (global.HidMao && global.HidMao._int && global.HidMao._int.colide && !livre) {
+        try {
+          var trIds = (this._traco ? this._traco.ids : []).concat(alvo && alvo.trecho != null ? [alvo.trecho] : []).concat(criados.map(function (o9) { return o9.id; }));
+          var segsC = criados.filter(function (o9, k9) { return !(k9 === 0 && self._traco && self._traco.ids.length === 0 && self._traco.famInst != null); }).map(function (o9) { return { a: o9.p1, b: o9.p2, sistema: o9.sistema }; });
+          var bateC = segsC.length ? global.HidMao._int.colide(est, ctx.famAval, segsC, c.dn, trIds, [alvo && alvo.famInst, this._traco && this._traco.famInst]) : null;
+          if (bateC) msg += " ⚠ o traço " + bateC + " — confira (Ctrl+Z desfaz)";
+        } catch (eC9) {}
+      }
+      /* o traço em curso guarda o que nasceu (o renivelar seguinte mexe nele inteiro); chegou num destino → acabou */
+      if (this._traco) criados.forEach(function (o9) { if (self._traco.ids.indexOf(o9.id) < 0) self._traco.ids.push(o9.id); });
+      if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
       else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
       this._ultimaSaida = fim.y - base;
       ctx.marcar();
@@ -1333,6 +1423,7 @@
       var o = this._sobe && S.gravidade ? this._opTrecho(p2, p1, ed.ops) : this._opTrecho(p1, p2, ed.ops);
       if (!I.normTrecho(o)) return false;
       ctx.op(o); ctx.inicio(p2); ctx.marcar(); this._inicio = null;
+      if (this._traco) this._traco.ids.push(o.id);   /* ⚠ a vertical faz parte do traço: o renivelar da chegada a move junto (senão ela ficava solta) */
       var contra = S.gravidade && ((!this._sobe && y > p1.y) || (this._sobe && y < p1.y));
       var t = (y > p1.y ? "Subiu " : "Desceu ") + fmt(Math.abs(y - p1.y), 2) + " m na vertical (joelhos no pé e no topo). Altura de trabalho agora " + fmt(y - base, 2) + " m — continue o traço." +
         (contra ? " ⚠ o esgoto não pode SUBIR no sentido do escoamento: confira (desenhe a partir do tubo de queda para subir até o aparelho)." : "");
@@ -1545,6 +1636,14 @@
       this._hoverPk = pk; this._indicadorPlano(id, pk);
       return pk;
     },
+    /* sobe/desce o TRAÇO EM CURSO (this._traco) em dy: { ok, ops (substituições), dy } | { ok:false, erro } — js/hidmao.js renivelar */
+    _renivelarTraco: function (est, dy, base, S) {
+      var tr0 = this._traco, H = global.HidMao; if (!tr0 || !tr0.flex || !H) return { ok: false, erro: "o traço começou num tubo ou numa caixa (a cota está presa nela)" };
+      var trs = ((est.instalacoes || {}).trechos || []).filter(function (t) { return tr0.ids.indexOf(t.id) >= 0; });
+      if (!trs.length && tr0.fixos.length) return { ok: false, erro: "o traço saiu do ponto sem descida embutida" };
+      var r = H.renivelar(trs, dy, tr0.fixos, S && S.gravidade ? { piso: base, cobrimento: this.COBRIMENTO } : {});
+      return r.erro ? { ok: false, erro: r.erro } : { ok: true, ops: r.ops, dy: dy };
+    },
     pontoLigacao: function (alvo, c) {
       /* (C1) */
       /* o ponto de APARELHO sem DN próprio vai sem DN: o motor (js/hidligar.js) tira o DN do ramal de descarga do aparelho pela norma (13/11/2026) */
@@ -1592,15 +1691,44 @@
         if (estF && A.tipo === "ponta" && (Bp.tipo === "peca" || Bp.tipo === "conector") && this._pontaDeCima(estF, A)) { var tx3 = A; A = Bp; Bp = tx3; }
         else if (estF && Bp.tipo === "ponta" && A.tipo === "peca" && this._pontaDeBaixo(estF, Bp)) { var tx4 = A; A = Bp; Bp = tx4; }
       }
-      if (A.tipo === "vertical") return false;
+      /* ⚠ O 1º CLIQUE NO MEIO DE UM TUBO já o dividiu (o traço à mão precisa do nó): a rota se faz no tubo INTEIRO, e a divisão sai junto na confirmação
+         (ini.nIni conta as duas ops) — 26/11/2026 */
+      var est = ctx.edit.estado;
+      if (ini.tOrig && ini.idsDiv && est && est.instalacoes) {
+        var e2 = {}; Object.keys(est).forEach(function (k) { e2[k] = est[k]; });
+        var in2 = {}; Object.keys(est.instalacoes).forEach(function (k) { in2[k] = est.instalacoes[k]; });
+        in2.trechos = (est.instalacoes.trechos || []).filter(function (t) { return ini.idsDiv.indexOf(t.id) < 0; }).concat([ini.tOrig]);
+        e2.instalacoes = in2; est = e2;
+        if (A.trecho && ini.idsDiv.indexOf(A.trecho) >= 0) A.trecho = ini.tOrig.id;
+        if (Bp.trecho && ini.idsDiv.indexOf(Bp.trecho) >= 0) Bp.trecho = ini.tOrig.id;
+      }
+      /* ⚠ ÁGUA PELA PAREDE (26/11/2026, js/hidmao.js ligarParede): ponto de parede ↔ tubo (tê), ↔ coluna, ↔ outro ponto — a rota DIRETA, embutida,
+         como se executa. O traçado automático procurava a faixa do ramal (1,20 m), que o próprio tubo clicado ocupa ("sem caminho livre"), e a volta
+         ponto a ponto deixava toco + 2 cm + 2 cm + toco (cruzeta). O Ligar A → B do traçado fica como 2ª opção (Tab), quando fecha. */
+      var direta = null;
+      if (/^agua_/.test(String(c.sistema)) && global.HidMao) {
+        var dnD = c.dn, Pc0 = A.tipo === "conector" ? A : (Bp.tipo === "conector" ? Bp : null);
+        var dnAp0 = Pc0 ? global.HidMao.dnDoPonto(est, { tipo: "aparelho", famInst: Pc0.famInst, dn: Pc0.dn }, c.sistema) : null, M0d = I.MATERIAIS[c.material];
+        if (dnAp0 && M0d && (M0d.dns || []).indexOf(dnAp0) >= 0) dnD = dnAp0;
+        var selfD = this, cfgD = JSON.parse(JSON.stringify(c)); cfgD.dn = dnD;
+        try {
+          direta = global.HidMao.ligarParede(est, ctx.famAval, A, Bp, { sistema: c.sistema, material: c.material, dn: dnD, prefixo: "lm" + (Date.now() % 100000) + "-",
+            opTrecho: function (a, b) { var cf = selfD.cfg; selfD.cfg = cfgD; var o9 = selfD._opTrecho(a, b, []); selfD.cfg = cf; return o9; } });
+        } catch (eD) { direta = { ok: false, erro: eD.message }; }
+      }
+      if (A.tipo === "vertical" && !(direta && direta.ok)) return false;
       /* ÁGUA tubo a tubo (ponta/meio → ponta/meio/coluna): a ligação direta — corre na altura do 1º e sobe/desce no 2º —
          é o que se quer; o traçado automático levaria ao ramal da parede (1,20 m) */
       var tubo = { ponta: 1, meio: 1, vertical: 1 };
       if (c.sistema === "agua_fria" && tubo[A.tipo] && tubo[Bp.tipo]) return false;
-      var est = ctx.edit.estado, ops0 = (ctx.edit.ops || []).slice(0, (ctx.edit.ops || []).length - ini.nIni);
+      var ops0 = (ctx.edit.ops || []).slice(0, (ctx.edit.ops || []).length - ini.nIni);
       var r = null;
       try { r = L.ligar(est, ctx.famAval, A, Bp, { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" }); } catch (e) { r = { ok: false, erro: e.message }; }
-      if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
+      if (direta && direta.ok) {
+        var opD = { nome: direta.nome, ops: direta.ops, comprimento: direta.comprimento, avisos: direta.avisos || [] };
+        r = r && r.ok ? (function () { r.opcoes = [opD].concat(r.opcoes); r.ladosSaida = null; r.entradasB = null; return r; })() : { ok: true, opcoes: [opD] };
+      }
+      if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + (direta && direta.erro ? " (pela parede: " + direta.erro + ")" : "") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
       /* QUAL BOCA (14/11/2026 — o Rogério: "quando eu clicar numa caixa sifonada, qualquer peça com mais de uma entrada ou saída, pedir de qual eu
          quero sair, de qual lado, qual entrada"). As alternativas entram como OPÇÕES da prévia: Tab passa por elas (saída virada para cada lado
          livre da caixa de origem; cada entrada livre da caixa de destino), Enter confirma. Cada opção diz no nome qual boca é. */
@@ -1805,7 +1933,8 @@
       if (!ed.p1) { ctx.hint("Clique primeiro o ponto de onde o trecho vertical sai."); return false; }
       if (!(Math.abs(dh) > 0.01)) { ctx.hint("Informe quanto subir (+) ou descer (−), em metros."); return false; }
       var p1 = { x: ed.p1.x, y: ed.p1.y, z: ed.p1.z }, p2 = { x: p1.x, y: r4(p1.y + dh), z: p1.z };
-      ctx.op(this._opTrecho(p1, p2, ed.ops));
+      var oV = this._opTrecho(p1, p2, ed.ops); ctx.op(oV);
+      if (this._traco) this._traco.ids.push(oV.id);   /* a vertical faz parte do traço (o renivelar a move junto) */
       ctx.inicio(p2);
       ctx.hint("Trecho vertical de " + fmt(Math.abs(dh), 2) + " m (" + (dh > 0 ? "subindo" : "descendo") + "). Continua do topo — clique o próximo ponto, ou Esc.");
       ctx.marcar(); this.pintarProps();

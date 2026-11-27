@@ -16648,7 +16648,7 @@ if (semCasar.length) msg += " ⚠ Não consegui casar sozinho: " + semCasar.join
 if (feitos.some(function (f) { return !f.gravou; })) msg += " ⚠ O aparelho ficou sem espaço para guardar tudo: parte fica só até fechar o OrçaPRO.";
 if (falhas.length) msg += " Ficou de fora: " + falhas.join("; ") + ".";
 UI.toast(msg, semCasar.length || falhas.length ? "aviso" : "ok", 12000);
-BimShell.status("Desenho separado por pavimento. Abra a planta de cada nível: o lançamento passa a nascer no nível da planta aberta.");
+BimShell.status("Desenho separado por pavimento. Abra a planta de cada nível: o lançamento passa a nascer no nível da planta aberta. Para o traçado do hidro e os ambientes com nome: Propriedades › Vínculos CAD › \"Paredes, ambientes e louças do desenho…\".");
 },
 _optplSalvar: function () {
 this._famConfig(); this._d2Config();
@@ -88690,5 +88690,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=f8538efa2c"},{"src":"js/bim-pacote.js?v=6ab9b10f2a","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=3761a9af1d"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=2d4811d826"},{"src":"js/bim-pacote.js?v=ff23a63aa4","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=1c9029c1bc"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

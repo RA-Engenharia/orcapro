@@ -14970,7 +14970,7 @@
       if (feitos.some(function (f) { return !f.gravou; })) msg += " ⚠ O aparelho ficou sem espaço para guardar tudo: parte fica só até fechar o OrçaPRO.";
       if (falhas.length) msg += " Ficou de fora: " + falhas.join("; ") + ".";
       UI.toast(msg, semCasar.length || falhas.length ? "aviso" : "ok", 12000);
-      BimShell.status("Desenho separado por pavimento. Abra a planta de cada nível: o lançamento passa a nascer no nível da planta aberta.");
+      BimShell.status("Desenho separado por pavimento. Abra a planta de cada nível: o lançamento passa a nascer no nível da planta aberta. Para o traçado do hidro e os ambientes com nome: Propriedades › Vínculos CAD › \"Paredes, ambientes e louças do desenho…\".");
     },
     /* TEMPLATE (.optpl): níveis + famílias da biblioteca + estilos das vistas 2D */
     _optplSalvar: function () {

@@ -1026,7 +1026,15 @@
       /* ⚠ o contador: vários recortes do mesmo arquivo são gravados no mesmo milissegundo — só Date+sorteio já repetiu id em teste */
       this._cadSeq = (this._cadSeq || 0) + 1;
       var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36) + this._cadSeq.toString(36);
-      var dados = { s: s, t: t };
+      /* CAMADA, BLOCO E ARCO de cada linha + os blocos (26/11/2026, js/cadambientes.js): as paredes de referência saem das
+         camadas de parede, a porta fecha o cômodo pelo arco, e a louça vem do bloco. Vínculo antigo (sem isso) ainda abre:
+         a tela avisa que precisa vincular de novo para ler camadas e blocos. */
+      var ly = [], Lmap = {}, Lnom = [], fl = [];
+      segs.forEach(function (g) { var nm = String(g.layer == null ? "0" : g.layer); if (Lmap[nm] == null) { Lmap[nm] = Lnom.length; Lnom.push(nm); } ly.push(Lmap[nm]); fl.push((g.bloco ? 1 : 0) + (g.curva ? 2 : 0)); });
+      var bk = ((dxf && dxf.inserts) || []).slice(0, 2000).filter(function (b) { return b && !b.nivel && isFinite(b.cx != null ? b.cx : b.x); }).map(function (b) {
+        return [r3((b.cx != null ? b.cx : b.x) - ex.x0), r3((b.cy != null ? b.cy : b.y) - ex.y0), String(b.nome || "").slice(0, 60), String(b.layer || "").slice(0, 40), r3(+b.w || 0), r3(+b.h || 0), r3(+b.rot || 0), b.espelhado ? 1 : 0];
+      });
+      var dados = { s: s, t: t, ly: ly, L: Lnom, fl: fl, b: bk };
       this._cadMem[lid] = dados;
       var gravou = true;
       try { localStorage.setItem(this._cadChave(lid), JSON.stringify(dados)); } catch (e) { gravou = false; }
@@ -1126,6 +1134,30 @@
       return out;
     },
 
+    /* A GEOMETRIA dos vínculos do nível para os motores (js/cadambientes.js), em coordenadas da planta:
+       { segs:[{x1,y1,x2,y2,layer,bloco,curva}], textos:[{x,y,txt}], ins:[{nome,layer,x,y,w,h,rot,espelhado}], ids:[], semCamadas }
+       `todos`: inclui vínculo oculto (a referência vale mesmo com o fundo desligado na planta) */
+    cadGeometria: function (nivelId, todos) {
+      var self = this, out = { segs: [], textos: [], ins: [], ids: [], semCamadas: false };
+      this.cadLista(nivelId).forEach(function (v) {
+        if (!v.vis && !todos) return;
+        var dd = self._cadDados(v.id); if (!dd) return;
+        out.ids.push(v.id);
+        if (!dd.ly) out.semCamadas = true;
+        var a = (+v.rot || 0) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a), dx = +v.dx || 0, dy = +v.dy || 0;
+        function X(u, w) { return dx + u * co - w * si; } function Y(u, w) { return dy - (u * si + w * co); }
+        for (var i = 0, k = 0; i + 3 < dd.s.length; i += 4, k++) {
+          var g = { x1: X(dd.s[i], dd.s[i + 1]), y1: Y(dd.s[i], dd.s[i + 1]), x2: X(dd.s[i + 2], dd.s[i + 3]), y2: Y(dd.s[i + 2], dd.s[i + 3]), layer: dd.ly && dd.L ? dd.L[dd.ly[k]] : "" };
+          if (dd.fl) { if (dd.fl[k] & 1) g.bloco = true; if (dd.fl[k] & 2) g.curva = true; }
+          out.segs.push(g);
+        }
+        (dd.t || []).forEach(function (t) { out.textos.push({ x: X(t[0], t[1]), y: Y(t[0], t[1]), txt: t[2] }); });
+        /* ⚠ o Y da planta é para BAIXO e o do CAD para cima: a rotação do bloco troca de sentido */
+        (dd.b || []).forEach(function (b) { out.ins.push({ nome: b[2], layer: b[3], x: X(b[0], b[1]), y: Y(b[0], b[1]), w: b[4], h: b[5], rot: -(b[6] || 0) - (+v.rot || 0), espelhado: !!b[7] }); });
+      });
+      return out;
+    },
+
     /* -------------------------------------------- Propriedades da vista */
     props: function (id) {
       if (/^d2t-/.test(String(id))) return global.BimTabelaUI ? global.BimTabelaUI.propsVista(id) : null;   /* P5: Propriedades da tabela */
@@ -1212,6 +1244,8 @@
           if (v.grupo) vc.push({ id: p + "junto", rotulo: "Mover junto os outros pavimentos", tipo: "sim-nao", valor: v.junto !== false });
           vc.push({ id: p + "excluir", rotulo: "Vínculo", tipo: "botao", rotuloBotao: "Remover vínculo", fn: function () { self.excluirCad(v.id); self.redesenhar(id, false); status("Vínculo CAD removido."); } });
         });
+        /* DO DESENHO PARA O PROJETO (js/cadambientesui.js): paredes de referência para o traçado, ambientes com o nome do desenho, volumetria e louças */
+        if (vc.length && global.CadAmbientesUI) vc.push({ id: "cad-ambientes", rotulo: "Projeto", tipo: "botao", rotuloBotao: "Paredes, ambientes e louças do desenho…", fn: function () { global.CadAmbientesUI.abrir(d.nivel.id); } });
         if (this._cfg.vincular) vc.push({ id: "cad-novo", rotulo: "DWG / DXF", tipo: "botao", rotuloBotao: "Vincular desenho CAD…", fn: function () { self._cfg.vincular(id); } });
         if (vc.length) secoes.push({ nome: "Vínculos CAD", params: vc });
       }

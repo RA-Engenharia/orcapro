@@ -18679,7 +18679,29 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (!mo || mo.mid === 'edit' || mo.sintetico || mo.exemplo || mo.visivel === false) return;
       try { paredesIfcDoModelo(mo).forEach(function (p) { if (!rem[p.uid]) out.push(p); }); } catch (eP) {}
     });
+    /* + AS PAREDES DO DESENHO CAD VINCULADO (26/11/2026, js/cadambientesui.js): o DWG de arquitetura separado por pavimento
+       entra como referência do mesmo jeito que o IFC — só leitura, nunca gravada, nunca orçada. Sem isso o Traçado
+       automático com o DWG vinculado não saía tubo nenhum ("sem paredes no modelo…"). Só os vínculos que a pessoa
+       ligou em "Paredes, ambientes e louças do desenho". */
+    try { if (typeof window !== 'undefined' && window.CadAmbientesUI && window.CadAmbientesUI.paredesRef) window.CadAmbientesUI.paredesRef().forEach(function (p) { out.push(p); }); } catch (eC) {}
     return out;
+  };
+  /* VOLUMETRIA DE REFERÊNCIA do desenho CAD: caixas translúcidas no pé-direito do nível — contexto no 3D, FORA do modelo
+     (não é elemento, não seleciona, não entra no quantitativo nem no orçamento). lista = CadAmbientesUI.paredesRef() */
+  S._cadRefVolume = function (lista) {
+    if (S._cadRefGrp) { modelRoot.remove(S._cadRefGrp); S._cadRefGrp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); S._cadRefGrp = null; }
+    lista = (lista || []).filter(function (p) { return p && p.volume !== false; }); if (!lista.length) return 0;
+    var g = new THREE.Group(); g.name = 'cad-ref-volumetria'; g.userData.cadRef = true;
+    var mat = S._cadRefMat || (S._cadRefMat = new THREE.MeshStandardMaterial({ color: 0xb8bec6, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+    lista.forEach(function (p) {
+      var dx = p.b.x - p.a.x, dz = p.b.z - p.a.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.05) || !(p.altura > 0)) return;
+      var m = new THREE.Mesh(new THREE.BoxGeometry(L, p.altura, p.espessura), mat);
+      m.position.set((p.a.x + p.b.x) / 2, p.base + p.altura / 2, (p.a.z + p.b.z) / 2); m.rotation.y = Math.atan2(-dz, dx);
+      m.userData.cadRef = p.uid; m.raycast = function () {};   /* ⚠ não pega clique: a peça de referência não é selecionável nem editável */
+      g.add(m);
+    });
+    modelRoot.add(g); S._cadRefGrp = g;
+    return g.children.length;
   };
   function catMotor() { return (typeof window !== 'undefined' && window.BimCoresCat) ? window.BimCoresCat : null; }
   function catCaixas() {
@@ -21324,6 +21346,9 @@ window.BIM = {
   /* VISTA INSTALAÇÕES (QUALIDADE VISUAL 2): arquitetura e estrutura em cinza translúcido; sem argumento, só lê */
   /* as paredes dos IFCs abertos como REFERÊNCIA para os motores do hidro (só leitura): [{id, uid, a:{x,z}, b:{x,z}, espessura, altura, base}] */
   paredesIfcRef: function () { return (S && S._paredesIfcRef) ? S._paredesIfcRef() : []; },
+  /* volumetria de referência das paredes do desenho CAD (js/cadambientesui.js) — devolve quantas caixas desenhou */
+  cadRefVolume: function (lista) { return (S && S._cadRefVolume) ? S._cadRefVolume(lista) : 0; },
+  cadRefVolumeN: function () { return (S && S._cadRefGrp) ? S._cadRefGrp.children.length : 0; },
   /* o CONTEXTO dos motores do hidro com as paredes do IFC: um lote "ifc-ref" (as paredes de referência) na FRENTE das ops da
      edição e o estado aplicado com ele. Nunca é gravado: quem grava (HidKitUI._gravar) só escreve as ops novas do plano.
      null = sem IFC com parede (o contexto fica o de sempre). Guardado pelo estado da edição: o mesmo estado → o mesmo cálculo. */

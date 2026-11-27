@@ -13526,6 +13526,503 @@ global.Planta3D = Planta3D;
 if (typeof module !== "undefined" && module.exports) module.exports = Planta3D;
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cadambientes.js ==== */
+try {
+(function (global) {
+"use strict";
+function P3() { return global.Planta3D || (typeof require === "function" ? require("./planta3d.js") : null); }
+function CS() { return global.CadSepara || (typeof require === "function" ? require("./cadsepara.js") : null); }
+function PC() { try { return global.ProjClass || (typeof require === "function" ? require("./projclass.js") : null); } catch (e) { return null; } }
+function num(v, d) { v = +v; return isFinite(v) ? v : d; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function len(s) { var dx = s.x2 - s.x1, dy = s.y2 - s.y1; return Math.sqrt(dx * dx + dy * dy); }
+function norm(s) { var C = CS(); return C ? C.norm(s) : String(s || "").toUpperCase(); }
+var RX_PAREDE = /PAREDE|ALVEN|WALL|REBOCO|REVEST|\bPAR\b|MURO/i;
+var RX_FECHA = /ESQUAD|JANELA|VIDRO|WINDOW|CAIXILH|GLAZ|SOLEIRA|PORTA|DOOR/i;
+var MIN_SEGS_CAMADA = 12;
+var CEL = 0.05;
+var RAIO_PORTA = 0.42;
+var MARGEM = 1.6;
+function paredes(segs, o) {
+o = o || {};
+var P = P3(); if (!P) return { paredes: [], criterio: "sem detector", camadas: [], stats: {} };
+var cand = (segs || []).filter(function (s) { return s && !s.bloco && !s.curva && isFinite(s.x1) && isFinite(s.y2) && len(s) > 1e-6; });
+var naCamada = cand.filter(function (s) { return RX_PAREDE.test(String(s.layer || "")); });
+var porCamada = naCamada.length >= num(o.minSegs, MIN_SEGS_CAMADA), base = porCamada ? naCamada : cand;
+var f = P.filtrarFamilias(base), r = P.detectarParedes(f.segmentos);
+var camadas = {}; naCamada.forEach(function (s) { camadas[s.layer] = 1; });
+var out = [];
+r.paredes.forEach(function (p) {
+if (!(p.espessura >= 0.06 && p.espessura <= 0.40) || !(p.comprimento >= 0.3)) return;
+if (!porCamada && p.ligada === false) return;
+if (p.provavelPilar && p.comprimento < 0.25) return;
+out.push({ x1: r3(p.x1), y1: r3(p.y1), x2: r3(p.x2), y2: r3(p.y2), espessura: r3(p.espessura), comprimento: r3(p.comprimento), layer: p.layer || "" });
+});
+return { paredes: out, criterio: porCamada ? "camada" : "geometria", camadas: Object.keys(camadas), stats: { linhas: cand.length, naCamada: naCamada.length, familias: f.removidos || 0, pares: r.paredes.length } };
+}
+function nomeDeComodo(txt) {
+var t = String(txt == null ? "" : txt).replace(/\\P/g, " ").replace(/\s+/g, " ").replace(/^ | $/g, "");
+if (t.length < 2 || t.length > 32) return null;
+var n = norm(t), C = CS();
+if (!n || !/[A-Z]{2}/.test(n)) return null;
+if (!/[A-ZÀ-Ý]/.test(t)) return null;
+if (/^A ?=|M²|M2\b|\bM\b$/.test(t.toUpperCase()) || /^A\s*=/.test(t)) return null;
+if (C && C.cotaDoTexto && C.cotaDoTexto(t) !== null) return null;
+if (/^[A-Z]{1,3} ?-? ?\d{1,3}[A-Z]?$/.test(n)) return null;
+if (/\d+[.,]\d+/.test(t) && !/[A-Za-z]{3}/.test(t)) return null;
+if (C && C.classificar && C.classificar(t)) return null;
+if (/^(SEC|SECC|SECAO|ELEVACAO|CORTE|ESC|ESCALA|SUBIR|SOBE|DESCE|DESCER|PROJ|PROJECAO|RUA|LOTE|QUADRA|AV|AVENIDA|NORTE|N|PROPRIETARIO|ENDERECO|DATA|FOLHA|PRANCHA|OBS|NOTA|ARQ|DES|RESP)\b/.test(n)) return null;
+if (/\b(RESIDENCE|RESIDENCIAL|CONDOMINIO|LTDA|PROJETO|PROJETISTA|DESENHO)\b/.test(n)) return null;
+return t;
+}
+function areaDoTexto(txt) { var m = /A\s*=\s*(\d{1,4})[.,](\d{1,2})\s*m/i.exec(String(txt || "")); return m ? parseFloat(m[1] + "." + m[2]) : null; }
+function Malha(x0, y0, x1, y1, cel) {
+this.cel = cel; this.x0 = x0; this.y0 = y0;
+this.nx = Math.max(1, Math.ceil((x1 - x0) / cel)); this.ny = Math.max(1, Math.ceil((y1 - y0) / cel));
+this.ob = new Uint8Array(this.nx * this.ny);
+}
+Malha.prototype.i = function (x, y) { var ix = Math.floor((x - this.x0) / this.cel), iy = Math.floor((y - this.y0) / this.cel); return ix < 0 || iy < 0 || ix >= this.nx || iy >= this.ny ? -1 : ix + this.nx * iy; };
+Malha.prototype.linha = function (ax, ay, bx, by) {
+var L = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)), n = Math.max(1, Math.ceil(L / (this.cel * 0.4))), k, t, i;
+for (k = 0; k <= n; k++) { t = k / n; i = this.i(ax + (bx - ax) * t, ay + (by - ay) * t); if (i >= 0) this.ob[i] = 1; }
+};
+Malha.prototype.retangulo = function (p) {
+var dx = p.x2 - p.x1, dy = p.y2 - p.y1, L = Math.sqrt(dx * dx + dy * dy); if (!(L > 0)) return;
+var nx = -dy / L, ny = dx / L, h = p.espessura / 2, k, n = Math.max(1, Math.ceil(p.espessura / (this.cel * 0.4)));
+for (k = 0; k <= n; k++) { var o = -h + p.espessura * k / n; this.linha(p.x1 + nx * o, p.y1 + ny * o, p.x2 + nx * o, p.y2 + ny * o); }
+};
+Malha.prototype.distancias = function () {
+var nx = this.nx, ny = this.ny, N = nx * ny, d = new Float32Array(N), i, x, y, G = 1e9;
+for (i = 0; i < N; i++) d[i] = this.ob[i] ? 0 : G;
+for (y = 0; y < ny; y++) for (x = 0; x < nx; x++) {
+i = x + nx * y; if (!d[i]) continue; var v = d[i];
+if (x > 0 && d[i - 1] + 3 < v) v = d[i - 1] + 3;
+if (y > 0) { if (d[i - nx] + 3 < v) v = d[i - nx] + 3; if (x > 0 && d[i - nx - 1] + 4 < v) v = d[i - nx - 1] + 4; if (x < nx - 1 && d[i - nx + 1] + 4 < v) v = d[i - nx + 1] + 4; }
+d[i] = v;
+}
+for (y = ny - 1; y >= 0; y--) for (x = nx - 1; x >= 0; x--) {
+i = x + nx * y; if (!d[i]) continue; var w = d[i];
+if (x < nx - 1 && d[i + 1] + 3 < w) w = d[i + 1] + 3;
+if (y < ny - 1) { if (d[i + nx] + 3 < w) w = d[i + nx] + 3; if (x < nx - 1 && d[i + nx + 1] + 4 < w) w = d[i + nx + 1] + 4; if (x > 0 && d[i + nx - 1] + 4 < w) w = d[i + nx - 1] + 4; }
+d[i] = w;
+}
+for (i = 0; i < N; i++) d[i] = d[i] / 3 * this.cel;
+return d;
+};
+function contorno(M, lab, k) {
+var nx = M.nx, ny = M.ny, prox = {}, i, x, y;
+function v(ix, iy) { return ix + (nx + 1) * iy; }
+function aresta(a, b) { (prox[a] || (prox[a] = [])).push(b); }
+for (y = 0; y < ny; y++) for (x = 0; x < nx; x++) {
+i = x + nx * y; if (lab[i] !== k) continue;
+if (y === 0 || lab[i - nx] !== k) aresta(v(x, y), v(x + 1, y));
+if (x === nx - 1 || lab[i + 1] !== k) aresta(v(x + 1, y), v(x + 1, y + 1));
+if (y === ny - 1 || lab[i + nx] !== k) aresta(v(x + 1, y + 1), v(x, y + 1));
+if (x === 0 || lab[i - 1] !== k) aresta(v(x, y + 1), v(x, y));
+}
+var melhor = null, mA = 0;
+Object.keys(prox).forEach(function (s0) {
+while (prox[s0] && prox[s0].length) {
+var laco = [], a = +s0, g = 0;
+while (prox[a] && prox[a].length && g++ < 1e6) { laco.push(a); var b = prox[a].pop(); if (!prox[a].length) delete prox[a]; a = b; if (a === +s0) break; }
+var pts = laco.map(function (q) { var qx = q % (nx + 1), qy = (q - qx) / (nx + 1); return [M.x0 + qx * M.cel, M.y0 + qy * M.cel]; });
+var A = areaPol(pts);
+if (Math.abs(A) > mA) { mA = Math.abs(A); melhor = pts; }
+}
+});
+return melhor ? simplificar(melhor, M.cel * 1.2) : null;
+}
+function menosUm(N) { var a = new Int32Array(N), i; for (i = 0; i < N; i++) a[i] = -1; return a; }
+function areaPol(p) { var a = 0, i, j; for (i = 0, j = p.length - 1; i < p.length; j = i++) a += (p[j][0] * p[i][1] - p[i][0] * p[j][1]); return a / 2; }
+function simplificar(p, tol) {
+if (p.length < 4) return p;
+function dp(a, b, out) {
+var A = p[a], B = p[b], dx = B[0] - A[0], dy = B[1] - A[1], L = Math.sqrt(dx * dx + dy * dy) || 1e-9, mx = -1, mi = -1, i;
+for (i = a + 1; i < b; i++) { var d = Math.abs((p[i][0] - A[0]) * dy - (p[i][1] - A[1]) * dx) / L; if (d > mx) { mx = d; mi = i; } }
+if (mx > tol) { dp(a, mi, out); dp(mi, b, out); } else out.push(B);
+}
+var far = 0, dm = -1, i;
+for (i = 1; i < p.length; i++) { var d2 = (p[i][0] - p[0][0]) * (p[i][0] - p[0][0]) + (p[i][1] - p[0][1]) * (p[i][1] - p[0][1]); if (d2 > dm) { dm = d2; far = i; } }
+var q = p.concat([p[0]]), out = [p[0]];
+p = q; dp(0, far, out); dp(far, q.length - 1, out);
+out.pop();
+return out.map(function (z) { return [r3(z[0]), r3(z[1])]; });
+}
+function pontoNoPol(pt, P) {
+var x = pt[0], y = pt[1], d = false, i, j;
+for (i = 0, j = P.length - 1; i < P.length; j = i++) { var xi = P[i][0], yi = P[i][1], xj = P[j][0], yj = P[j][1]; if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) d = !d; }
+return d;
+}
+function ambientes(segs, txts, par, o) {
+o = o || {};
+var cel = num(o.celula, CEL), raio = num(o.raio, RAIO_PORTA), W = (par && par.paredes) || [];
+if (!W.length) return { ambientes: [], abertos: [], semNome: 0, motivo: "nenhuma parede reconhecida no desenho deste nível" };
+var porCamada = par.criterio === "camada";
+var obst = (segs || []).filter(function (s) {
+if (!s) return false; var ly = String(s.layer || "");
+if (RX_FECHA.test(ly)) return true;
+return porCamada && !s.bloco && !s.curva && RX_PAREDE.test(ly);
+});
+var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+W.forEach(function (p) { x0 = Math.min(x0, p.x1, p.x2); x1 = Math.max(x1, p.x1, p.x2); y0 = Math.min(y0, p.y1, p.y2); y1 = Math.max(y1, p.y1, p.y2); });
+var M = new Malha(x0 - MARGEM, y0 - MARGEM, x1 + MARGEM, y1 + MARGEM, cel);
+if (M.nx * M.ny > 6e6) return { ambientes: [], abertos: [], semNome: 0, motivo: "o desenho do nível é grande demais para achar os cômodos (" + Math.round(x1 - x0) + " × " + Math.round(y1 - y0) + " m)" };
+W.forEach(function (p) { M.retangulo(p); });
+obst.forEach(function (s) { M.linha(s.x1, s.y1, s.x2, s.y2); });
+var D = M.distancias(), N = M.nx * M.ny, nx = M.nx, ny = M.ny, i;
+function viz(c, cb) { var cx = c % nx; if (cx > 0) cb(c - 1); if (cx < nx - 1) cb(c + 1); if (c >= nx) cb(c - nx); if (c < N - nx) cb(c + nx); }
+var areas = [], nomes = [];
+(txts || []).forEach(function (t) { var a = areaDoTexto(t.txt); if (a !== null) areas.push({ x: t.x, y: t.y, a: a, usada: false }); });
+(txts || []).forEach(function (t) {
+var nm = nomeDeComodo(t.txt); if (!nm || !isFinite(t.x) || !isFinite(t.y)) return;
+if (t.x < x0 - 0.5 || t.x > x1 + 0.5 || t.y < y0 - 0.5 || t.y > y1 + 0.5) return;
+var ic = M.i(t.x, t.y); if (ic < 0) return;
+nomes.push({ nome: nm, x: t.x, y: t.y, ic: ic, cel: -1, k: nomes.length });
+});
+var lab = menosUm(N), abertos = [], vivos = [], raios = [raio, Math.min(raio, 0.30), Math.min(raio, 0.20)], fila = new Int32Array(N);
+raios.forEach(function (rr, nivel) {
+if (nivel && rr >= raios[nivel - 1] - 1e-9) return;
+var pend = nomes.filter(function (s) { return s.cel < 0 && !s.fim; }); if (!pend.length) return;
+var miolo = new Uint8Array(N); for (i = 0; i < N; i++) miolo[i] = D[i] >= rr && lab[i] < 0 ? 1 : 0;
+var comp = menosUm(N), nc = 0, fora = {};
+for (i = 0; i < N; i++) {
+if (!miolo[i] || comp[i] >= 0) continue;
+var pilha = [i]; comp[i] = nc;
+while (pilha.length) {
+var c = pilha.pop(), cx = c % nx, cy = (c - cx) / nx;
+if (cx === 0 || cy === 0 || cx === nx - 1 || cy === ny - 1) fora[nc] = 1;
+viz(c, function (q) { if (miolo[q] && comp[q] < 0) { comp[q] = nc; pilha.push(q); } });
+}
+nc++;
+}
+var maxP = Math.ceil(1.5 / cel), vis = {};
+pend.forEach(function (s) {
+if (M.ob[s.ic] || lab[s.ic] >= 0) { if (lab[s.ic] >= 0) { s.dup = lab[s.ic]; s.fim = true; } return; }
+var q0 = [s.ic], dist = {}; dist[s.ic] = 0; var achou = -1;
+while (q0.length && achou < 0) {
+var c2 = q0.shift(); if (miolo[c2]) { achou = c2; break; }
+if (dist[c2] >= maxP) continue;
+viz(c2, function (q) { if (dist[q] == null && !M.ob[q] && lab[q] < 0) { dist[q] = dist[c2] + 1; q0.push(q); } });
+}
+if (achou < 0) return;
+if (fora[comp[achou]]) { s.fim = true; abertos.push({ nome: s.nome, motivo: "o cômodo não fecha: tem saída para o lado de fora sem parede nem porta desenhada (vão de mais de " + (2 * rr).toFixed(2).replace(".", ",") + " m)" }); return; }
+s.cel = achou; vivos.push(s);
+});
+var novos = pend.filter(function (s) { return s.cel >= 0; }), ini = 0, fim = 0;
+novos.forEach(function (s) { if (lab[s.cel] < 0) { lab[s.cel] = s.k; fila[fim++] = s.cel; } else s.dup = lab[s.cel]; });
+while (ini < fim) { var c0 = fila[ini++]; viz(c0, function (q) { if (miolo[q] && lab[q] < 0) { lab[q] = lab[c0]; fila[fim++] = q; } }); }
+var passo = new Int32Array(N), dono = {}; ini = 0; fim = 0;
+novos.forEach(function (s) { dono[s.k] = 1; });
+for (i = 0; i < N; i++) if (lab[i] >= 0 && dono[lab[i]]) fila[fim++] = i;
+var lim = Math.ceil(2 * rr / cel) + 2;
+while (ini < fim) { var c1 = fila[ini++]; if (passo[c1] >= lim) continue; viz(c1, function (q) { if (lab[q] < 0 && !M.ob[q]) { lab[q] = lab[c1]; passo[q] = passo[c1] + 1; fila[fim++] = q; } }); }
+});
+nomes.forEach(function (s) { if (s.cel < 0 && !s.fim) abertos.push({ nome: s.nome, motivo: "o nome não está dentro de um cômodo fechado (caiu em parede, móvel grande ou num vão menor que " + Math.round(2 * raios[2] * 100) + " cm)" }); });
+var porK = {}; nomes.forEach(function (s) { porK[s.k] = s; });
+var cxL = {}; for (i = 0; i < N; i++) { var lq = lab[i]; if (lq < 0) continue; var qx9 = i % nx, qy9 = (i - qx9) / nx, bq = cxL[lq] || (cxL[lq] = [qx9, qy9, qx9, qy9]); if (qx9 < bq[0]) bq[0] = qx9; if (qy9 < bq[1]) bq[1] = qy9; if (qx9 > bq[2]) bq[2] = qx9; if (qy9 > bq[3]) bq[3] = qy9; }
+var folgaB = Math.round(0.9 / cel);
+var bol = menosUm(N), maxCel = Math.round(6 / (cel * cel));
+for (i = 0; i < N; i++) {
+if (lab[i] >= 0 || M.ob[i] || bol[i] >= 0) continue;
+var pl = [i], cels = [], toca = false; bol[i] = i;
+while (pl.length) { var b0 = pl.pop(); cels.push(b0); var bx = b0 % nx, by = (b0 - bx) / nx; if (bx === 0 || by === 0 || bx === nx - 1 || by === ny - 1) toca = true;
+viz(b0, function (q) { if (lab[q] < 0 && !M.ob[q] && bol[q] < 0) { bol[q] = i; pl.push(q); } }); }
+if (toca || cels.length > maxCel) continue;
+var voto = {};
+cels.forEach(function (c3) { var cx3 = c3 % nx, cy3 = (c3 - cx3) / nx, a3, b3; for (b3 = -3; b3 <= 3; b3++) for (a3 = -3; a3 <= 3; a3++) { var qx3 = cx3 + a3, qy3 = cy3 + b3; if (qx3 < 0 || qy3 < 0 || qx3 >= nx || qy3 >= ny) continue; var l3 = lab[qx3 + nx * qy3]; if (l3 >= 0) voto[l3] = (voto[l3] || 0) + 1; } });
+var vk = -1, vm = 0; Object.keys(voto).forEach(function (k3) { if (voto[k3] > vm) { vm = voto[k3]; vk = +k3; } });
+var cb = cxL[vk], dentroCx = !!cb && cels.every(function (c3) { var x3 = c3 % nx, y3 = (c3 - x3) / nx; return x3 >= cb[0] - folgaB && x3 <= cb[2] + folgaB && y3 >= cb[1] - folgaB && y3 <= cb[3] + folgaB; });
+if (vk >= 0 && dentroCx) cels.forEach(function (c3) { lab[c3] = vk; });
+}
+var rep;
+for (rep = 0; rep < 2; rep++) for (i = 0; i < N; i++) {
+if (lab[i] >= 0 || !M.ob[i]) continue;
+var xi = i % nx, yi = (i - xi) / nx, d4;
+for (d4 = 1; d4 <= 2 && lab[i] < 0; d4++) {
+if (xi - d4 >= 0 && xi + d4 < nx && lab[i - d4] >= 0 && lab[i - d4] === lab[i + d4]) lab[i] = lab[i - d4];
+else if (yi - d4 >= 0 && yi + d4 < ny && lab[i - d4 * nx] >= 0 && lab[i - d4 * nx] === lab[i + d4 * nx]) lab[i] = lab[i - d4 * nx];
+}
+}
+var out = [];
+nomes.forEach(function (s) { if (s.dup != null) abertos.push({ nome: s.nome, motivo: "está no mesmo cômodo que \"" + porK[s.dup].nome + "\"" }); });
+vivos.forEach(function (s) {
+if (s.dup != null) return;
+var pol = contorno(M, lab, s.k); if (!pol || pol.length < 3) { abertos.push({ nome: s.nome, motivo: "não consegui fechar o contorno" }); return; }
+if (areaPol(pol) < 0) pol.reverse();
+var A = Math.abs(areaPol(pol));
+var pt = pontoNoPol([s.x, s.y], pol) ? [s.x, s.y] : [M.x0 + ((s.cel % nx) + 0.5) * cel, M.y0 + (Math.floor(s.cel / nx) + 0.5) * cel];
+var aD = null, dm = 1.2;
+areas.forEach(function (q) { if (q.usada) return; var d = Math.sqrt((q.x - s.x) * (q.x - s.x) + (q.y - s.y) * (q.y - s.y)); if (d < dm && pontoNoPol([q.x, q.y], pol)) { dm = d; aD = q; } });
+if (aD) aD.usada = true;
+out.push({ id: "a" + (out.length + 1), nome: s.nome, ponto: [r3(pt[0]), r3(pt[1])], poligono: pol, area: Math.round(A * 100) / 100, areaDesenho: aD ? aD.a : null });
+});
+return { ambientes: out, abertos: abertos, semNome: 0, stats: { celulas: N, paredes: W.length, obstaculos: obst.length } };
+}
+var FAM_DO_SUB = { bacia: "hid-bacia-caixa-acoplada", chuveiro: "hid-chuveiro", pia: "hid-pia-cozinha", tanque: "hid-tanque-lavar", lavatorio: "hid-lavatorio-suspenso", mictorio: null, bide: null, bebedouro: null };
+var ROT_SUB = { bacia: "Bacia sanitária", chuveiro: "Chuveiro", pia: "Pia de cozinha", tanque: "Tanque", lavatorio: "Lavatório" };
+var RX_MOLHADA = /BANH|BHO|WC|LAVABO|SANIT|COZ|GOURMET|SERV|LAVAND|AREA DE S|A S\b|CHURRAS|COPA/;
+function anonimo(nome) { return /^\*|^A\$C[0-9A-F]+$/i.test(String(nome || "")) || !/[A-Za-z]{3}/.test(String(nome || "")); }
+function ambienteDe(pt, ambs) { var r = null; (ambs || []).forEach(function (a) { if (!r && pontoNoPol(pt, a.poligono)) r = a; }); return r; }
+function paredeMaisPerto(pt, W) {
+var best = null;
+(W || []).forEach(function (p, k) {
+var dx = p.x2 - p.x1, dy = p.y2 - p.y1, L2 = dx * dx + dy * dy; if (!(L2 > 0)) return;
+var t = Math.max(0, Math.min(1, ((pt[0] - p.x1) * dx + (pt[1] - p.y1) * dy) / L2)), qx = p.x1 + dx * t, qy = p.y1 + dy * t;
+var d = Math.sqrt((pt[0] - qx) * (pt[0] - qx) + (pt[1] - qy) * (pt[1] - qy)) - p.espessura / 2;
+if (!best || d < best.d) {
+var L = Math.sqrt(L2), nx = -dy / L, ny = dx / L; if ((pt[0] - qx) * nx + (pt[1] - qy) * ny < 0) { nx = -nx; ny = -ny; }
+best = { k: k, d: d, face: [qx + nx * p.espessura / 2, qy + ny * p.espessura / 2], n: [nx, ny] };
+}
+});
+return best;
+}
+var RX_SUB_AMB = { pia: /COZ|GOURMET|COPA|CHURRAS/, tanque: /SERV|LAVAND/, bacia: /BANH|BHO|WC|LAVABO|SANIT/, chuveiro: /BANH|BHO|WC|SANIT|DUCHA/, lavatorio: /BANH|BHO|WC|LAVABO|SANIT/ };
+function distPol(pt, P) { var m = Infinity, i, j; for (i = 0, j = P.length - 1; i < P.length; j = i++) { var ax = P[j][0], ay = P[j][1], dx = P[i][0] - ax, dy = P[i][1] - ay, L2 = dx * dx + dy * dy, t = L2 > 0 ? Math.max(0, Math.min(1, ((pt[0] - ax) * dx + (pt[1] - ay) * dy) / L2)) : 0, qx = ax + dx * t - pt[0], qy = ay + dy * t - pt[1], d = Math.sqrt(qx * qx + qy * qy); if (d < m) m = d; } return m; }
+function ambientePreferido(pt, amb, sub, ambs) {
+var rx = sub && RX_SUB_AMB[sub]; if (!rx || (amb && rx.test(norm(amb.nome)))) return amb;
+var best = null, dm = 2.5;
+(ambs || []).forEach(function (a) { if (!rx.test(norm(a.nome))) return; var d = pontoNoPol(pt, a.poligono) ? 0 : distPol(pt, a.poligono); if (d < dm) { dm = d; best = a; } });
+return best || amb;
+}
+function sugestaoAnonimo(it, amb) {
+var a = Math.min(it.w, it.h), b = Math.max(it.w, it.h), nm = amb ? norm(amb.nome) : "", PCx = PC(), s = "";
+try { if (PCx && global.ProjClassDados) { var D = global.ProjClassDados.tamanhoLouca || []; D.forEach(function (f) { if (!s && a >= f.min[0] && b >= f.min[1] && a <= f.max[0] && b <= f.max[1]) s = f.sub; }); } } catch (e) {}
+if (!s) {
+if (/COZ|GOURMET|COPA/.test(nm) && b >= 0.4) s = "pia";
+else if (/SERV|LAVAND/.test(nm) && b >= 0.4) s = "tanque";
+else if (/BANH|BHO|WC|LAVABO|SANIT/.test(nm)) s = b <= 0.62 && a <= 0.35 ? "lavatorio" : (b <= 0.95 && a >= 0.5 ? "chuveiro" : "lavatorio");
+}
+return s;
+}
+function loucas(ins, par, ambs, o) {
+o = o || {};
+var W = (par && par.paredes) || [], P = PC(), auto = [], conferir = [], ign = 0;
+(ins || []).forEach(function (b) {
+if (!b || !isFinite(b.x) || !isFinite(b.y)) { ign++; return; }
+var w = num(b.w, 0), h = num(b.h, 0), pt = [b.x, b.y], amb = ambienteDe(pt, ambs);
+var cl0 = null; if (!anonimo(b.nome) && P && P.classificarBloco) { try { cl0 = P.classificarBloco({ nome: String(b.nome), layer: b.layer || "", w: w, h: h, atribs: b.atribs }, {}, null); } catch (e0) { cl0 = null; } }
+amb = ambientePreferido(pt, amb, cl0 && cl0.sub, ambs);
+var it = { nome: String(b.nome || ""), layer: b.layer || "", x: r3(b.x), y: r3(b.y), w: r3(w), h: r3(h), rot: num(b.rot, 0), espelhado: !!b.espelhado, ambiente: amb ? amb.nome : "", ambienteId: amb ? amb.id : null };
+var cl = cl0;
+var pw = paredeMaisPerto(pt, W);
+if (pw) it.parede = { k: pw.k, d: r3(pw.d), face: [r3(pw.face[0]), r3(pw.face[1])], n: [r3(pw.n[0]), r3(pw.n[1])] };
+if (cl && cl.classe === "louca" && cl.sub && FAM_DO_SUB[cl.sub] && cl.fonte !== "camada+tamanho") {
+it.sub = cl.sub; it.famId = FAM_DO_SUB[cl.sub]; it.regra = cl.regra; it.confianca = "alta";
+if (!pw || pw.d > 1.2) { it.motivo = "sem parede a menos de 1,2 m para encostar"; conferir.push(it); return; }
+auto.push(it); return;
+}
+if (cl && cl.classe && cl.classe !== "louca") { ign++; return; }
+var a = Math.min(w, h), bb = Math.max(w, h);
+if (!(bb >= 0.15 && bb <= 1.3 && a >= 0.08)) { ign++; return; }
+if (!amb || !RX_MOLHADA.test(norm(amb.nome))) { ign++; return; }
+it.sub = ""; it.sugestao = sugestaoAnonimo(it, amb); it.famId = it.sugestao ? FAM_DO_SUB[it.sugestao] : null; it.confianca = "baixa";
+it.regra = "bloco sem nome (" + it.nome + "), " + a.toFixed(2).replace(".", ",") + " × " + bb.toFixed(2).replace(".", ",") + " m, em " + amb.nome + (it.sugestao ? ": parece " + ROT_SUB[it.sugestao].toLowerCase() + " pelo tamanho e pelo cômodo — confira" : ": não sei o que é");
+conferir.push(it);
+});
+return { auto: auto, conferir: conferir, ignorados: ign };
+}
+function opLouca(it, id, famId, tipoId, y, med) {
+var pw = it.parede; if (!pw) return null;
+var n = pw.n, rot = Math.atan2(n[0], n[1]), ul = [Math.cos(rot), -Math.sin(rot)];
+var m = med || { x0: 0, x1: 0, z0: 0 }, lx = (num(m.x0, 0) + num(m.x1, 0)) / 2;
+var t = (it.x - pw.face[0]) * ul[0] + (it.y - pw.face[1]) * ul[1], F0 = [pw.face[0] + ul[0] * t, pw.face[1] + ul[1] * t];
+var o = [F0[0] - n[0] * num(m.z0, 0) - ul[0] * lx, F0[1] - n[1] * num(m.z0, 0) - ul[1] * lx];
+return { op: "familia", id: id, famId: famId, tipoId: tipoId, x: r3(o[0]), y: r3(y), z: r3(o[1]), rotY: Math.round(rot * 1e4) / 1e4, inst: {}, cadBloco: String(it.nome).slice(0, 60) };
+}
+function opsAmbientes(ambs, nivelId, pref, existentes) {
+var ops = [], ex = existentes || [];
+ex.forEach(function (id) { if (String(id).indexOf(pref) === 0) ops.push({ op: "apagar", id: String(id) }); });
+(ambs || []).forEach(function (a, k) {
+var P = a.poligono;
+P.forEach(function (p, i) {
+var q = P[(i + 1) % P.length];
+var s = { op: "separador", id: pref + "s" + (k + 1) + "-" + (i + 1), x0: p[0], z0: p[1], x1: q[0], z1: q[1], acompanhar: false };
+if (nivelId != null) s.nivelId = nivelId;
+ops.push(s);
+});
+var am = { op: "ambiente", id: pref + "a" + (k + 1), ponto: { x: a.ponto[0], z: a.ponto[1] }, nome: String(a.nome).slice(0, 60) };
+if (nivelId != null) am.nivelId = nivelId;
+ops.push(am);
+});
+return ops;
+}
+var CadAmbientes = {
+RX_PAREDE: RX_PAREDE, RX_FECHA: RX_FECHA, CEL: CEL, RAIO_PORTA: RAIO_PORTA, FAM_DO_SUB: FAM_DO_SUB, ROT_SUB: ROT_SUB,
+paredes: paredes, nomeDeComodo: nomeDeComodo, areaDoTexto: areaDoTexto, ambientes: ambientes, loucas: loucas,
+opLouca: opLouca, opsAmbientes: opsAmbientes, pontoNoPol: pontoNoPol, areaPol: areaPol, anonimo: anonimo, paredeMaisPerto: paredeMaisPerto
+};
+global.CadAmbientes = CadAmbientes;
+if (typeof module !== "undefined" && module.exports) module.exports = CadAmbientes;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/cadambientesui.js ==== */
+try {
+(function (global) {
+"use strict";
+function A() { return global.CadAmbientes; }
+function B2() { return global.Bim2D; }
+function BIM() { return global.BIM; }
+function arr(x) { return Array.isArray(x) ? x : []; }
+function h(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+function f2(v) { return v == null || !isFinite(v) ? "—" : (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+function toast(m, t, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(m, t || "ok", ms || 7000); } catch (e) {} }
+var U = {
+_cache: {},
+niveis: function () { try { return arr(B2().niveis()).slice().sort(function (a, b) { return (+a.y || 0) - (+b.y || 0); }); } catch (e) { return []; } },
+peDireito: function (nivelId) {
+var L = this.niveis(), i;
+for (i = 0; i < L.length; i++) if (String(L[i].id) === String(nivelId)) { var a = +L[i].y || 0, b = L[i + 1] ? +L[i + 1].y : null; return b != null && b - a > 1.5 && b - a < 8 ? b - a : 2.8; }
+return 2.8;
+},
+cotaDe: function (nivelId) { var r = 0; this.niveis().forEach(function (n) { if (String(n.id) === String(nivelId)) r = +n.y || 0; }); return r; },
+_chave: function (nivelId) {
+return String(nivelId) + "|" + arr(B2().cadLista(nivelId)).map(function (v) { return [v.id, v.dx, v.dy, v.rot || 0].join(","); }).join(";");
+},
+analisar: function (nivelId) {
+var Cm = A(), b2 = B2(); if (!Cm || !b2 || !b2.cadGeometria) return null;
+var k = this._chave(nivelId); if (this._cache[k]) return this._cache[k];
+var geo = b2.cadGeometria(nivelId, true);
+if (!geo.ids.length) return null;
+var par = Cm.paredes(geo.segs), am = Cm.ambientes(geo.segs, geo.textos, par), lc = Cm.loucas(geo.ins, par, am.ambientes);
+var r = { nivelId: nivelId, geo: { linhas: geo.segs.length, textos: geo.textos.length, blocos: geo.ins.length, semCamadas: geo.semCamadas, ids: geo.ids }, paredes: par, ambientes: am, loucas: lc };
+var self = this; Object.keys(this._cache).forEach(function (q) { if (q.split("|")[0] === String(nivelId)) delete self._cache[q]; });
+this._cache[k] = r;
+return r;
+},
+_ligado: function (nivelId, qual) { return arr(B2().cadLista(nivelId)).some(function (v) { return v.cadRef && v.cadRef[qual]; }); },
+paredesRef: function () {
+var self = this, out = [], b2 = B2(); if (!b2 || !b2.cadLista || !A()) return out;
+this.niveis().forEach(function (n) {
+if (!self._ligado(n.id, "paredes")) return;
+var r = null; try { r = self.analisar(n.id); } catch (e) { r = null; }
+if (!r) return;
+var base = +n.y || 0, alt = self.peDireito(n.id), vol = self._ligado(n.id, "vol");
+r.paredes.paredes.forEach(function (p, k) {
+out.push({ id: "cadref-" + n.id + "-" + k, uid: "cad:" + n.id + ":" + k, a: { x: p.x1, z: p.y1 }, b: { x: p.x2, z: p.y2 }, espessura: p.espessura, altura: alt, base: base, cad: true, volume: vol });
+});
+});
+return out;
+},
+atualizar3d: function () { var b = BIM(); try { return b && b.cadRefVolume ? b.cadRefVolume(this.paredesRef()) : 0; } catch (e) { return 0; } },
+_marcar: function (nivelId, paredes, vol) {
+var b2 = B2(), e = b2.estado(), L = (e.cad && e.cad[nivelId]) || [];
+L.forEach(function (v) { v.cadRef = { paredes: !!paredes, vol: !!vol }; });
+b2._gravar();
+},
+_tipo: function (famId) {
+var HF = global.HidFamilias, f = HF && HF.porId ? HF.porId(famId) : null; if (!f) return null;
+var t = arr(f.tipos).filter(function (x) { return !x.oculta; })[0] || arr(f.tipos)[0];
+return t ? { fam: f, tipo: t } : null;
+},
+_medidas: function (famId, tipoId) {
+var b = BIM(), av = null; try { av = b && b.familiaAvaliar ? b.familiaAvaliar(famId, tipoId, {}) : null; } catch (e) { av = null; }
+var cx = av ? (av.caixaObstaculo || av.caixa) : null; if (!cx || !isFinite(cx.x0)) return null;
+return { x0: cx.x0, x1: cx.x1, z0: av.faceParede != null && isFinite(+av.faceParede) ? +av.faceParede : cx.z0 };
+},
+aplicar: function (nivelId, o) {
+o = o || {};
+var self = this, Cm = A(), b = BIM(), r = this.analisar(nivelId);
+if (!r) return { ok: false, erro: "Este nível não tem desenho CAD vinculado." };
+if (!b || !b.editarLote) return { ok: false, erro: "Abra o modelo 3D (BIM) para gravar os ambientes e as louças." };
+this._marcar(nivelId, o.paredes !== false, o.paredes !== false && o.vol !== false);
+var est = null; try { est = b.editarEstado().estado; } catch (e) { est = null; }
+var ids = []; if (est) { arr(est.ambientes).forEach(function (x) { ids.push(String(x.id)); }); arr(est.separadores).forEach(function (x) { ids.push(String(x.id)); }); arr(est.familias).forEach(function (x) { ids.push(String(x.id)); }); }
+var ops = [], res = { ok: true, paredes: r.paredes.paredes.length, ambientes: 0, loucas: [], semParede: [], porAmbiente: {} };
+if (o.ambientes !== false) {
+var pref = "cadamb-" + nivelId + "-";
+Cm.opsAmbientes(r.ambientes.ambientes, nivelId, pref, ids).forEach(function (q) { ops.push(q); });
+res.ambientes = r.ambientes.ambientes.length;
+}
+if (o.loucas !== false) {
+var prefL = "cadlc-" + nivelId + "-", base = this.cotaDe(nivelId);
+ids.forEach(function (id) { if (id.indexOf(prefL) === 0) ops.push({ op: "apagar", id: id }); });
+var lista = r.loucas.auto.map(function (it) { return { it: it, sub: it.sub }; });
+r.loucas.conferir.forEach(function (it, i) { var s = o.confirmados && o.confirmados[i]; if (s) lista.push({ it: it, sub: s }); });
+lista.forEach(function (q, k) {
+var famId = Cm.FAM_DO_SUB[q.sub], tf = famId ? self._tipo(famId) : null;
+if (!tf) { res.semParede.push(q.it.nome + ": família de " + q.sub + " não carregada"); return; }
+var y = base;
+if (q.sub === "pia") { try { var al = global.HidKit && global.HidKit.alturaInstalacao ? global.HidKit.alturaInstalacao(famId, tf.tipo.nome) : null; if (al && al.ok) y = base + al.valor; } catch (eA) {} }
+var op = Cm.opLouca(q.it, prefL + (k + 1), famId, tf.tipo.id, y, self._medidas(famId, tf.tipo.id));
+if (!op) { res.semParede.push(q.it.nome + " (" + (q.it.ambiente || "sem ambiente") + "): sem parede para encostar"); return; }
+ops.push(op);
+var nm = q.it.ambiente || "Fora dos ambientes";
+(res.porAmbiente[nm] = res.porAmbiente[nm] || []).push(Cm.ROT_SUB[q.sub] || q.sub);
+res.loucas.push({ nome: q.it.nome, sub: q.sub, ambiente: nm, id: op.id });
+});
+}
+if (ops.length) {
+var okL = false;
+try { okL = !!b.editarLote({ op: "lote", id: "lcad" + Date.now().toString(36), origem: "cad-ambientes", pedido: "Do desenho: ambientes e louças", ops: ops }); } catch (eL) { okL = false; }
+if (!okL) return { ok: false, erro: "O editor recusou os ambientes/louças do desenho." };
+}
+res.volumetria = this.atualizar3d();
+return res;
+},
+abrir: function (nivelId) {
+var self = this, UI = global.UI; if (!UI || !UI.modal) return null;
+var r = null; try { r = this.analisar(nivelId); } catch (e) { r = null; }
+var nomeNv = ""; this.niveis().forEach(function (n) { if (String(n.id) === String(nivelId)) nomeNv = n.nome; });
+if (!r) { toast("Este nível não tem desenho CAD vinculado.", "aviso"); return null; }
+var am = r.ambientes, lc = r.loucas, SUBS = ["", "bacia", "lavatorio", "chuveiro", "pia", "tanque"];
+var avisos = [];
+if (r.geo.semCamadas) avisos.push("Este vínculo foi feito antes desta versão e não guardou as camadas nem os blocos: as paredes saem só pela geometria e as louças não aparecem. Para o resultado completo, remova o vínculo e vincule o DWG de novo.");
+if (!r.paredes.paredes.length) avisos.push("Não reconheci parede neste desenho (" + r.geo.linhas + " linhas). O traçado continua sem parede neste nível.");
+else if (r.paredes.criterio !== "camada") avisos.push("O desenho não tem camada de parede (PAREDE, ALVENARIA, REBOCO…): as paredes saíram só pela geometria (pares de linhas paralelas) e podem faltar ou sobrar.");
+if (am.motivo) avisos.push("Ambientes: " + am.motivo + ".");
+var linhasAmb = am.ambientes.map(function (a) {
+var dif = a.areaDesenho ? Math.abs(a.area - a.areaDesenho) / a.areaDesenho : null;
+return "<tr><td>" + h(a.nome) + '</td><td style="text-align:right">' + f2(a.area) + ' m²</td><td style="text-align:right">' + (a.areaDesenho ? f2(a.areaDesenho) + " m²" + (dif > 0.15 ? ' <span title="a área achada difere da escrita no desenho: confira o contorno na planta" style="color:var(--aviso,#a60)">⚠</span>' : "") : '<span class="muted">—</span>') + "</td></tr>";
+}).join("");
+var linhasAb = am.abertos.map(function (a) { return "<li><b>" + h(a.nome) + "</b>: " + h(a.motivo) + "</li>"; }).join("");
+var linhasAuto = lc.auto.map(function (it) { return "<li>" + h(A().ROT_SUB[it.sub] || it.sub) + " — bloco <i>" + h(it.nome) + "</i>" + (it.ambiente ? " em <b>" + h(it.ambiente) + "</b>" : "") + "</li>"; }).join("");
+var linhasConf = lc.conferir.map(function (it, i) {
+return '<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--linha);font-size:12.5px"><span style="flex:1;min-width:0">' + h(it.regra || it.motivo || it.nome) + "</span>" +
+'<select data-cadlc="' + i + '">' + SUBS.map(function (s) { return '<option value="' + s + '"' + (s === (it.sugestao || it.sub || "") ? " selected" : "") + ">" + (s ? h(A().ROT_SUB[s]) : "Não é louça") + "</option>"; }).join("") + "</select>" +
+'<label style="display:flex;gap:4px;align-items:center;margin:0"><input type="checkbox" data-cadlc-ok="' + i + '"> confirmo</label></div>';
+}).join("");
+var html = '<div id="cad-amb" style="font-size:13px">' +
+'<p class="muted" style="margin:0 0 8px">' + h(nomeNv) + ": o desenho vinculado vira <b>referência</b> do projeto — as paredes entram no Traçado automático e no 3D, mas <b>não</b> são modeladas nem orçadas.</p>" +
+(avisos.length ? '<div style="border:1px solid var(--aviso,#c80);border-radius:10px;padding:6px 10px;margin-bottom:8px">' + avisos.map(h).join("<br>") + "</div>" : "") +
+'<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" id="cad-amb-par" checked> <b>' + r.paredes.paredes.length + " paredes de referência</b> para o traçado do hidro (pé-direito " + f2(this.peDireito(nivelId)) + " m)</label>" +
+'<label style="display:flex;gap:6px;align-items:center;margin:0 0 8px"><input type="checkbox" id="cad-amb-vol" checked> Mostrar a volumetria dessas paredes no 3D (cinza translúcido, fora do orçamento)</label>' +
+'<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" id="cad-amb-amb"' + (am.ambientes.length ? " checked" : " disabled") + "> <b>" + am.ambientes.length + " ambientes</b> com o nome do desenho</label>" +
+(am.ambientes.length ? '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:6px"><tr class="muted"><td>Ambiente</td><td style="text-align:right">Área achada</td><td style="text-align:right">No desenho</td></tr>' + linhasAmb + "</table>" : "") +
+(linhasAb ? '<details style="margin-bottom:8px"' + (am.ambientes.length ? "" : " open") + '><summary style="cursor:pointer">Nomes que não viraram ambiente (' + am.abertos.length + ")</summary><ul style=\"margin:4px 0 0 18px;padding:0\">" + linhasAb + "</ul></details>" : "") +
+'<label style="display:flex;gap:6px;align-items:center;margin:0 0 4px"><input type="checkbox" id="cad-amb-lc"' + (lc.auto.length + lc.conferir.length ? " checked" : " disabled") + "> <b>Louças pelos blocos</b>: " + lc.auto.length + " reconhecida(s) pelo nome" + (lc.conferir.length ? ", " + lc.conferir.length + " para conferir" : "") + "</label>" +
+(linhasAuto ? '<ul style="margin:0 0 6px 18px;padding:0;font-size:12.5px">' + linhasAuto + "</ul>" : "") +
+(linhasConf ? '<div id="cad-amb-conf" style="margin:4px 0 6px"><div class="muted" style="font-size:11.5px">Blocos sem nome: a sugestão vem do tamanho e do cômodo — só entra o que você confirmar.</div>' + linhasConf + "</div>" : "") +
+"</div>";
+var bg = UI.modal("Paredes, ambientes e louças do desenho", html, [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Aplicar", classe: "primary", onClick: function () {
+var q = function (id) { var el = document.getElementById(id); return !!(el && el.checked && !el.disabled); };
+var conf = {};
+[].slice.call(document.querySelectorAll("#cad-amb [data-cadlc-ok]")).forEach(function (c) { var i = c.getAttribute("data-cadlc-ok"), s = document.querySelector('#cad-amb select[data-cadlc="' + i + '"]'); if (c.checked && s && s.value) conf[i] = s.value; });
+var o = { paredes: q("cad-amb-par"), vol: q("cad-amb-vol"), ambientes: q("cad-amb-amb"), loucas: q("cad-amb-lc"), confirmados: conf };
+UI.fecharModal();
+var res = self.aplicar(nivelId, o); self._ultimo = res;
+if (!res.ok) { toast(res.erro, "erro", 9000); return; }
+self.resumo(nivelId, res, o);
+} }
+]);
+return bg;
+},
+resumo: function (nivelId, res, o) {
+var UI = global.UI, pa = res.porAmbiente, ks = Object.keys(pa);
+var html = "<p>" + (o.paredes ? "<b>" + res.paredes + " paredes de referência</b> ligadas para o Traçado automático" + (res.volumetria ? " e " + res.volumetria + " na volumetria do 3D" : "") + ". " : "Paredes de referência desligadas. ") +
+(o.ambientes ? "<b>" + res.ambientes + " ambientes</b> gravados com o nome do desenho." : "") + "</p>" +
+(ks.length ? "<p><b>Louças por ambiente</b></p><ul>" + ks.map(function (k) { return "<li><b>" + h(k) + "</b>: " + pa[k].map(h).join(", ") + "</li>"; }).join("") + "</ul>" : (o.loucas ? "<p>Nenhuma louça entrou.</p>" : "")) +
+(res.semParede.length ? '<p style="color:var(--aviso,#a60)">Ficou de fora: ' + res.semParede.map(h).join("; ") + ".</p>" : "") +
+'<p class="muted">Agora rode <b>Hidrossanitário › Traçado automático</b>. Ctrl+Z desfaz ambientes e louças de uma vez.</p>';
+try { if (UI && UI.modal) UI.modal("Do desenho para o projeto", '<div id="cad-amb-resumo">' + html + "</div>", [{ texto: "OK", classe: "primary", onClick: function () { UI.fecharModal(); } }]); } catch (e) {}
+}
+};
+if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("bim:modelos", function () { setTimeout(function () { try { if (U.paredesRef().length) U.atualizar3d(); } catch (e) {} }, 300); });
+global.CadAmbientesUI = U;
+if (typeof module !== "undefined" && module.exports) module.exports = U;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimvolume.js ==== */
 try {
 (function (global) {
@@ -119194,7 +119691,12 @@ if (p && p.caixa) { dx = (p.caixa.min[0] + p.caixa.max[0]) / 2 - w / 2; dy = (p.
 if (opts.pos && isFinite(+opts.pos.dx) && isFinite(+opts.pos.dy)) { dx = +opts.pos.dx; dy = +opts.pos.dy; }
 this._cadSeq = (this._cadSeq || 0) + 1;
 var lid = "cad" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36) + this._cadSeq.toString(36);
-var dados = { s: s, t: t };
+var ly = [], Lmap = {}, Lnom = [], fl = [];
+segs.forEach(function (g) { var nm = String(g.layer == null ? "0" : g.layer); if (Lmap[nm] == null) { Lmap[nm] = Lnom.length; Lnom.push(nm); } ly.push(Lmap[nm]); fl.push((g.bloco ? 1 : 0) + (g.curva ? 2 : 0)); });
+var bk = ((dxf && dxf.inserts) || []).slice(0, 2000).filter(function (b) { return b && !b.nivel && isFinite(b.cx != null ? b.cx : b.x); }).map(function (b) {
+return [r3((b.cx != null ? b.cx : b.x) - ex.x0), r3((b.cy != null ? b.cy : b.y) - ex.y0), String(b.nome || "").slice(0, 60), String(b.layer || "").slice(0, 40), r3(+b.w || 0), r3(+b.h || 0), r3(+b.rot || 0), b.espelhado ? 1 : 0];
+});
+var dados = { s: s, t: t, ly: ly, L: Lnom, fl: fl, b: bk };
 this._cadMem[lid] = dados;
 var gravou = true;
 try { localStorage.setItem(this._cadChave(lid), JSON.stringify(dados)); } catch (e) { gravou = false; }
@@ -119286,6 +119788,25 @@ out.push({ id: v.id, seg: seg, tx: (dd.t || []).map(function (t) { return [dx + 
 });
 return out;
 },
+cadGeometria: function (nivelId, todos) {
+var self = this, out = { segs: [], textos: [], ins: [], ids: [], semCamadas: false };
+this.cadLista(nivelId).forEach(function (v) {
+if (!v.vis && !todos) return;
+var dd = self._cadDados(v.id); if (!dd) return;
+out.ids.push(v.id);
+if (!dd.ly) out.semCamadas = true;
+var a = (+v.rot || 0) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a), dx = +v.dx || 0, dy = +v.dy || 0;
+function X(u, w) { return dx + u * co - w * si; } function Y(u, w) { return dy - (u * si + w * co); }
+for (var i = 0, k = 0; i + 3 < dd.s.length; i += 4, k++) {
+var g = { x1: X(dd.s[i], dd.s[i + 1]), y1: Y(dd.s[i], dd.s[i + 1]), x2: X(dd.s[i + 2], dd.s[i + 3]), y2: Y(dd.s[i + 2], dd.s[i + 3]), layer: dd.ly && dd.L ? dd.L[dd.ly[k]] : "" };
+if (dd.fl) { if (dd.fl[k] & 1) g.bloco = true; if (dd.fl[k] & 2) g.curva = true; }
+out.segs.push(g);
+}
+(dd.t || []).forEach(function (t) { out.textos.push({ x: X(t[0], t[1]), y: Y(t[0], t[1]), txt: t[2] }); });
+(dd.b || []).forEach(function (b) { out.ins.push({ nome: b[2], layer: b[3], x: X(b[0], b[1]), y: Y(b[0], b[1]), w: b[4], h: b[5], rot: -(b[6] || 0) - (+v.rot || 0), espelhado: !!b[7] }); });
+});
+return out;
+},
 props: function (id) {
 if (/^d2t-/.test(String(id))) return global.BimTabelaUI ? global.BimTabelaUI.propsVista(id) : null;
 var self = this, d = this.def(id); if (!d) return null;
@@ -119364,6 +119885,7 @@ vc.push({ id: p + "alinhar", rotulo: "Posição", tipo: "botao", rotuloBotao: "A
 if (v.grupo) vc.push({ id: p + "junto", rotulo: "Mover junto os outros pavimentos", tipo: "sim-nao", valor: v.junto !== false });
 vc.push({ id: p + "excluir", rotulo: "Vínculo", tipo: "botao", rotuloBotao: "Remover vínculo", fn: function () { self.excluirCad(v.id); self.redesenhar(id, false); status("Vínculo CAD removido."); } });
 });
+if (vc.length && global.CadAmbientesUI) vc.push({ id: "cad-ambientes", rotulo: "Projeto", tipo: "botao", rotuloBotao: "Paredes, ambientes e louças do desenho…", fn: function () { global.CadAmbientesUI.abrir(d.nivel.id); } });
 if (this._cfg.vincular) vc.push({ id: "cad-novo", rotulo: "DWG / DXF", tipo: "botao", rotuloBotao: "Vincular desenho CAD…", fn: function () { self._cfg.vincular(id); } });
 if (vc.length) secoes.push({ nome: "Vínculos CAD", params: vc });
 }
@@ -122993,6 +123515,7 @@ if (t.sistema !== sistema || t.vertical || saiDoInicio(t)) return;
 var ax = t.p2.x - t.p1.x, az = t.p2.z - t.p1.z, L2 = ax * ax + az * az; if (!(L2 > 0)) return;
 var u = ((p.x - t.p1.x) * ax + (p.z - t.p1.z) * az) / L2; if (u <= 0.02 || u >= 0.98) return;
 var q = { x: t.p1.x + ax * u, y: t.p1.y + (t.p2.y - t.p1.y) * u, z: t.p1.z + az * u };
+if (!(I.SISTEMAS[sistema] && I.SISTEMAS[sistema].gravidade) && yTrab != null && isFinite(yTrab) && Math.abs(q.y - yTrab) > 0.30) return;
 ver({ tipo: "meio", x: r4(q.x), y: r4(q.y), z: r4(q.z), dn: t.dn, trecho: t.id }, dPlan(q), 3);
 });
 if (melhor && melhor.tipo === "ponta") {
@@ -123044,8 +123567,14 @@ if (M0 && (M0.dns || []).indexOf(alvo.dn) >= 0) { c.dn = alvo.dn; this.pintarPro
 else ctx.hint("O conector pede DN " + alvo.dn + ", que " + (M0 ? M0.nome : c.material) + " não tem na lista comercial: o tubo segue DN " + c.dn + " e a redução entra no nó.");
 }
 }
+var dnMsg = "";
+if (alvo && alvo.tipo === "aparelho" && global.HidMao && !(alvo.famInst != null && alvo.dn > 0 && alvo.dn === c.dn)) {
+var dnAp = global.HidMao.dnDoPonto(est, alvo, c.sistema), Mdn = I.MATERIAIS[c.material];
+if (dnAp && dnAp !== c.dn && Mdn && (Mdn.dns || []).indexOf(dnAp) >= 0) { c.dn = dnAp; if (S.gravidade) c.inclinacao = this.inclinacaoDn(c.sistema, dnAp); dnMsg = " DN " + dnAp + " (o do aparelho)."; }
+}
 this._sobe = !!(alvo && S.gravidade && (alvo.tipo === "vertical" || alvo.tipo === "meio" || (alvo.tipo === "ponta" && this._pontaDeCima(est, alvo))));
 var yT = r4(base + this.alturaTrabalho(this._sobe));
+if (alvo && alvo.tipo === "aparelho" && !S.gravidade && global.HidMao) yT = r4(global.HidMao.nivelPonto(yT, alvo.y));
 var q0 = alvo ? { x: alvo.x, y: alvo.tipo === "vertical" && !(ev && ev._corte) ? yT : alvo.y, z: alvo.z } : { x: r4(p.x), y: yT, z: r4(p.z) };
 if (alvo && alvo.tipo === "peca" && alvo.hub && !alvo.boca && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
 if (!alvo && ev && ev._corte && isFinite(p.y)) q0.y = r6(p.y);
@@ -123070,6 +123599,9 @@ saida0.forEach(function (q) { var o0 = this._opTrecho(ant0, q, ed.ops); if (I.no
 if (oi.length) { ed.ops.pop(); ctx.op(oi[oi.length - 1]); q0 = ant0; ctx.marcar(); nIni = oi.length; }
 }
 this._inicio = alvo ? { alvo: JSON.parse(JSON.stringify(alvo)), nIni: nIni, y: q0.y } : null;
+this._traco = { ids: [], fixos: [], flex: !alvo || (alvo.tipo === "aparelho"), famInst: alvo && alvo.famInst != null ? alvo.famInst : null };
+if (saida0 && oi && oi.length) { this._traco.ids = oi.map(function (o9) { return o9.id; }); this._traco.fixos = [{ x: alvo.x, y: alvo.y, z: alvo.z }, saida0[0]]; }
+else if (alvo && alvo.tipo === "aparelho") this._traco.fixos = [{ x: alvo.x, y: alvo.y, z: alvo.z }];
 this._dnOrigem = (function () {
 var m = alvo && alvo.dn != null ? Number(alvo.dn) || 0 : 0;
 ((est.instalacoes || {}).trechos || []).forEach(function (t0) { if (t0.sistema === c.sistema && [t0.p1, t0.p2].some(function (q) { return Math.abs(q.x - q0.x) + Math.abs(q.z - q0.z) + Math.abs(q.y - q0.y) <= 3 * I.TOL + 1e-6; })) m = Math.max(m, Number(t0.dn) || 0); });
@@ -123091,15 +123623,32 @@ if (alvo && alvo.tipo === "meio" && !S.gravidade) {
 var tM = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
 if (tM) this._meioAgua = { u: { x: tM.p2.x - tM.p1.x, z: tM.p2.z - tM.p1.z }, P: { x: q0.x, z: q0.z }, material: c.material, dn: c.dn };
 }
-if (alvo && alvo.tipo === "meio" && I.dividirTrecho) { var dv = I.dividirTrecho(est, alvo.trecho, q0); if (dv.length) { ed.ops.push(dv[0]); ctx.op(dv[1]); } }
+if (alvo && alvo.tipo === "meio" && I.dividirTrecho) {
+var tOrig = ((est.instalacoes || {}).trechos || []).filter(function (t) { return String(t.id) === String(alvo.trecho); })[0];
+var dv = I.dividirTrecho(est, alvo.trecho, q0);
+if (dv.length) {
+ed.ops.push(dv[0]); ctx.op(dv[1]);
+if (this._inicio && tOrig) { this._inicio.nIni += dv.length; this._inicio.tOrig = JSON.parse(JSON.stringify(tOrig)); this._inicio.idsDiv = dv.map(function (o9) { return o9.id; }); }
+}
+}
 ctx.inicio(q0);
-ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + ". " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
+ctx.hint((alvo ? "Ligado em " + this._rotAlvo(alvo) + (saida0 ? " (desceu embutido até a cota de trabalho)" : "") + "." + dnMsg + " " : "") + "Altura de trabalho " + fmt(q0.y - base, 2) + " m do nível" +
 (S.gravidade ? (this._sobe ? ", subindo " : ", descendo ") + fmt(c.inclinacao, 2) + "%" : "") + ". Clique o próximo ponto: o traço anda a 90° e 45° (Alt, ou Ângulo livre em Propriedades, para outra direção).");
 this.pintarProps();
 return;
 }
 var p1 = { x: ed.p1.x, y: ed.p1.y, z: ed.p1.z };
 if (this._ligacao) { this.confirmarLigacao(); return; }
+if (alvo && (Math.hypot(alvo.x - p1.x, alvo.z - p1.z) <= I.TOL + 1e-6 && (alvo.tipo !== "vertical") && Math.abs(num(alvo.y, p1.y) - p1.y) <= 0.10 ||
+(this._inicio && this._inicio.alvo && alvo.tipo === this._inicio.alvo.tipo && Math.hypot(alvo.x - this._inicio.alvo.x, alvo.y - this._inicio.alvo.y, alvo.z - this._inicio.alvo.z) <= I.TOL + 1e-6))) {
+ctx.hint("É o mesmo ponto de onde o traço saiu — clique o destino (outro ponto, tubo ou caixa), ou Esc."); return;
+}
+var renivel = null, tr0 = this._traco;
+if (alvo && !livre && tr0 && tr0.flex && global.HidMao && !(ev && ev._corte)) {
+var dyR = null, yAlvo = num(alvo.y, NaN);
+if (alvo.tipo === "aparelho" && !S.gravidade && isFinite(yAlvo) && Math.abs(yAlvo - p1.y) > I.TOL && Math.abs(yAlvo - p1.y) < global.HidMao.LIMIAR_DEGRAU) dyR = yAlvo - p1.y;
+if (dyR != null) { renivel = this._renivelarTraco(est, dyR, base, S); if (renivel.ok) p1 = { x: p1.x, y: r6(p1.y + dyR), z: p1.z }; }
+}
 var corteP = ev && ev._corte && !alvo ? this.pontoCorte(p1, p, livre) : null;
 if (corteP && corteP.tipo === "horizontal" && ev._mudaPlano) corteP = null;
 if (alvo && !livre && this._inicio && this.tentarLigacao(ctx, this._inicio, alvo, base)) return;
@@ -123109,7 +123658,7 @@ if (alvo && alvo.tipo === "peca" && !livre && !corteP && S.gravidade && !this._s
 var pkT = ((est.instalacoes || {}).pecas || []).filter(function (k) { return String(k.id) === String(alvo.id); })[0];
 if (pkT && global.HidBocas.bocas(est, pkT).length) {
 var eT = global.HidBocas.entradasLivres(est, pkT, p1, c.dn);
-if (eT.ok && eT.bocas.length) bocaT = eT.bocas[0];
+if (eT.ok && eT.bocas.length) bocaT = (alvo.boca && eT.bocas.filter(function (b9) { var vx9 = p1.x - pkT.x, vz9 = p1.z - pkT.z, L9 = Math.hypot(vx9, vz9) || 1; return String(b9.id) === String(alvo.boca) && (b9.dir.x * vx9 + b9.dir.z * vz9) / L9 > 0.3; })[0]) || eT.bocas[0];
 else if (eT.dnDiferente && num(eT.dnBoca, 0) > 0 && num(eT.dnBoca, 0) < num(c.dn, 0)) {
 var dnO = this._dnOrigem;
 if (dnO != null && dnO > num(eT.dnBoca, 0)) avisoBocaT = "o tubo vem de um ramal DN " + dnO + " (bacia / ramal de esgoto) e não entra na caixa sifonada, que só recebe ramal de descarga DN " + eT.dnBoca + " (NBR 8160) - ligue na caixa de inspeção ou no tubo de queda";
@@ -123144,9 +123693,26 @@ if (L > 0.005) pts.push({ x: r4(q.x), y: r6(yH), z: r4(q.z) });
 ant = q;
 });
 var abaixo = alvo && S.gravidade && !this._sobe && (alvo.tipo === "meio" || alvo.tipo === "ponta") && yH < alvo.y - I.TOL;
-var subiuBoca = false;
+if (abaixo && (!renivel || !renivel.ok) && tr0 && tr0.flex && !livre && !(ev && ev._corte) && global.HidMao) {
+var folgaJ = alvo.tipo === "meio" ? num(c.inclinacao, 2) / 100 * 0.35 : 0;
+var dyE = r6(alvo.y + folgaJ - yH), rE = this._renivelarTraco(est, dyE, base, S);
+if (rE.ok) { renivel = rE; p1 = { x: p1.x, y: r6(p1.y + dyE), z: p1.z }; pts = pts.map(function (q) { return { x: q.x, y: r6(q.y + dyE), z: q.z }; }); yH = r6(yH + dyE); abaixo = false; }
+else renivel = rE;
+}
+var subiuBoca = false, rebaixoT = null, avisoEntrada = null;
 if (bocaT) {
-var iT = num(c.inclinacao, 0) / 100, yAnt = r4(bocaT.y + iT * LBOCA_T), fx = pts.length ? pts[pts.length - 1] : p1;
+var iT = num(c.inclinacao, 0) / 100, fx = pts.length ? pts[pts.length - 1] : p1;
+if (global.HidMao && pkT) {
+var eC = global.HidMao.entradaCaixa(est, pkT, p1, dnChegaT || c.dn, fx.y - iT * LBOCA_T, bocaT.id);
+if (eC.ok) {
+if (eC.rebaixo > 0) {
+var oRb = global.HidLigar && global.HidLigar.opsRebaixo ? global.HidLigar.opsRebaixo(est, ctx.famAval, pkT, eC.rebaixo) : null;
+if (oRb && oRb.ops) { rebaixoT = { ops: oRb.ops, dd: eC.rebaixo }; bocaT = eC.boca; }
+else avisoEntrada = "a caixa precisaria descer " + fmt(eC.rebaixo * 100, 1) + " cm com o prolongador e o arraste recusou" + (oRb && oRb.erro ? " (" + oRb.erro + ")" : "");
+} else bocaT = eC.boca;
+} else if (eC.erro && !eC.dnDiferente) avisoEntrada = eC.erro;
+}
+var yAnt = r4(bocaT.y + iT * LBOCA_T);
 if (Math.abs(fx.y - yAnt) > I.TOL) { pts.push({ x: fx.x, y: yAnt, z: fx.z }); subiuBoca = yAnt > fx.y; }
 pts.push({ x: r4(bocaT.x), y: r4(bocaT.y), z: r4(bocaT.z) });
 }
@@ -123200,10 +123766,12 @@ if (novos.length) { criados.pop(); novos.forEach(function (o2) { criados.push(o2
 }
 }
 if (!feito45 && alvo && alvo.tipo === "meio" && I.dividirTrecho) { var fimD = pts[pts.length - 1]; I.dividirTrecho(est, alvo.trecho, fimD).forEach(function (o) { ed.ops.push(o); }); }
-var ajV = null; if (I.ajustarViradas && S.gravidade) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
+var renOk = !!(renivel && renivel.ok && renivel.ops.length), rebOps = rebaixoT ? rebaixoT.ops : [];
+var ajV = null; if (I.ajustarViradas && S.gravidade && !renOk && !rebOps.length) { try { ajV = I.ajustarViradas(est, ctx.famAval, criados, !!alvo); } catch (eAj) { ajV = null; } }
 if (ajV && ajV.ajustes.length) { criados = ajV.novos; pts[pts.length - 1] = this._sobe && S.gravidade ? criados[criados.length - 1].p1 : criados[criados.length - 1].p2; }
 var extrasV = ajV && ajV.ajustes.length ? ajV.extras : [];
-if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
+if (renOk || rebOps.length) ctx.op({ op: "lote", id: "hid-mao-" + Date.now(), origem: "hidmao", ops: rebOps.concat(renOk ? renivel.ops : []).concat(criados) });
+else if (extrasV.length) ctx.op({ op: "lote", id: "hid-virada-" + Date.now(), origem: "hidvirada", ops: extrasV.concat(criados) });
 else {
 criados.forEach(function (o, k) { if (k < criados.length - 1) ed.ops.push(o); });
 ctx.op(criados[criados.length - 1]);
@@ -123220,7 +123788,21 @@ if (bocaT) msg += " — termina na " + bocaT.id + " da " + self._rotAlvo(alvo) +
 if (dnChegaT) msg += " - o tubo chega na caixa no DN da entrada (DN " + dnChegaT + ")";
 if (avisoBocaT) msg += " ⚠ " + avisoBocaT + ": o traço ficou como foi, ao centro da peça";
 if (abaixo) msg += " ⚠ chegou " + fmt((alvo.y - yH) * 100, 1) + " cm ABAIXO do tubo de destino: o trecho sobe para ligar — baixe o ramal de destino ou suba a altura de trabalho";
-if (alvo) { ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
+if (renivel && renivel.ok) msg += " — o traço " + (renivel.dy > 0 ? "subiu " : "desceu ") + fmt(Math.abs(renivel.dy) * 100, 1) + " cm inteiro para chegar no destino sem degrau (a mesma declividade)";
+else if (renivel && !renivel.ok && renivel.erro && (abaixo || (alvo && alvo.tipo === "aparelho"))) msg += " (não deu para renivelar o traço: " + renivel.erro + ")";
+if (rebaixoT) msg += " — a caixa desceu " + fmt(rebaixoT.dd * 100, 1) + " cm com o prolongador (a entrada fica acima do fecho hídrico; os tubos dela desceram junto)";
+else if (bocaT && !subiuBoca && Math.abs(bocaT.y - pts[pts.length - 1].y) < 1e-6 && global.HidMao) msg += ", entra na altura em que chega";
+if (avisoEntrada) msg += " ⚠ " + avisoEntrada;
+if (global.HidMao && global.HidMao._int && global.HidMao._int.colide && !livre) {
+try {
+var trIds = (this._traco ? this._traco.ids : []).concat(alvo && alvo.trecho != null ? [alvo.trecho] : []).concat(criados.map(function (o9) { return o9.id; }));
+var segsC = criados.filter(function (o9, k9) { return !(k9 === 0 && self._traco && self._traco.ids.length === 0 && self._traco.famInst != null); }).map(function (o9) { return { a: o9.p1, b: o9.p2, sistema: o9.sistema }; });
+var bateC = segsC.length ? global.HidMao._int.colide(est, ctx.famAval, segsC, c.dn, trIds, [alvo && alvo.famInst, this._traco && this._traco.famInst]) : null;
+if (bateC) msg += " ⚠ o traço " + bateC + " — confira (Ctrl+Z desfaz)";
+} catch (eC9) {}
+}
+if (this._traco) criados.forEach(function (o9) { if (self._traco.ids.indexOf(o9.id) < 0) self._traco.ids.push(o9.id); });
+if (alvo) { this._traco = null; ctx.fim(); this._sobe = false; this._planoCota(); ctx.hint(msg + " — ligado em " + self._rotAlvo(alvo) + ". Clique o início do próximo, ou Esc."); }
 else { ctx.inicio(fim); ctx.hint(msg + ". Continuando do fim — clique o próximo ponto, ou Esc."); }
 this._ultimaSaida = fim.y - base;
 ctx.marcar();
@@ -123235,6 +123817,7 @@ var S = I.SISTEMAS[c.sistema], p2 = { x: p1.x, y: y, z: p1.z };
 var o = this._sobe && S.gravidade ? this._opTrecho(p2, p1, ed.ops) : this._opTrecho(p1, p2, ed.ops);
 if (!I.normTrecho(o)) return false;
 ctx.op(o); ctx.inicio(p2); ctx.marcar(); this._inicio = null;
+if (this._traco) this._traco.ids.push(o.id);
 var contra = S.gravidade && ((!this._sobe && y > p1.y) || (this._sobe && y < p1.y));
 var t = (y > p1.y ? "Subiu " : "Desceu ") + fmt(Math.abs(y - p1.y), 2) + " m na vertical (joelhos no pé e no topo). Altura de trabalho agora " + fmt(y - base, 2) + " m — continue o traço." +
 (contra ? " ⚠ o esgoto não pode SUBIR no sentido do escoamento: confira (desenhe a partir do tubo de queda para subir até o aparelho)." : "");
@@ -123426,6 +124009,13 @@ g.appendChild(ci);
 this._hoverPk = pk; this._indicadorPlano(id, pk);
 return pk;
 },
+_renivelarTraco: function (est, dy, base, S) {
+var tr0 = this._traco, H = global.HidMao; if (!tr0 || !tr0.flex || !H) return { ok: false, erro: "o traço começou num tubo ou numa caixa (a cota está presa nela)" };
+var trs = ((est.instalacoes || {}).trechos || []).filter(function (t) { return tr0.ids.indexOf(t.id) >= 0; });
+if (!trs.length && tr0.fixos.length) return { ok: false, erro: "o traço saiu do ponto sem descida embutida" };
+var r = H.renivelar(trs, dy, tr0.fixos, S && S.gravidade ? { piso: base, cobrimento: this.COBRIMENTO } : {});
+return r.erro ? { ok: false, erro: r.erro } : { ok: true, ops: r.ops, dy: dy };
+},
 pontoLigacao: function (alvo, c) {
 var a = alvo || {}, base = { x: a.x, y: a.y, z: a.z, sistema: c.sistema, dn: a.dn > 0 ? a.dn : (a.tipo === "aparelho" ? 0 : c.dn) };
 if (a.tipo === "aparelho") { base.tipo = "conector"; base.famInst = a.famInst; base.parede = a.parede || null; return base; }
@@ -123462,13 +124052,37 @@ var estF = ctx.edit && ctx.edit.estado;
 if (estF && A.tipo === "ponta" && (Bp.tipo === "peca" || Bp.tipo === "conector") && this._pontaDeCima(estF, A)) { var tx3 = A; A = Bp; Bp = tx3; }
 else if (estF && Bp.tipo === "ponta" && A.tipo === "peca" && this._pontaDeBaixo(estF, Bp)) { var tx4 = A; A = Bp; Bp = tx4; }
 }
-if (A.tipo === "vertical") return false;
+var est = ctx.edit.estado;
+if (ini.tOrig && ini.idsDiv && est && est.instalacoes) {
+var e2 = {}; Object.keys(est).forEach(function (k) { e2[k] = est[k]; });
+var in2 = {}; Object.keys(est.instalacoes).forEach(function (k) { in2[k] = est.instalacoes[k]; });
+in2.trechos = (est.instalacoes.trechos || []).filter(function (t) { return ini.idsDiv.indexOf(t.id) < 0; }).concat([ini.tOrig]);
+e2.instalacoes = in2; est = e2;
+if (A.trecho && ini.idsDiv.indexOf(A.trecho) >= 0) A.trecho = ini.tOrig.id;
+if (Bp.trecho && ini.idsDiv.indexOf(Bp.trecho) >= 0) Bp.trecho = ini.tOrig.id;
+}
+var direta = null;
+if (/^agua_/.test(String(c.sistema)) && global.HidMao) {
+var dnD = c.dn, Pc0 = A.tipo === "conector" ? A : (Bp.tipo === "conector" ? Bp : null);
+var dnAp0 = Pc0 ? global.HidMao.dnDoPonto(est, { tipo: "aparelho", famInst: Pc0.famInst, dn: Pc0.dn }, c.sistema) : null, M0d = I.MATERIAIS[c.material];
+if (dnAp0 && M0d && (M0d.dns || []).indexOf(dnAp0) >= 0) dnD = dnAp0;
+var selfD = this, cfgD = JSON.parse(JSON.stringify(c)); cfgD.dn = dnD;
+try {
+direta = global.HidMao.ligarParede(est, ctx.famAval, A, Bp, { sistema: c.sistema, material: c.material, dn: dnD, prefixo: "lm" + (Date.now() % 100000) + "-",
+opTrecho: function (a, b) { var cf = selfD.cfg; selfD.cfg = cfgD; var o9 = selfD._opTrecho(a, b, []); selfD.cfg = cf; return o9; } });
+} catch (eD) { direta = { ok: false, erro: eD.message }; }
+}
+if (A.tipo === "vertical" && !(direta && direta.ok)) return false;
 var tubo = { ponta: 1, meio: 1, vertical: 1 };
 if (c.sistema === "agua_fria" && tubo[A.tipo] && tubo[Bp.tipo]) return false;
-var est = ctx.edit.estado, ops0 = (ctx.edit.ops || []).slice(0, (ctx.edit.ops || []).length - ini.nIni);
+var ops0 = (ctx.edit.ops || []).slice(0, (ctx.edit.ops || []).length - ini.nIni);
 var r = null;
 try { r = L.ligar(est, ctx.famAval, A, Bp, { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" }); } catch (e) { r = { ok: false, erro: e.message }; }
-if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
+if (direta && direta.ok) {
+var opD = { nome: direta.nome, ops: direta.ops, comprimento: direta.comprimento, avisos: direta.avisos || [] };
+r = r && r.ok ? (function () { r.opcoes = [opD].concat(r.opcoes); r.ladosSaida = null; r.entradasB = null; return r; })() : { ok: true, opcoes: [opD] };
+}
+if (!r || !r.ok) { ctx.hint("Ligar A → B: " + (r ? r.erro : "sem rota") + (direta && direta.erro ? " (pela parede: " + direta.erro + ")" : "") + ". Seguindo ponto a ponto."); this._inicio = null; return false; }
 var opcs = r.opcoes.slice(), self = this;
 function maisOpcoes(extra, rotulo) {
 var o2 = { piso: base, opsModelo: ops0.filter(function (o) { return I.ehOp ? I.ehOp(o.op) : (o.op === "trecho" || o.op === "peca"); }), seq: String(Date.now() % 100000) + "-" };
@@ -123634,7 +124248,8 @@ var ed = ctx.edit; dh = num(dh, 0);
 if (!ed.p1) { ctx.hint("Clique primeiro o ponto de onde o trecho vertical sai."); return false; }
 if (!(Math.abs(dh) > 0.01)) { ctx.hint("Informe quanto subir (+) ou descer (−), em metros."); return false; }
 var p1 = { x: ed.p1.x, y: ed.p1.y, z: ed.p1.z }, p2 = { x: p1.x, y: r4(p1.y + dh), z: p1.z };
-ctx.op(this._opTrecho(p1, p2, ed.ops));
+var oV = this._opTrecho(p1, p2, ed.ops); ctx.op(oV);
+if (this._traco) this._traco.ids.push(oV.id);
 ctx.inicio(p2);
 ctx.hint("Trecho vertical de " + fmt(Math.abs(dh), 2) + " m (" + (dh > 0 ? "subindo" : "descendo") + "). Continua do topo — clique o próximo ponto, ou Esc.");
 ctx.marcar(); this.pintarProps();

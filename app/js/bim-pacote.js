@@ -14260,7 +14260,23 @@ S.modelos.forEach(function (mo) {
 if (!mo || mo.mid === 'edit' || mo.sintetico || mo.exemplo || mo.visivel === false) return;
 try { paredesIfcDoModelo(mo).forEach(function (p) { if (!rem[p.uid]) out.push(p); }); } catch (eP) {}
 });
+try { if (typeof window !== 'undefined' && window.CadAmbientesUI && window.CadAmbientesUI.paredesRef) window.CadAmbientesUI.paredesRef().forEach(function (p) { out.push(p); }); } catch (eC) {}
 return out;
+};
+S._cadRefVolume = function (lista) {
+if (S._cadRefGrp) { modelRoot.remove(S._cadRefGrp); S._cadRefGrp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); S._cadRefGrp = null; }
+lista = (lista || []).filter(function (p) { return p && p.volume !== false; }); if (!lista.length) return 0;
+var g = new THREE.Group(); g.name = 'cad-ref-volumetria'; g.userData.cadRef = true;
+var mat = S._cadRefMat || (S._cadRefMat = new THREE.MeshStandardMaterial({ color: 0xb8bec6, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+lista.forEach(function (p) {
+var dx = p.b.x - p.a.x, dz = p.b.z - p.a.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.05) || !(p.altura > 0)) return;
+var m = new THREE.Mesh(new THREE.BoxGeometry(L, p.altura, p.espessura), mat);
+m.position.set((p.a.x + p.b.x) / 2, p.base + p.altura / 2, (p.a.z + p.b.z) / 2); m.rotation.y = Math.atan2(-dz, dx);
+m.userData.cadRef = p.uid; m.raycast = function () {};
+g.add(m);
+});
+modelRoot.add(g); S._cadRefGrp = g;
+return g.children.length;
 };
 function catMotor() { return (typeof window !== 'undefined' && window.BimCoresCat) ? window.BimCoresCat : null; }
 function catCaixas() {
@@ -16280,6 +16296,8 @@ passeioPose: function (x, y, z, yaw, pitch) { if (!S || !S.fly) return null; S.c
 parteSobre: function (x, y) { var u = S && S._abrirUI; var a = u && u.alvoEm ? u.alvoEm(x, y, false) : null; return a ? { id: a.pt.id, parte: a.pt.parte, dist: a.dist } : null; },
 caixaCorteAtiva: function () { return !!(S && S._cxMain && S._cxMain.on); },
 paredesIfcRef: function () { return (S && S._paredesIfcRef) ? S._paredesIfcRef() : []; },
+cadRefVolume: function (lista) { return (S && S._cadRefVolume) ? S._cadRefVolume(lista) : 0; },
+cadRefVolumeN: function () { return (S && S._cadRefGrp) ? S._cadRefGrp.children.length : 0; },
 refIfcContexto: function (ops, estado) {
 if (!S || !S._paredesIfcRef || typeof window === 'undefined' || !window.BimEdit) return null;
 var refs = S._paredesIfcRef(); if (!refs.length) return null;

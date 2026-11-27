@@ -298,7 +298,9 @@
       segs.push(g);
     }
     var textos = ((dxf && dxf.textos) || []).filter(function (t) { return t && t.x >= x0 && t.x <= x1 && t.y >= y0 && t.y <= y1; });
-    return { segmentos: segs, textos: textos, extents: segs.length ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null, unidade: dxf && dxf.unidade, layers: {} };
+    /* os blocos de primeiro nível (louça, porta, nível) — o centro da caixa dentro do recorte. js/cadambientes.js lê as louças deles */
+    var inserts = ((dxf && dxf.inserts) || []).filter(function (b) { if (!b || b.nivel) return false; var cx = b.cx != null ? b.cx : b.x, cy = b.cy != null ? b.cy : b.y; return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1; });
+    return { segmentos: segs, textos: textos, inserts: inserts, extents: segs.length ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null, unidade: dxf && dxf.unidade, layers: {} };
   }
 
   /* ------------------------------------------------------------ alinhamento
