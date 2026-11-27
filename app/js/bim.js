@@ -2610,9 +2610,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (!m.isMesh || m.userData.instPapel !== 'tubo') return; var kt = m.userData._sisK || m.userData.instSis || 'outros';
           if (kt === 'agua_fria' || kt === 'agua_quente' || kt === 'esgoto' || kt === 'ventilacao' || kt === 'pluvial') { try { tubosCx.push({ k: kt, b: new THREE.Box3().setFromObject(m) }); } catch (_) {} }
         });
-        var orfaDe = function (m) {
+        var orfaDe = function (m, raio) {
           var b; try { b = new THREE.Box3().setFromObject(m); } catch (_) { return null; } if (b.isEmpty()) return null;
-          var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = 0.03;
+          var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = raio || 0.03;
           for (var i = 0; i < tubosCx.length; i++) { var d = tubosCx[i].b.distanceToPoint ? tubosCx[i].b.distanceToPoint(c) : 1e9; if (d < dm) { dm = d; melhor = tubosCx[i].k; } }
           return melhor;
         };
@@ -2638,7 +2638,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
           if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }   /* a conexão sem sistema no nome: o sistema vem da rede (instSis) */   /* 'outros' (louça, arquitetura) também passa: a louça translúcida e a arquitetura escondida dependem disso */
           if (k === 'outros' && (m.userData.instPapel === 'acessorio' || m.userData.instPapel === 'peca')) { var ko2 = orfaDe(m); if (ko2) { k = ko2; window.__focoDiag.orfas++; } }   /* registro/válvula/caixa sem sistema: o do tubo em que encosta */
+          /* soSistema: a peça de instalação que ficou SEM sistema (a curva DN 100 da bacia, o ralo, a caixa sifonada — a bolsa deixa o centro a mais de 3 cm
+             do tubo) procura o tubo num raio maior, para não sair na folha do outro sistema com a cor própria */
+          if (o.soSistema && k === 'outros' && PAPEL_INST[m.userData.instPapel]) { var koL = orfaDe(m, 0.2); if (koL) k = koL; }   // 20 cm: o centro da peça até o eixo do tubo ligado nela (geometria)
           var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+          /* SÓ O SISTEMA DA FOLHA (27/11/2026 — o Rogério no caderno HID-R00: na folha de ÁGUA do ambiente a curva DN 100, o ralo e a caixa sifonada do esgoto
+             saíam em meio-tom; "só mostrar o que precisa"). o.soSistema (folha por ambiente de UM grupo): o sistema fora do foco some da foto — tubo,
+             conexão, peça e a família dele. Louça e arquitetura ('outros') seguem as regras de baixo. A planta GERAL de água (sem soSistema) mantém o meio-tom de 15/11. */
+          /* só PEÇA DE INSTALAÇÃO (papel da rede: tubo, conexão, ponto, registro, ralo/caixa) e o reservatório; a louça (família sem papel de instalação, que o nome pode
+             ter posto em "esgoto") nunca some */
+          if (o.soSistema && ((agua && !focA) || (esg && !focE)) && (m.userData.instPapel || String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE')) {
+            /* ⚠ visible=false NÃO basta: o AGREGADO (as peças mescladas) desenha pela cor+alfa do material de cada malha — a peça "invisível" saía igual.
+               O material vazio (alfa 0, sem cor) é o que o agregado espelha (o mesmo do soLinha, sem a aresta) */
+            bk.trocas.push([m, m.material]); m.material = MAT.vazio; bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; window.__focoDiag.nOcultoSis = (window.__focoDiag.nOcultoSis || 0) + 1; return; }
           /* só em linhas: o volume que o nome fez cair num sistema (laje/tampa/base com 'água' no nome: IFCBUILDINGELEMENTPROXY sem papel de instalação nem família hidráulica) é contexto, não tubo */
           if (o.soLinhas && (agua || esg) && !m.userData.instPapel && !m.userData.instFam && /^IFCBUILDINGELEMENTPROXY/.test(String(m.userData.tipo || '').toUpperCase())) { soLinha(m); return; }
           /* 17/11/2026: telhado/laje/piso/parede (o 'IFCROOF' com "águas" no nome caía em água e saía um retângulo azul CHEIO na planta da caixa) e o corpo de louça/ralo sem papel de instalação

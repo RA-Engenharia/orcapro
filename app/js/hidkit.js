@@ -247,7 +247,24 @@
     return melhor;
   }
   function dentroPoli(p, pts) { var dentro = false; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) { var a = pts[i], b = pts[j]; if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x)) dentro = !dentro; } return dentro; }
-  function ambienteNoPonto(estado, p) { return arr(estado && estado.ambientes).filter(function (a) { return a && a.calc && arr(a.calc.contorno).length >= 3 && dentroPoli(p, a.calc.contorno); })[0] || null; }   // hid:ok polígono tem 3+ vértices
+  /* ⚠ PAVIMENTO (27/11/2026 — caderno HID-R00 do Rogério: o banheiro do PAV. SUPERIOR saiu como "HALL/ENTRADA", o cômodo do TÉRREO logo abaixo): com
+     cômodos empilhados, o contorno em planta não basta. Entre os que contêm o ponto, vale o do pavimento da peça — a maior base de ambiente que
+     não passa da altura dela (o chuveiro a 5,62 m é do nível 3,42, não do 0,30). Ponto sem altura, ou nenhum com base abaixo: o primeiro, como antes. */
+  var TOL_BASE_AMB = 0.05;   // hid:ok 5 cm: a origem da louça de piso fica na cota do piso (geometria, não norma)
+  var TOL_ABAIXO_AMB = 0.6;  // hid:ok 60 cm abaixo do piso: ralo, caixa sifonada e tubo de esgoto sob o piso são do cômodo (a mesma faixa de corte do piso das pranchas)
+  function ambienteNoPonto(estado, p) {
+    var L = arr(estado && estado.ambientes).filter(function (a) { return a && a.calc && arr(a.calc.contorno).length >= 3 && dentroPoli(p, a.calc.contorno); });   // hid:ok polígono tem 3+ vértices
+    if (!L.length || !p || p.y == null || !isFinite(+p.y)) return L[0] || null;
+    /* a peça na FAIXA do cômodo (base → topo: o térreo de 0,30 a 3,10 m não pega a bacia do superior a 3,42 m); entre os que servem, o de base
+       mais alta. Nenhum serve: nenhum cômodo (a peça do superior não vira do térreo) */
+    var y = +p.y, best = null;
+    L.forEach(function (a) {
+      var b = num(a.calc.base, 0), t = num(a.calc.topo, Infinity);
+      if (y < b - TOL_ABAIXO_AMB || y >= t + TOL_BASE_AMB) return;
+      if (!best || b > num(best.calc.base, 0)) best = a;
+    });
+    return best;
+  }
   /* B2 (05/11/2026, Casa 487): o aparelho encostado com a ORIGEM NA FACE DA PAREDE (o chuveiro, a bancada, o ponto da máquina) cai na borda do
      contorno do ambiente — e o par-ímpar o punha "fora de um ambiente": o TA juntava a peça com os vizinhos à vista e o cômodo saía partido
      (o chuveiro do banheiro dos fundos num grupo sozinho, sem parede, "ponto de alimentação não informado"). Critério de projetista: a peça
@@ -257,7 +274,7 @@
     var a = ambienteNoPonto(estado, p);
     if (a || !p || p.famId == null || !tipoDaFamilia(p.famId, p.tipoId)) return a;   /* só o APARELHO (ralo, caixa e peça de esgoto: o ponto exato) */
     var r = num(p.rotY, 0), o = geo(null, "sondaFrente");
-    return ambienteNoPonto(estado, { x: num(p.x, 0) + o * Math.sin(r), z: num(p.z, 0) + o * Math.cos(r) });
+    return ambienteNoPonto(estado, { x: num(p.x, 0) + o * Math.sin(r), z: num(p.z, 0) + o * Math.cos(r), y: p.y });
   }
   /* aparelho DE PISO = o corpo começa exatamente na origem (bacia, lavatório de coluna, tanque); o chuveiro e a torneira
      têm o corpo abaixo da origem (haste, canopla) e não servem de piso */

@@ -1773,9 +1773,9 @@ todasMalhas(function (m) {
 if (!m.isMesh || m.userData.instPapel !== 'tubo') return; var kt = m.userData._sisK || m.userData.instSis || 'outros';
 if (kt === 'agua_fria' || kt === 'agua_quente' || kt === 'esgoto' || kt === 'ventilacao' || kt === 'pluvial') { try { tubosCx.push({ k: kt, b: new THREE.Box3().setFromObject(m) }); } catch (_) {} }
 });
-var orfaDe = function (m) {
+var orfaDe = function (m, raio) {
 var b; try { b = new THREE.Box3().setFromObject(m); } catch (_) { return null; } if (b.isEmpty()) return null;
-var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = 0.03;
+var c = b.getCenter(_V3(0, 0, 0)), melhor = null, dm = raio || 0.03;
 for (var i = 0; i < tubosCx.length; i++) { var d = tubosCx[i].b.distanceToPoint ? tubosCx[i].b.distanceToPoint(c) : 1e9; if (d < dm) { dm = d; melhor = tubosCx[i].k; } }
 return melhor;
 };
@@ -1799,7 +1799,10 @@ todasMalhas(function (m) {
 if (!m.isMesh) return; var k = m.userData._sisK || 'outros'; if (k === 'outros' && m.userData.instSis) k = m.userData.instSis;
 if (k === 'outros' && (m.userData.instPapel === 'conexao' || m.userData.instPapel === 'pontoAgua')) { var ko = orfaDe(m); if (ko) { k = ko; window.__focoDiag.orfas++; } }
 if (k === 'outros' && (m.userData.instPapel === 'acessorio' || m.userData.instPapel === 'peca')) { var ko2 = orfaDe(m); if (ko2) { k = ko2; window.__focoDiag.orfas++; } }
+if (o.soSistema && k === 'outros' && PAPEL_INST[m.userData.instPapel]) { var koL = orfaDe(m, 0.2); if (koL) k = koL; }
 var agua = k === 'agua_fria' || k === 'agua_quente', esg = k === 'esgoto' || k === 'ventilacao' || k === 'pluvial';
+if (o.soSistema && ((agua && !focA) || (esg && !focE)) && (m.userData.instPapel || String(m.userData.tipo || '').toUpperCase() === 'IFCFLOWSTORAGEDEVICE')) {
+bk.trocas.push([m, m.material]); m.material = MAT.vazio; bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; window.__focoDiag.nOcultoSis = (window.__focoDiag.nOcultoSis || 0) + 1; return; }
 if (o.soLinhas && (agua || esg) && !m.userData.instPapel && !m.userData.instFam && /^IFCBUILDINGELEMENTPROXY/.test(String(m.userData.tipo || '').toUpperCase())) { soLinha(m); return; }
 if (o.soLinhas && !m.userData.instPapel && m.userData.tipo && INST_FUNDO.test(String(m.userData.tipo).toUpperCase()) && !m.userData.instFam && o.semArquitetura) { bk.esc = bk.esc || []; bk.esc.push([m, m.visible]); m.visible = false; return; }
 if (o.soLinhas && !m.userData.instPapel && ((m.userData.tipo && INST_FUNDO.test(String(m.userData.tipo).toUpperCase()) && !m.userData.instFam) || ((agua || esg) && m.userData.instFam))) { soLinha(m); return; }

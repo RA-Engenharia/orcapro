@@ -248,9 +248,16 @@
     var amb = arr(opcoes.ambientes);
     if (amb.length) {
       var porAmb = {}, ordem = [], sem = [];
+      /* 27/11/2026 (caderno HID-R00 do Rogério: o ISOMÉTRICO DA SERVIÇO, no térreo, trazia a caixa d'água e os registros dela a +15 m, que ficam em cima da
+         lavanderia em planta — a folha saía com um vazio enorme). O tubo é do ambiente do SEU pavimento (o mais alto com cota até a altura média dele, com a
+         faixa de 0,6 m abaixo do piso); ambiente sem pavimento conhecido continua só pela planta, como antes. */
+      /* só os níveis que TÊM ambiente (pavCota): o nível de referência (laje, platibanda, calha — test-hid-pranchas-limpeza) não separa o tubo do cômodo */
+      var temAmb = {}; amb.forEach(function (q) { if (q.pavCota != null) temAmb[r2(num(q.pavCota, 0))] = 1; });
+      var pvsI = arr(opcoes.pavimentos).map(function (p) { return num(p.cota, null); }).filter(function (v) { return v != null && temAmb[r2(v)]; }).sort(function (a, b) { return a - b; });
+      function pavDoTrecho(t) { var ym = (t.p1.y + t.p2.y) / 2, c = null; pvsI.forEach(function (v) { if (ym >= v - 0.6) c = v; }); return c; }   // hid:ok 0,6 m: a faixa de corte abaixo do piso (a mesma das pranchas)
       trs.forEach(function (t) {
-        var mx = (t.p1.x + t.p2.x) / 2, mz = (t.p1.z + t.p2.z) / 2, a = null;
-        amb.forEach(function (q) { if (!a && mx >= q.x0 - K.eps && mx <= q.x1 + K.eps && mz >= q.z0 - K.eps && mz <= q.z1 + K.eps) a = q; });
+        var mx = (t.p1.x + t.p2.x) / 2, mz = (t.p1.z + t.p2.z) / 2, a = null, pT = pvsI.length ? pavDoTrecho(t) : null;
+        amb.forEach(function (q) { if (!a && mx >= q.x0 - K.eps && mx <= q.x1 + K.eps && mz >= q.z0 - K.eps && mz <= q.z1 + K.eps && (q.pavCota == null || pT == null || Math.abs(num(q.pavCota, 0) - pT) < 0.01)) a = q; });
         if (!a) { sem.push(t); return; }
         if (!porAmb[a.id]) { porAmb[a.id] = { nome: a.nome || a.id, trechos: [] }; ordem.push(a.id); }
         porAmb[a.id].trechos.push(t);
@@ -596,7 +603,7 @@
   }
 
   /* hid:fisica-fim */
-  var HidIsometrico = { VERSAO: 1, colunasAF: colunasAF, K: K, gerar: gerar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
+  var HidIsometrico = { VERSAO: 1, colunasAF: colunasAF, K: K, gerar: gerar, agrupar: agrupar, verificar: verificar, afastar: afastar, proj: proj, setaLivre: setaLivre, setaPermitida: setaPermitida, largTexto: largTexto, indicesResultado: indicesResultado,
                         SIGLA_SISTEMA: SIGLA_SISTEMA, NOME_SISTEMA: NOME_SISTEMA };
   global.HidIsometrico = HidIsometrico;
   if (typeof module !== "undefined" && module.exports) module.exports = HidIsometrico;

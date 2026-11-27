@@ -1137,10 +1137,11 @@
     /* A GEOMETRIA dos vínculos do nível para os motores (js/cadambientes.js), em coordenadas da planta:
        { segs:[{x1,y1,x2,y2,layer,bloco,curva}], textos:[{x,y,txt}], ins:[{nome,layer,x,y,w,h,rot,espelhado}], ids:[], semCamadas }
        `todos`: inclui vínculo oculto (a referência vale mesmo com o fundo desligado na planta) */
-    cadGeometria: function (nivelId, todos) {
+    cadGeometria: function (nivelId, todos, soId) {
       var self = this, out = { segs: [], textos: [], ins: [], ids: [], semCamadas: false };
       this.cadLista(nivelId).forEach(function (v) {
         if (!v.vis && !todos) return;
+        if (soId != null && String(v.id) !== String(soId)) return;   /* um vínculo só (js/cadambientesui.js: planta baixa e layout do mesmo piso no mesmo nível) */
         var dd = self._cadDados(v.id); if (!dd) return;
         out.ids.push(v.id);
         if (!dd.ly) out.semCamadas = true;

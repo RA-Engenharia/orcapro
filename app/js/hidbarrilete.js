@@ -1446,6 +1446,17 @@
     out.rede = vRd ? { alvo: String(vRd.alvo), pdin: num(vRd.valor, 0), pmin: num(vRd.limite, 0) } : null;
     out.tomada = vTm ? { alvo: String(vTm.alvo), pdin: num(vTm.valor, 0), pmin: num(vTm.limite, 0) } : null;
     [[vRd, "rede", "rede de distribuição, NBR 5626:2020 6.9.3"], [vTm, "tomada", "tomada vertical, não pode ser negativa"]].forEach(function (q) { if (q[0]) baixos.push({ famInst: String(q[0].alvo), aparelho: q[2], pressaoDinamica_kpa: num(q[0].valor, 0), pressaoMinima_kpa: num(q[0].limite, 0), rede: q[1] }); });
+    /* ⚠ O BARRILETE COLADO NO FUNDO DA CAIXA (27/11/2026 — obra de teste do Rogério: a caixa proposta foi parar com a base a +15,52 m, 9 m acima da
+       cobertura). Sem laje/forro embaixo, a tomada não desce (N23) e o barrilete corre na cota da saída: a falta de pressão nele NÃO se resolve subindo
+       a caixa — ele sobe junto. O "subir" saía 0,50 m a cada volta da oferta (3 voltas) e a caixa ia ao céu sem nunca atender. A falta no PRÓPRIO
+       barrilete (saída, tomada, tronco, coletor) sai da conta do "subir" e vira pendência com o que resolve de verdade; a falta nos aparelhos
+       e nas colunas continua pedindo subir. */
+    var rxProprio = new RegExp("^bar-" + String(cx.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "-(saida|tomada|barrilete|coletor)-"), colados = [];
+    baixos = baixos.filter(function (p) { if (p.rede && rxProprio.test(String(p.famInst))) { colados.push(p); return false; } return true; });
+    out.barrileteColado = colados.length ? colados[0] : null;
+    if (colados.length) out.achados.push({ chave: "bar.barrilete_colado", texto: "Pressão: o barrilete da caixa " + cx.id + " corre colado no fundo dela (" + colados.map(function (p) { return p.famInst + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa"; }).join(", ") +
+      ", NBR 5626:2020 6.9.3). Subir a caixa NÃO resolve: o barrilete sobe junto. O barrilete precisa correr pelo menos " + f2(mDe(colados[0].pressaoMinima_kpa) + GEO_BAR.margemSubir) + " m abaixo da saída — modele a laje/forro sob a caixa (o barrilete desce pela tomada e corre apoiado nela) ou eleve a caixa sobre uma base (o barrilete fica embaixo da base) e trace de novo.",
+      elementos: [cx.id].concat(colados.map(function (p) { return p.famInst; })), acao: null });
     /* REVISÃO A1 (14/11/2026): a cota mínima usa a MESMA mínima que pinta o ponto (a maior entre o cálculo e a FAMÍLIA: vazão e acionamento
        da ficha — js/hidpressaocores.js). Antes o "subir" saía só da mínima do HidAF e a caixa subia menos do que o aparelho pede. */
     var PCo = HPCo(), mapaC = null;
@@ -1475,7 +1486,7 @@
                ao subir para o pc, outro ponto (o chuveiro com a ficha pedindo mais) pode continuar vermelho */
             var falta2 = q2 && !q2.semReprovacao && q2.pdin < q2.pmin - EPS ? q2.pmin - q2.pdin : 0;
             if (P2 && P2.cores) arr(P2.cores.pontos).forEach(function (x) { if (x.faixa === "baixa" && x.pmin != null && x.pdin != null) falta2 = Math.max(falta2, x.pmin - x.pdin); });
-            if (P2 && P2.rede && P2.rede.pdin < P2.rede.pmin - EPS) falta2 = Math.max(falta2, P2.rede.pmin - P2.rede.pdin);
+            if (P2 && P2.rede && !rxProprio.test(String(P2.rede.alvo)) && P2.rede.pdin < P2.rede.pmin - EPS) falta2 = Math.max(falta2, P2.rede.pmin - P2.rede.pdin);   /* o barrilete colado não conta (sobe junto) */
             if (!(falta2 > EPS)) break;
             sub += Math.ceil((mDe(falta2) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
           }
@@ -1609,7 +1620,17 @@
     /* ALTURA: apoiada no que estiver embaixo (laje/forro, topo das paredes), subindo o que o barrilete e a pressão pedirem */
     var Ap = apoios(estado), R0 = num(esc.av.valores.Diametro, 0) / 2, sup = suporte(Ap, { x: pos.x - R0, z: pos.z }, { x: pos.x + R0, z: pos.z }, R0, Infinity, true);   /* N23: a CAIXA apoia em tudo o que está embaixo dela (a platibanda/terça pulada vale só para o tubo do barrilete) */
     var yTopEsp = Math.max.apply(null, ESP.map(function (s) { return s.y; }));
-    var yb = r4(sup > -Infinity ? sup : yTopEsp), id = "caixa1", nId = 1;
+    /* 27/11/2026 (obra de teste do Rogério, DWG vinculado sem laje modelada): sem nada embaixo, a caixa nascia na cota da espera mais alta — DENTRO do
+       pavimento de cima (3,39 m, com o superior a 3,42 m). Sem apoio no modelo, ela vai para o primeiro NÍVEL da obra acima das esperas (a laje da
+       cobertura que o projeto ainda não modelou); sem nível acima, a espera mais alta, como antes. */
+    var yNivel = null;
+    if (!(sup > -Infinity)) {
+      var NVs = arr(e.niveis); if (!NVs.length) { try { NVs = global.Bim2D && global.Bim2D.niveis ? arr(global.Bim2D.niveis()) : []; } catch (eN) { NVs = []; } }
+      /* acima das esperas E do aparelho mais alto (a espera pode estar no forro do térreo e o chuveiro do superior a 5,62 m) */
+      var yRef = yTopEsp; arr(estado.familias).forEach(function (f) { if (K && K.tipoDaFamilia && K.tipoDaFamilia(f.famId, f.tipoId) && num(f.y, null) != null) yRef = Math.max(yRef, num(f.y, 0)); });
+      NVs.forEach(function (n) { var y = num(n.y != null ? n.y : n.elevacao, null); if (y != null && y >= yRef - EPS && (yNivel == null || y < yNivel)) yNivel = y; });
+    }
+    var yb = r4(sup > -Infinity ? sup : (yNivel != null ? yNivel : yTopEsp)), id = "caixa1", nId = 1;
     while (arr(estado.familias).some(function (f) { return String(f.id) === id; })) { nId++; id = "caixa" + nId; }
     var opF = { op: "familia", id: id, famId: "hid-caixa-dagua", tipoId: esc.t.id, x: r4(pos.x), y: yb, z: r4(pos.z), rotY: r4(rot), inst: {} };
     var subiu = 0;
@@ -1624,7 +1645,7 @@
     }
     var nomeT = prod ? txt(prod[PROD_NOME]) : esc.t.nome;
     var preco = sin ? " — SINAPI " + prod[PROD_SINAPI] + ": R$ " + f2(sin.preco) + " (" + txt(sin.data) + ", fornecimento e instalação)" : " — sem preço SINAPI na ficha (pendência)";
-    var texto = "Sem caixa d'água no modelo: proponho a " + nomeT + preco + ", " + regra + ", com a saída virada para as esperas; base a " + f2(opF.y) + " m" + (subiu ? " (" + f2(subiu) + " m acima do apoio: a altura para o barrilete descer até as esperas e a pressão mínima no ponto mais desfavorável — apoio/estrado a confirmar com o estrutural)" : " (apoiada na laje/forro)") +
+    var texto = "Sem caixa d'água no modelo: proponho a " + nomeT + preco + ", " + regra + ", com a saída virada para as esperas; base a " + f2(opF.y) + " m" + (subiu ? " (" + f2(subiu) + " m acima do apoio: a altura para o barrilete descer até as esperas e a pressão mínima no ponto mais desfavorável — apoio/estrado a confirmar com o estrutural)" : (yNivel != null && !(sup > -Infinity) ? " (no primeiro nível acima das esperas, " + f2(yNivel) + " m: a laje de apoio ainda não está no modelo — confirmar com o estrutural)" : " (apoiada na laje/forro)")) +
       ". Volume: reservação mínima de " + f2(V) + " L = " + arr(Pr.consumoDiario && Pr.consumoDiario.passos).join("; ") + " × 1 dia (NBR 5626:2020 6.5.6.2)" + (premissas.length ? "; " + premissas.join("; ") : "") + ". O Corrigir põe a caixa; o Traçar monta o barrilete.";
     return { aviso: { texto: texto, elementos: ESP.map(function (s) { return s.trecho; }).concat(alvo ? [String(alvo.id)] : []), acao: { tipo: "ops", ops: [opF], texto: "pôr a caixa d'água de " + f2(esc.v).replace(",00", "") + " L" } },
              acao: true, op: opF, volume: V, tipo: esc.t.id, nomeTipo: nomeT, capacidade: esc.v, sinapi: sin ? { codigo: prod[PROD_SINAPI], preco: sin.preco, data: sin.data } : null, regra: regra, premissas: premissas, subiu: subiu, ambiente: alvo ? String(alvo.id) : null };

@@ -13883,7 +13883,25 @@ var Cm = A(), b2 = B2(); if (!Cm || !b2 || !b2.cadGeometria) return null;
 var k = this._chave(nivelId); if (this._cache[k]) return this._cache[k];
 var geo = b2.cadGeometria(nivelId, true);
 if (!geo.ids.length) return null;
-var par = Cm.paredes(geo.segs), am = Cm.ambientes(geo.segs, geo.textos, par), lc = Cm.loucas(geo.ins, par, am.ambientes);
+var par, am, lc;
+if (geo.ids.length > 1) {
+var melhor = null;
+geo.ids.forEach(function (vid) {
+var g1 = b2.cadGeometria(nivelId, true, vid); if (!g1.segs.length) return;
+var p1 = Cm.paredes(g1.segs), a1 = Cm.ambientes(g1.segs, g1.textos, p1);
+var nota = [arr(a1.ambientes).length, arr(p1.paredes).length];
+if (!melhor || nota[0] > melhor.nota[0] || (nota[0] === melhor.nota[0] && nota[1] > melhor.nota[1])) melhor = { id: vid, par: p1, am: a1, nota: nota };
+});
+if (melhor) {
+par = melhor.par; am = melhor.am;
+var vistos = [], insU = geo.ins.filter(function (b) {
+var rep = vistos.some(function (q) { return q.nome === b.nome && Math.abs(q.x - b.x) < 0.3 && Math.abs(q.y - b.y) < 0.3; });
+if (!rep) vistos.push(b); return !rep;
+});
+lc = Cm.loucas(insU, par, am.ambientes);
+}
+}
+if (!par) { par = Cm.paredes(geo.segs); am = Cm.ambientes(geo.segs, geo.textos, par); lc = Cm.loucas(geo.ins, par, am.ambientes); }
 var r = { nivelId: nivelId, geo: { linhas: geo.segs.length, textos: geo.textos.length, blocos: geo.ins.length, semCamadas: geo.semCamadas, ids: geo.ids }, paredes: par, ambientes: am, loucas: lc };
 var self = this; Object.keys(this._cache).forEach(function (q) { if (q.split("|")[0] === String(nivelId)) delete self._cache[q]; });
 this._cache[k] = r;
@@ -119788,10 +119806,11 @@ out.push({ id: v.id, seg: seg, tx: (dd.t || []).map(function (t) { return [dx + 
 });
 return out;
 },
-cadGeometria: function (nivelId, todos) {
+cadGeometria: function (nivelId, todos, soId) {
 var self = this, out = { segs: [], textos: [], ins: [], ids: [], semCamadas: false };
 this.cadLista(nivelId).forEach(function (v) {
 if (!v.vis && !todos) return;
+if (soId != null && String(v.id) !== String(soId)) return;
 var dd = self._cadDados(v.id); if (!dd) return;
 out.ids.push(v.id);
 if (!dd.ly) out.semCamadas = true;
