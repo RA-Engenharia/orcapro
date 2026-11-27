@@ -1041,6 +1041,8 @@
         if (obra !== (ant.obra === true)) out.obraInformada = true;
         out.obra = obra;
       }
+      /* encargos sociais da proposta: "orgao" (padrão, tabela lida do edital) | "sinapi" | "empresa" (js/licitacaodocs.js) */
+      if (novo.encargosProposta !== undefined) out.encargosProposta = (novo.encargosProposta === "sinapi" || novo.encargosProposta === "empresa") ? novo.encargosProposta : "orgao";
       return out;
     },
 

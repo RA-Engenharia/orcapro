@@ -91,7 +91,9 @@
           /* obra/serviço de engenharia: liga os limites de 75%/85% (js/licitacao.js) */
           obra: !!(cfg.licitacao && cfg.licitacao.obra === true),
           obraInformada: !!(cfg.licitacao && cfg.licitacao.obraInformada),
-          certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro)
+          certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro),
+          /* encargos sociais da proposta: "orgao" (padrão) | "sinapi" | "empresa" (js/licitacaodocs.js) */
+          encargosProposta: (cfg.licitacao && (cfg.licitacao.encargosProposta === "sinapi" || cfg.licitacao.encargosProposta === "empresa")) ? cfg.licitacao.encargosProposta : "orgao"
         },
         arredondamento: cfg.arredondamento,
         bdiIncidencia: cfg.bdiIncidencia,
@@ -147,6 +149,23 @@
       /* a tabela de bancos também vive aqui; sem reatar os eventos, o realce
          da linha e o liga/desliga dos selects não respondem ao clique */
       if (blocoBases) { try { this._bindTabela3(); } catch (eT) {} }
+    },
+    /* Botão "Editar tabela de encargos da empresa". O editor é um UI.modal (que fecha o modal aberto), então o modal dos Parâmetros
+       é só ESCONDIDO (id trocado, como o minimizado do janflut) e volta, com o que já foi digitado, quando o editor fecha. */
+    _editarEncargosEmpresa: function () {
+      var app = this._app, s = this._st, orc = s && s.orc;
+      if (!app || typeof app._licEncargosEmpresaEditor !== "function") { UI.toast("Editor da tabela de encargos indisponível nesta tela.", "erro"); return; }
+      if (!orc) { UI.toast("Crie o orçamento primeiro; depois edite a tabela em ⚙ Parâmetros.", "erro"); return; }
+      var pausado = document.getElementById("modal-bg");
+      if (pausado) { pausado.id = "modal-bg-pausa"; pausado.style.display = "none"; }
+      var voltar = function () {
+        UI.fecharModal();
+        var p = document.getElementById("modal-bg-pausa");
+        if (p) { p.id = "modal-bg"; p.style.display = ""; }
+      };
+      try {
+        app._licEncargosEmpresaEditor(orc, { regime: s.encargos && s.encargos.tipo === "desonerado" ? true : (s.encargos && s.encargos.tipo ? false : null), aoFechar: voltar });
+      } catch (e) { voltar(); UI.toast("Não consegui abrir a tabela de encargos: " + (e && e.message ? e.message : e), "erro"); }
     },
     _salvarParametros: function () {
       if (!this._coletar1() || !this._coletar2()) return;
@@ -343,6 +362,13 @@
         "<span><b>Obra ou serviço de engenharia (limites de 75%/85%)</b> <small>(Lei 14.133/2021, art. 59, §§ 4º e 5º: abaixo de 75% do valor orçado pela Administração a proposta é considerada inexequível; abaixo de 85%, o vencedor presta garantia adicional. Desmarcado, esses limites não são aplicados.)</small></span></label>" +
         (s.licitacao.certamepro && !s.licitacao.obraInformada
           ? '<small class="ow-hint" id="ow-lic-obra-hint">O pacote do certame não informou se o objeto é obra ou serviço de engenharia — por isso a caixa está desmarcada e os limites não estão sendo aplicados. Marque se for.</small>' : "") +
+        /* ENCARGOS SOCIAIS DA PROPOSTA: a tabela da proposta é da empresa, não do órgão (js/licitacaodocs.js, escEnc) */
+        '<div class="field"><label>Encargos sociais na proposta</label><select id="ow-lic-enc">' +
+        '<option value="orgao"' + (s.licitacao.encargosProposta === "orgao" || !s.licitacao.encargosProposta ? " selected" : "") + ">Tabela lida do edital (órgão)</option>" +
+        '<option value="sinapi"' + (s.licitacao.encargosProposta === "sinapi" ? " selected" : "") + ">SINAPI oficial da UF (regime do orçamento)</option>" +
+        '<option value="empresa"' + (s.licitacao.encargosProposta === "empresa" ? " selected" : "") + ">Tabela da empresa (cadastro por CNPJ)</option></select>" +
+        '<small class="ow-hint">A tabela de encargos da proposta é da empresa licitante. Só a seção de encargos do documento muda; a planilha e as composições seguem iguais.</small> ' +
+        '<button type="button" class="btn ghost sm" id="ow-lic-enc-edit">Editar tabela de encargos da empresa</button></div>' +
         "</div>";
     },
     _coletar1: function () {
@@ -364,6 +390,7 @@
         abertura: val("ow-lic-abertura"),
         processo: val("ow-lic-processo").trim(),
         obra: marcado("ow-lic-obra"),
+        encargosProposta: val("ow-lic-enc") || "orgao",
         /* só para redesenhar a dica do passo 1; quem decide o que grava é o
            Licitacao.mesclarParametros, comparando com o que está no orçamento */
         obraInformada: !!licAnt.obraInformada,
@@ -658,6 +685,8 @@
         if (lic) lic.addEventListener("change", function () {
           var box = UI.el("ow-licbox"); if (box) box.style.display = lic.checked ? "" : "none";
         });
+        var btEnc = UI.el("ow-lic-enc-edit");
+        if (btEnc) btEnc.addEventListener("click", function () { self._editarEncargosEmpresa(); });
         var n = UI.el("ow-nome"); if (n) n.focus();
       }
       if (p === 2) {
@@ -819,7 +848,8 @@
           /* marcada no assistente = informada por quem orça; desmarcada fica
              "não informada" (o aviso dos limites desligados é alerta) */
           obra: s.licitacao.obra === true,
-          obraInformada: s.licitacao.obra === true
+          obraInformada: s.licitacao.obra === true,
+          encargosProposta: s.licitacao.encargosProposta
         },
         bases: [{ fonte: "SINAPI", uf: s.uf, competencia: s.competencia }].concat(
           s.basesExtras.map(function (f) {

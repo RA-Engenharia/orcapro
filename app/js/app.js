@@ -12838,6 +12838,8 @@
             }
             if (!usouModelo) opc.secoes = LicitacaoDocs.secoesParaGerar(secPac.escolha);
           } catch (eSai) { /* sem a escolha, sai o pacote completo */ }
+          /* tabela de encargos própria da empresa (por CNPJ): só é lida quando a licitação escolhe "Tabela da empresa" */
+          try { opc.encargosEmpresa = (Store.lerPrefs(Auth.empresaId()) || {}).encargosEmpresa; } catch (eEnc) { /* sem ela, a seção sai com PENDÊNCIA */ }
           var pr = LicitacaoDocs.pendencias(orc, emp, opc);
           if (!pr.ok && auto) { falhaAuto(pr.erro); return; }
           if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
@@ -13035,6 +13037,75 @@
           if (av) av.style.display = c.checked ? "none" : "";
         });
       });
+    },
+
+    /* TABELA DE ENCARGOS SOCIAIS DA EMPRESA (por CNPJ da licitante; prefs.encargosEmpresa). Abre por cima dos Parâmetros.
+       `ctx.regime` (true = desonerado) vale para "Preencher com a SINAPI da UF"; sem ele, o do orçamento. `ctx.aoFechar` roda ao sair. */
+    _licEncargosEmpresaEditor: function (orc, ctx) {
+      ctx = ctx || {};
+      var lic = Licitacao.cfg(orc) || {}, ET = EncargosTab, sai = function () { if (ctx.aoFechar) ctx.aoFechar(); else UI.fecharModal(); };
+      var emp = this._licEmpresaCertame(orc).emp || {}, chave = LicitacaoDocs.chaveEncargos(lic, emp);
+      if (!chave) { UI.modal("Tabela de encargos da empresa", '<p style="font-size:13px">Não há CNPJ da empresa licitante para guardar a tabela. Cadastre o CNPJ da empresa (ou veja se o certame traz o licitante) e volte aqui.</p>', [{ texto: "Entendi", classe: "primary", onClick: sai }]); return; }
+      var prefs = Store.lerPrefs(Auth.empresaId()) || {}, cad = LicitacaoDocs.encargosEmpresaDe(prefs.encargosEmpresa, chave), cods = ET.codigos();
+      var cfgTab = lic.leitura && lic.leitura.tabelas ? lic.leitura.tabelas : {};
+      var reg = (ctx.regime === true || ctx.regime === false) ? ctx.regime : LicitacaoDocs.regimeDoOrcamento(orc, cfgTab);
+      var fmt = function (v) { return String(Util.fmtNum ? Util.fmtNum(v, 2) : v).replace(".", ","); };
+      var linhas = cods.map(function (c) {
+        var v = cad && cad.valores[c.codigo];
+        return '<tr data-cod="' + Util.esc(c.codigo) + '"><td>' + Util.esc(c.codigo) + '</td><td>' + Util.esc(c.descricao) + '</td>' +
+          '<td><input class="enc-h" inputmode="decimal" style="width:80px;text-align:right" value="' + (v ? fmt(v.horista) : "") + '"></td>' +
+          '<td><input class="enc-m" inputmode="decimal" style="width:80px;text-align:right" value="' + (v ? fmt(v.mensalista) : "") + '"></td></tr>';
+      }).join("");
+      var corpo = '<p style="font-size:13px;margin-top:0">Tabela de encargos sociais da <b>empresa</b> (CNPJ ' + Util.esc(chave) + '). Campo vazio vale 0; aceita vírgula; de 0 a 200. Os totais são somados aqui; não são digitados.</p>' +
+        '<table class="tbl" data-modal-largo style="width:100%"><thead><tr><th>COD</th><th>Descrição</th><th>Horista %</th><th>Mensalista %</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+        '<div id="enc-tot" style="margin-top:8px;font-size:13px"></div>';
+      var ler = function (mostrar) {
+        var vals = {}, erro = "";
+        [].slice.call(document.querySelectorAll("tr[data-cod]")).forEach(function (tr) {
+          var cod = tr.getAttribute("data-cod"), h = ET.lerPercentual(tr.querySelector(".enc-h").value), m = ET.lerPercentual(tr.querySelector(".enc-m").value);
+          tr.querySelector(".enc-h").style.outline = h.ok ? "" : "2px solid #c00000"; tr.querySelector(".enc-m").style.outline = m.ok ? "" : "2px solid #c00000";
+          if (!h.ok || !m.ok) { if (!erro) erro = "Valor inválido na linha " + cod + " (use número de 0 a 200)."; return; }
+          vals[cod] = { horista: h.v, mensalista: m.v };
+        });
+        var t = ET.construir(vals, {}), por = {};
+        t.linhas.forEach(function (l) { if (l.total) por[l.total] = l; });
+        if (mostrar) {
+          var el = document.getElementById("enc-tot");
+          if (el) el.innerHTML = erro ? '<b style="color:#c00000">' + Util.esc(erro) + '</b>' :
+            ["A", "B", "C", "D"].map(function (g) { return "Grupo " + g + ": " + fmt(por[g].horista) + "% / " + fmt(por[g].mensalista) + "%"; }).join(" · ") +
+            '<br><b>A + B + C + D = ' + fmt(por.GERAL.horista) + '% (horista) / ' + fmt(por.GERAL.mensalista) + '% (mensalista)</b>';
+        }
+        return { vals: vals, erro: erro };
+      };
+      UI.modal("Tabela de encargos sociais da empresa", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: sai },
+        { texto: "Preencher com a SINAPI da UF", classe: "ghost", onClick: function () {
+            var r = LicitacaoDocs.sinapiDaEscolha(orc, { desonerado: reg === true ? true : (reg === false ? false : undefined) });
+            if (!r.tab) { UI.toast("Não achei a tabela SINAPI: falta " + r.falta.join(" e ") + ".", "erro"); return; }
+            var porCod = {};
+            r.tab.linhas.forEach(function (l) { if (l.codigo) porCod[l.codigo] = l; });
+            [].slice.call(document.querySelectorAll("tr[data-cod]")).forEach(function (tr) {
+              var l = porCod[tr.getAttribute("data-cod")];
+              tr.querySelector(".enc-h").value = l && l.horista != null ? fmt(l.horista) : "";
+              tr.querySelector(".enc-m").value = l && l.mensalista != null ? fmt(l.mensalista) : "";
+            });
+            ler(true);
+            UI.toast("Preenchido com a SINAPI " + r.uf + " (" + (r.regime ? "desonerado" : "não desonerado") + "). Confira e salve.", "ok");
+          } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+            var r = ler(true);
+            if (r.erro) { UI.toast(r.erro, "erro"); return; }
+            try {
+              var pr = Store.lerPrefs(Auth.empresaId()) || {};
+              LicitacaoDocs.gravarEncargosEmpresa(pr, chave, r.vals, new Date().toISOString().slice(0, 10));
+              Store.salvarPrefs(Auth.empresaId(), pr);
+              try { if (typeof Auditoria !== "undefined" && Auditoria.registrar) Auditoria.registrar("licitacao", "encargos_empresa_salvos", { cnpj: chave }); } catch (eA) {}
+            } catch (eS) { UI.toast("Não consegui gravar a tabela: " + (eS && eS.message ? eS.message : eS), "erro"); return; }
+            UI.toast("Tabela de encargos da empresa salva.", "ok");
+            sai();
+          } }]);
+      [].slice.call(document.querySelectorAll("tr[data-cod] input")).forEach(function (i) { i.addEventListener("input", function () { ler(true); }); });
+      ler(true);
     },
 
     /* Qual empresa assina os documentos deste certame. `doCertame`: veio `licitante` no pacote. `perguntar`:

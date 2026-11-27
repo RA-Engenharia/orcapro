@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.458",
+versao: "1.2.459",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -16449,7 +16449,8 @@ abertura: (cfg.licitacao && cfg.licitacao.abertura) || "",
 processo: (cfg.licitacao && cfg.licitacao.processo) || "",
 obra: !!(cfg.licitacao && cfg.licitacao.obra === true),
 obraInformada: !!(cfg.licitacao && cfg.licitacao.obraInformada),
-certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro)
+certamepro: !!(cfg.licitacao && cfg.licitacao.certamepro),
+encargosProposta: (cfg.licitacao && (cfg.licitacao.encargosProposta === "sinapi" || cfg.licitacao.encargosProposta === "empresa")) ? cfg.licitacao.encargosProposta : "orgao"
 },
 arredondamento: cfg.arredondamento,
 bdiIncidencia: cfg.bdiIncidencia,
@@ -16492,6 +16493,21 @@ UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") +
 this._injetarCss();
 this._bind(1); this._bind(2);
 if (blocoBases) { try { this._bindTabela3(); } catch (eT) {} }
+},
+_editarEncargosEmpresa: function () {
+var app = this._app, s = this._st, orc = s && s.orc;
+if (!app || typeof app._licEncargosEmpresaEditor !== "function") { UI.toast("Editor da tabela de encargos indisponível nesta tela.", "erro"); return; }
+if (!orc) { UI.toast("Crie o orçamento primeiro; depois edite a tabela em ⚙ Parâmetros.", "erro"); return; }
+var pausado = document.getElementById("modal-bg");
+if (pausado) { pausado.id = "modal-bg-pausa"; pausado.style.display = "none"; }
+var voltar = function () {
+UI.fecharModal();
+var p = document.getElementById("modal-bg-pausa");
+if (p) { p.id = "modal-bg"; p.style.display = ""; }
+};
+try {
+app._licEncargosEmpresaEditor(orc, { regime: s.encargos && s.encargos.tipo === "desonerado" ? true : (s.encargos && s.encargos.tipo ? false : null), aoFechar: voltar });
+} catch (e) { voltar(); UI.toast("Não consegui abrir a tabela de encargos: " + (e && e.message ? e.message : e), "erro"); }
 },
 _salvarParametros: function () {
 if (!this._coletar1() || !this._coletar2()) return;
@@ -16612,6 +16628,12 @@ return '<div class="row"><div class="field"><label>Código do orçamento</label>
 "<span><b>Obra ou serviço de engenharia (limites de 75%/85%)</b> <small>(Lei 14.133/2021, art. 59, §§ 4º e 5º: abaixo de 75% do valor orçado pela Administração a proposta é considerada inexequível; abaixo de 85%, o vencedor presta garantia adicional. Desmarcado, esses limites não são aplicados.)</small></span></label>" +
 (s.licitacao.certamepro && !s.licitacao.obraInformada
 ? '<small class="ow-hint" id="ow-lic-obra-hint">O pacote do certame não informou se o objeto é obra ou serviço de engenharia — por isso a caixa está desmarcada e os limites não estão sendo aplicados. Marque se for.</small>' : "") +
+'<div class="field"><label>Encargos sociais na proposta</label><select id="ow-lic-enc">' +
+'<option value="orgao"' + (s.licitacao.encargosProposta === "orgao" || !s.licitacao.encargosProposta ? " selected" : "") + ">Tabela lida do edital (órgão)</option>" +
+'<option value="sinapi"' + (s.licitacao.encargosProposta === "sinapi" ? " selected" : "") + ">SINAPI oficial da UF (regime do orçamento)</option>" +
+'<option value="empresa"' + (s.licitacao.encargosProposta === "empresa" ? " selected" : "") + ">Tabela da empresa (cadastro por CNPJ)</option></select>" +
+'<small class="ow-hint">A tabela de encargos da proposta é da empresa licitante. Só a seção de encargos do documento muda; a planilha e as composições seguem iguais.</small> ' +
+'<button type="button" class="btn ghost sm" id="ow-lic-enc-edit">Editar tabela de encargos da empresa</button></div>' +
 "</div>";
 },
 _coletar1: function () {
@@ -16633,6 +16655,7 @@ tipo: val("ow-lic-tipo"),
 abertura: val("ow-lic-abertura"),
 processo: val("ow-lic-processo").trim(),
 obra: marcado("ow-lic-obra"),
+encargosProposta: val("ow-lic-enc") || "orgao",
 obraInformada: !!licAnt.obraInformada,
 certamepro: !!licAnt.certamepro
 };
@@ -16848,6 +16871,8 @@ var lic = UI.el("ow-lic");
 if (lic) lic.addEventListener("change", function () {
 var box = UI.el("ow-licbox"); if (box) box.style.display = lic.checked ? "" : "none";
 });
+var btEnc = UI.el("ow-lic-enc-edit");
+if (btEnc) btEnc.addEventListener("click", function () { self._editarEncargosEmpresa(); });
 var n = UI.el("ow-nome"); if (n) n.focus();
 }
 if (p === 2) {
@@ -16977,7 +17002,8 @@ tipo: s.licitacao.ativo ? s.licitacao.tipo : "",
 abertura: s.licitacao.ativo ? s.licitacao.abertura : "",
 processo: s.licitacao.ativo ? s.licitacao.processo : "",
 obra: s.licitacao.obra === true,
-obraInformada: s.licitacao.obra === true
+obraInformada: s.licitacao.obra === true,
+encargosProposta: s.licitacao.encargosProposta
 },
 bases: [{ fonte: "SINAPI", uf: s.uf, competencia: s.competencia }].concat(
 s.basesExtras.map(function (f) {
@@ -71581,6 +71607,7 @@ var obra = novo.obra === true;
 if (obra !== (ant.obra === true)) out.obraInformada = true;
 out.obra = obra;
 }
+if (novo.encargosProposta !== undefined) out.encargosProposta = (novo.encargosProposta === "sinapi" || novo.encargosProposta === "empresa") ? novo.encargosProposta : "orgao";
 return out;
 },
 refDoItem: function (orc, it) {
@@ -73100,8 +73127,51 @@ linhas: linhas
 _cache = out;
 return out;
 }
+function codigos() { return CODIGOS.map(function (c) { return { codigo: c[0], descricao: c[1] }; }); }
+function lerPercentual(txt) {
+var t = String(txt == null ? "" : txt).replace(/\s+/g, "").replace("%", "");
+if (t === "") return { ok: true, v: 0 };
+if (t.indexOf(",") >= 0) t = t.replace(/\./g, "").replace(",", ".");
+if (!/^\d+(\.\d+)?$/.test(t)) return { ok: false, v: null };
+var v = Number(t);
+if (!isFinite(v) || v < 0 || v > 200) return { ok: false, v: null };
+return { ok: true, v: v };
+}
+function r2(v) { return Math.round((v + 1e-9) * 100) / 100; }
+function construir(valores, meta) {
+meta = meta || {};
+var v = valores || {}, linhas = [], grupos = ["A", "B", "C", "D"], tot = {}, gh = 0, gm = 0, gi, i, c, h, m, sh, sm;
+for (gi = 0; gi < grupos.length; gi++) {
+sh = 0; sm = 0;
+for (i = 0; i < CODIGOS.length; i++) {
+c = CODIGOS[i];
+if (c[0].charAt(0) !== grupos[gi]) continue;
+h = num(v[c[0]] && v[c[0]].horista) || 0; m = num(v[c[0]] && v[c[0]].mensalista) || 0;
+linhas.push({ codigo: c[0], descricao: c[1], horista: h, mensalista: m });
+sh += h; sm += m;
+}
+sh = r2(sh); sm = r2(sm); gh += sh; gm += sm;
+linhas.push({ codigo: "", descricao: "", total: grupos[gi], horista: sh, mensalista: sm });
+}
+gh = r2(gh); gm = r2(gm);
+linhas.push({ codigo: "", descricao: "", total: "GERAL", horista: gh, mensalista: gm });
+return { uf: String(meta.uf || ""), regime: regimeDe(meta.regime) || "", competencia: String(meta.competencia || ""), fonte: String(meta.fonte || "Tabela da empresa"),
+horista: gh, mensalista: gm, linhas: linhas };
+}
+function maisRecente(uf, regime) {
+var u = String(uf == null ? "" : uf).toUpperCase().trim(), r = regimeDe(regime);
+if (!u || !r) return null;
+var ach = EncargosTab.todas().filter(function (t) { return t && regimeDe(t.regime) === r && String(t.uf || "").toUpperCase() === u; });
+if (!ach.length) return null;
+ach.sort(function (a, b) { return String(b.competencia || "") < String(a.competencia || "") ? -1 : (String(b.competencia || "") > String(a.competencia || "") ? 1 : 0); });
+return ach[0];
+}
 var EncargosTab = {
 TABELAS: [],
+codigos: codigos,
+lerPercentual: lerPercentual,
+construir: construir,
+maisRecente: maisRecente,
 TOLERANCIA: TOL,
 totaisDe: totaisDe,
 regimeDe: regimeDe,
@@ -74066,12 +74136,7 @@ pend.dados.push("A base de referência carregada é a tabela " + base.mes + ", e
 pend.dados.push("Base de referência (composições auxiliares) não carregada: as composições auxiliares saem sem detalhamento e as descrições ficam como lidas.");
 }
 var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {}, auxProp = 0, auxPropDif = 0;
-var UFS_BR = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
-var ufOrcamento = s(orc.uf).toUpperCase(), ufOrigem = ufOrcamento ? "orcamento" : "";
-if (!ufOrcamento) {
-var mUf = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(semAcento(s(orc && orc.obra && orc.obra.local)).toUpperCase());
-if (mUf && UFS_BR.indexOf(mUf[1]) >= 0) { ufOrcamento = mUf[1]; ufOrigem = "obra"; }
-}
+var ufDoOrc = ufDoOrcamento(orc), ufOrcamento = ufDoOrc.uf, ufOrigem = ufDoOrc.origem;
 function compAAAAMM(v) {
 var t = s(v), m = /(\d{4})\D+(\d{1,2})/.exec(t);
 if (m) return m[1] + "-" + ("0" + m[2]).slice(-2);
@@ -74491,6 +74556,7 @@ cr = elaborarCronograma(porEtapa, Math.max(1, Math.ceil(prazoDias / 30)));
 elaborado = true; temCr = true;
 pend.dados.push("Cronograma elaborado pelo sistema a partir do prazo de " + prazoDias + " dias, conferir.");
 }
+var rodarCrono = function () {
 if (temCr) {
 var nMeses = 0, linhasC = [], okC = true;
 cr.etapas.forEach(function (e) { Object.keys(e.meses || {}).forEach(function (k) { nMeses = Math.max(nMeses, parseInt(k, 10) || 0); }); });
@@ -74563,6 +74629,16 @@ crono = { nMeses: nMeses, linhas: linhasC, totais: tm, total: arr(ac2, 2), elabo
 cronoSemPrazo = true;
 pend.dados.push("Cronograma físico-financeiro não informado no pacote e sem o prazo de execução do edital para elaborá-lo: a seção sai como PENDÊNCIA. Falta o prazo de execução.");
 }
+};
+var nPendCr = pend.dados.length;
+rodarCrono();
+if (!crono && temCr && !elaborado && prazoDias) {
+var probCr = pend.dados.splice(nPendCr).filter(function (t) { return /^Cronograma/.test(t); }).length;
+cr = elaborarCronograma(porEtapa, Math.max(1, Math.ceil(prazoDias / 30)));
+elaborado = true;
+pend.dados.push("Cronograma do órgão lido incompleto (" + probCr + " problema(s) na leitura do PDF): cronograma elaborado pelo sistema a partir do prazo de " + prazoDias + " dias, conferir.");
+rodarCrono();
+}
 var bdi = parseBdi(leitura, bdiPct);
 if (!bdi.ok) pend.dados.push("BDI: " + bdi.motivo + ".");
 else {
@@ -74574,7 +74650,31 @@ if (qdB && qdB.calculado != null && Math.abs(qdB.calculado - bdiPct) > 0.01) pen
 var leituraEnc = leitura, encFalta = "", encOrigem = null;
 var temLinhasEnc = !!(leitura && leitura.encargos && Array.isArray(leitura.encargos.linhas) && leitura.encargos.linhas.length);
 var etot = lic.encargosTotais;
-if (!temLinhasEnc && etot && etot.horista > 0) {
+var escEnc = (lic.encargosProposta === "sinapi" || lic.encargosProposta === "empresa") ? lic.encargosProposta : "orgao";
+if (escEnc === "sinapi") {
+var esN = sinapiDaEscolha(orc, tab);
+if (esN.tab) {
+leituraEnc = { encargos: { linhas: esN.tab.linhas }, tabelas: { desonerado: esN.regime === true }, regimeConfirmado: true };
+encOrigem = { tipo: "sinapi", uf: s(esN.tab.uf), competencia: s(esN.tab.competencia), fonte: s(esN.tab.fonte), rotulo: s(esN.tab.rotulo), regime: s(esN.tab.regime) };
+pend.dados.push("Encargos: a empresa escolheu a SINAPI oficial " + encOrigem.uf + " (" + (esN.regime === true ? "desonerado" : "não desonerado") + ", vigência " + vigAAAAMM(encOrigem.competencia) + ") no lugar da tabela do edital.");
+} else {
+leituraEnc = {};
+encFalta = "A empresa escolheu a SINAPI oficial da UF para os encargos, mas falta " + esN.falta.join(" e ") + ". Nenhum valor foi estimado.";
+}
+} else if (escEnc === "empresa") {
+var cadE = encargosEmpresaDe(opcoes.encargosEmpresa, chaveEncargos(lic, empresa));
+var regE = regimeDoOrcamento(orc, tab), ETe = _dep("EncargosTab");
+if (cadE && ETe && ETe.construir) {
+var tE = ETe.construir(cadE.valores, { regime: regE === true ? "desonerado" : (regE === false ? "nao_desonerado" : ""), fonte: "Tabela de encargos da empresa" });
+leituraEnc = { encargos: { linhas: tE.linhas }, tabelas: regE === null ? {} : { desonerado: regE === true }, regimeConfirmado: regE !== null };
+encOrigem = { tipo: "empresa", regime: s(tE.regime), atualizado: s(cadE.atualizado), competencia: "", uf: "", fonte: tE.fonte, rotulo: "" };
+pend.dados.push("Encargos: a empresa escolheu a própria tabela de encargos sociais (cadastrada" + (encOrigem.atualizado ? " em " + dataBr(encOrigem.atualizado) : "") + ") no lugar da tabela do edital.");
+} else {
+leituraEnc = {};
+encFalta = "A empresa escolheu a tabela própria de encargos sociais, mas a empresa ainda não cadastrou a tabela de encargos. Cadastre em ⚙ Parâmetros > Encargos sociais na proposta. Nenhum valor foi estimado.";
+}
+}
+if (escEnc === "orgao" && !temLinhasEnc && etot && etot.horista > 0) {
 var ET = _dep("EncargosTab"), ufs = [], tabE = null, semUf = false;
 var ufDoOrgao = s(etot.uf).toUpperCase();
 if (ufDoOrgao) ufs.push(ufDoOrgao);
@@ -74605,7 +74705,14 @@ pend.dados.push("Encargos: os totais publicados pelo órgão (horista " + fmt(et
 }
 }
 if (!enc.ok) { if (encFalta) { enc.pendTexto = encFalta; pend.dados.push("Encargos sociais: " + encFalta); } else pend.dados.push("Encargos sociais: " + enc.motivo + "."); }
-else { enc.avisos.forEach(function (a) { pend.dados.push("Encargos: " + a + "."); }); if (encOrigem) enc.origem = encOrigem; }
+else {
+enc.avisos.forEach(function (a) { pend.dados.push("Encargos: " + a + "."); }); if (encOrigem) enc.origem = encOrigem;
+if (escEnc === "orgao") {
+var nNL = 0;
+enc.grupos.forEach(function (g) { g.linhas.forEach(function (l) { if (l.horistaNL) nNL++; if (l.mensalistaNL) nNL++; }); });
+if (nNL) pend.dados.push("Encargos: a tabela do edital tem " + nNL + " valor(es) não lido(s). A tabela de encargos da proposta é da empresa: escolha em ⚙ Parâmetros > Encargos sociais na proposta (SINAPI oficial da UF ou tabela da empresa).");
+}
+}
 var conf = leitura && leitura.conferencia && Array.isArray(leitura.conferencia.pendencias) ? leitura.conferencia.pendencias : [];
 conf.forEach(function (p) {
 if (typeof p === "string") { pend.conferencia.push(p); return; }
@@ -75258,6 +75365,14 @@ return '<section class="ld-sec" data-tipo="corpo" data-titulo="Encargos sociais"
 function notaEncargos(enc) {
 var regime = enc.regimeSabido ? (enc.desonerado ? "desonerado" : "não desonerado") : null;
 var o = enc.origem, t = enc.tabelaFonte, to = enc.totaisOrgao, txt;
+if (o && o.tipo === "sinapi") {
+return 'SINAPI oficial ' + esc(o.uf) + ', ' + (o.regime === "desonerado" ? 'desonerado' : 'não desonerado') + ', vigência ' + esc(vigAAAAMM(o.competencia)) +
+' (escolhida pela empresa no lugar da tabela do edital); totais da tabela: horista ' + esc(P(enc.total.horista)) + ', mensalista ' + esc(P(enc.total.mensalista)) + '.';
+}
+if (o && o.tipo === "empresa") {
+return 'Tabela de encargos sociais da empresa' + (o.regime ? ', ' + (o.regime === "desonerado" ? 'desonerado' : 'não desonerado') : ', regime de desoneração não confirmado') +
+' (escolhida pela empresa no lugar da tabela do edital); totais da tabela: horista ' + esc(P(enc.total.horista)) + ', mensalista ' + esc(P(enc.total.mensalista)) + '.';
+}
 var qual = o ? { uf: o.uf, vig: o.competencia, fonte: o.fonte, regime: o.regime === "desonerado" ? "desonerado" : "não desonerado" }
 : (t ? { uf: t.uf, vig: t.vigencia, fonte: t.fonte, regime: regime } : null);
 if (!qual) return (regime ? 'Regime ' + regime + ', conforme a tabela do órgão.' : 'Regime de desoneração não confirmado, conforme a tabela do órgão.');
@@ -75611,6 +75726,55 @@ var o = {};
 SECOES_PACOTE.forEach(function (x) { if (escolha && escolha[x.id] === false) o[x.id] = false; });
 return o;
 }
+var UFS_BR_ENC = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+function ufDoOrcamento(orc) {
+var uf = s(orc && orc.uf).toUpperCase(), origem = uf ? "orcamento" : "";
+if (!uf) {
+var mUf = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(semAcento(s(orc && orc.obra && orc.obra.local)).toUpperCase());
+if (mUf && UFS_BR_ENC.indexOf(mUf[1]) >= 0) { uf = mUf[1]; origem = "obra"; }
+}
+return { uf: uf, origem: origem };
+}
+function regimeDoOrcamento(orc, tab) {
+if (tab && (tab.desonerado === true || tab.desonerado === false)) return tab.desonerado;
+if (orc && (orc.desonerado === true || orc.desonerado === false)) return orc.desonerado;
+return null;
+}
+function sinapiDaEscolha(orc, tab) {
+var ET = _dep("EncargosTab"), uf = ufDoOrcamento(orc).uf, reg = regimeDoOrcamento(orc, tab), falta = [], t = null;
+if (!uf) falta.push("a UF do orçamento");
+if (reg === null) falta.push("o regime (desonerado ou não desonerado) do orçamento");
+if (!falta.length) {
+t = ET && ET.maisRecente ? ET.maisRecente(uf, reg === true ? "desonerado" : "nao_desonerado") : null;
+if (!t) falta.push("a tabela SINAPI de " + uf + " (" + (reg === true ? "desonerado" : "não desonerado") + ") na base");
+}
+return { tab: t, uf: uf, regime: reg, falta: falta };
+}
+function chaveEncargos(lic, empresa) { return chaveLicitante(lic) || s(empresa && empresa.cnpj).replace(/\D+/g, ""); }
+function encargosEmpresaDe(cad, chave) {
+var g = cad && typeof cad === "object" ? cad : null, e = g && chave && g.porLicitante && g.porLicitante[chave];
+if (!e || typeof e !== "object" || !e.valores || typeof e.valores !== "object") return null;
+var ok = {}, n = 0;
+Object.keys(e.valores).forEach(function (k) {
+var v = e.valores[k];
+if (!v || typeof v !== "object") return;
+var h = Number(v.horista), m = Number(v.mensalista);
+if (!isFinite(h) || !isFinite(m) || h < 0 || m < 0 || h > 200 || m > 200) return;
+ok[k] = { horista: h, mensalista: m }; n++;
+});
+return n ? { valores: ok, atualizado: s(e.atualizado) } : null;
+}
+function gravarEncargosEmpresa(prefs, chave, valores, hoje) {
+if (!prefs || typeof prefs !== "object" || !chave) return prefs;
+var g = (prefs.encargosEmpresa && typeof prefs.encargosEmpresa === "object") ? prefs.encargosEmpresa : {};
+g.porLicitante = (g.porLicitante && typeof g.porLicitante === "object") ? g.porLicitante : {};
+var v = {};
+Object.keys(valores || {}).forEach(function (k) { v[k] = { horista: Number(valores[k].horista) || 0, mensalista: Number(valores[k].mensalista) || 0 }; });
+g.porLicitante[chave] = { valores: v, atualizado: s(hoje) };
+prefs.encargosEmpresa = g;
+return prefs;
+}
+function dataBr(t) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s(t)); return m ? m[3] + "/" + m[2] + "/" + m[1] : s(t); }
 function avisosDeSecoes(escolha, exigidas) {
 var out = [];
 SECOES_PACOTE.forEach(function (x) { if (x.aviso && escolha && escolha[x.id] === false && (!exigidas || exigidas[x.id])) out.push('Seção "' + x.rotulo + '" desligada. ' + x.aviso); });
@@ -75623,6 +75787,8 @@ baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, quadroBdi: qua
 css: CSS,
 secoesPacote: secoesPacote, secoesPadraoPacote: secoesPadraoPacote, chaveLicitante: chaveLicitante, secoesDoPacote: secoesDoPacote, secoesExigidas: secoesExigidas, temEscolhaPacote: temEscolhaPacote,
 gravarSecoesPacote: gravarSecoesPacote, secoesParaGerar: secoesParaGerar, avisosDeSecoes: avisosDeSecoes,
+ufDoOrcamento: ufDoOrcamento, regimeDoOrcamento: regimeDoOrcamento, sinapiDaEscolha: sinapiDaEscolha, chaveEncargos: chaveEncargos,
+encargosEmpresaDe: encargosEmpresaDe, gravarEncargosEmpresa: gravarEncargosEmpresa,
 _util: { fmt: fmt, R: R, norm: norm, parecido: parecido, arr: arr, prazoExt: prazoExt, diasDoTexto: diasDoTexto, objetoDaCarta: objetoDaCarta, dataExtensoUpper: dataExtensoUpper }
 };
 global.LicitacaoDocs = LicitacaoDocs;

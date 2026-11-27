@@ -185,8 +185,60 @@
     return out;
   }
 
+  /* Lista dos códigos (A1..D2) na ordem do livro, para a tela da tabela própria da empresa */
+  function codigos() { return CODIGOS.map(function (c) { return { codigo: c[0], descricao: c[1] }; }); }
+
+  /* Número digitado (aceita vírgula) para a tabela da empresa: vazio = 0; fora de 0..200 ou ilegível = recusado. */
+  function lerPercentual(txt) {
+    var t = String(txt == null ? "" : txt).replace(/\s+/g, "").replace("%", "");
+    if (t === "") return { ok: true, v: 0 };
+    if (t.indexOf(",") >= 0) t = t.replace(/\./g, "").replace(",", ".");
+    if (!/^\d+(\.\d+)?$/.test(t)) return { ok: false, v: null };
+    var v = Number(t);
+    if (!isFinite(v) || v < 0 || v > 200) return { ok: false, v: null };
+    return { ok: true, v: v };
+  }
+  function r2(v) { return Math.round((v + 1e-9) * 100) / 100; }
+
+  /* Monta a tabela da empresa no MESMO formato das tabelas do livro (linhas A1..D2 + totais por grupo e GERAL).
+     `valores` = { A1: { horista, mensalista }, ... }; código ausente = 0. Totais = soma das linhas, em 2 casas. */
+  function construir(valores, meta) {
+    meta = meta || {};
+    var v = valores || {}, linhas = [], grupos = ["A", "B", "C", "D"], tot = {}, gh = 0, gm = 0, gi, i, c, h, m, sh, sm;
+    for (gi = 0; gi < grupos.length; gi++) {
+      sh = 0; sm = 0;
+      for (i = 0; i < CODIGOS.length; i++) {
+        c = CODIGOS[i];
+        if (c[0].charAt(0) !== grupos[gi]) continue;
+        h = num(v[c[0]] && v[c[0]].horista) || 0; m = num(v[c[0]] && v[c[0]].mensalista) || 0;
+        linhas.push({ codigo: c[0], descricao: c[1], horista: h, mensalista: m });
+        sh += h; sm += m;
+      }
+      sh = r2(sh); sm = r2(sm); gh += sh; gm += sm;
+      linhas.push({ codigo: "", descricao: "", total: grupos[gi], horista: sh, mensalista: sm });
+    }
+    gh = r2(gh); gm = r2(gm);
+    linhas.push({ codigo: "", descricao: "", total: "GERAL", horista: gh, mensalista: gm });
+    return { uf: String(meta.uf || ""), regime: regimeDe(meta.regime) || "", competencia: String(meta.competencia || ""), fonte: String(meta.fonte || "Tabela da empresa"),
+      horista: gh, mensalista: gm, linhas: linhas };
+  }
+
+  /* Tabela oficial da UF e do regime, a de competência mais recente (sem UF ou sem regime: null — nunca se escolhe no escuro) */
+  function maisRecente(uf, regime) {
+    var u = String(uf == null ? "" : uf).toUpperCase().trim(), r = regimeDe(regime);
+    if (!u || !r) return null;
+    var ach = EncargosTab.todas().filter(function (t) { return t && regimeDe(t.regime) === r && String(t.uf || "").toUpperCase() === u; });
+    if (!ach.length) return null;
+    ach.sort(function (a, b) { return String(b.competencia || "") < String(a.competencia || "") ? -1 : (String(b.competencia || "") > String(a.competencia || "") ? 1 : 0); });
+    return ach[0];
+  }
+
   var EncargosTab = {
     TABELAS: [],
+    codigos: codigos,
+    lerPercentual: lerPercentual,
+    construir: construir,
+    maisRecente: maisRecente,
     TOLERANCIA: TOL,
     totaisDe: totaisDe,
     regimeDe: regimeDe,
