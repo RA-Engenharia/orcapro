@@ -424,9 +424,79 @@
       } catch (e) { cb(e); }
     },
 
+    /* ABA ÚNICA (27/11/2026, Rogério: cada "Orçar no OrçaPRO" abria um OrçaPRO novo, e o PC ficava com 2, 3, 4 abertos sem a
+       pessoa saber — e duas abas gravando no mesmo armazenamento podem apagar o trabalho uma da outra). Cada aba do OrçaPRO
+       responde no canal "orcapro-abas". A aba nova que chega com ?importar= pergunta se já existe outra: existindo, o pacote
+       vai para ELA (que importa e pisca o título), e a nova avisa e se fecha. Sem outra aba, segue como sempre. */
+    _abaId: "a" + Math.random().toString(36).slice(2) + Date.now().toString(36),
+    _canal: null,
+    _iniciarCanal: function () {
+      var self = this;
+      try { if (!window.name) window.name = "orcapro"; } catch (eN) {}
+      if (this._canal || typeof BroadcastChannel === "undefined") return this._canal;
+      try { this._canal = new BroadcastChannel("orcapro-abas"); } catch (eC) { return null; }
+      this._canal.onmessage = function (ev) {
+        var m = (ev && ev.data) || {};
+        if (!m || m.de === self._abaId) return;
+        if (m.tipo === "quem") { try { self._canal.postMessage({ tipo: "estou", de: self._abaId, para: m.de, desde: self._desde }); } catch (e) {} return; }
+        if (m.tipo === "importar" && m.para === self._abaId && m.url) {
+          try { sessionStorage.setItem(CHAVE_PENDENTE, String(m.url)); } catch (e) {}
+          try { self._canal.postMessage({ tipo: "recebi", de: self._abaId, para: m.de }); } catch (e) {}
+          self._piscarTitulo();
+          try { UI.toast("Pacote do CertamePRO recebido nesta janela do OrçaPRO (a aba nova foi fechada para não ficar duas abertas).", "ok", 9000); } catch (e) {}
+          self.processarParam(true);
+        }
+      };
+      return this._canal;
+    },
+    _desde: Date.now(),
+    _piscarTitulo: function () {
+      try {
+        var orig = document.title, n = 0;
+        var iv = setInterval(function () { n++; document.title = (n % 2 ? "● Pacote recebido — " : "") + orig; if (n > 15) { clearInterval(iv); document.title = orig; } }, 700);
+      } catch (e) {}
+    },
+    /* existe outra aba do OrçaPRO? cb(idDaOutra | null) em até 600 ms */
+    _outraAba: function (cb) {
+      var canal = this._iniciarCanal(), self = this, achou = null;
+      if (!canal) { cb(null); return; }
+      var ouvir = function (ev) { var m = (ev && ev.data) || {}; if (m.tipo === "estou" && m.para === self._abaId && !achou) achou = m.de; };
+      canal.addEventListener("message", ouvir);
+      try { canal.postMessage({ tipo: "quem", de: this._abaId }); } catch (e) {}
+      setTimeout(function () { canal.removeEventListener("message", ouvir); cb(achou); }, 600);
+    },
+
     /* app/?importar=<url> — guarda a URL, limpa a barra e espera a sessão. */
-    processarParam: function () {
+    processarParam: function (jaEncaminhado) {
       var self = this, url = "";
+      this._iniciarCanal();
+      if (!jaEncaminhado) {
+        var qTeste = "";
+        try { qTeste = String(new URLSearchParams(location.search || "").get(PARAM) || "").trim(); } catch (eQ) {}
+        if (qTeste) {
+          this._outraAba(function (outra) {
+            if (!outra) { self.processarParam(true); return; }
+            var canal = self._canal, recebeu = false;
+            var ouvir = function (ev) { var m = (ev && ev.data) || {}; if (m.tipo === "recebi" && m.para === self._abaId) recebeu = true; };
+            canal.addEventListener("message", ouvir);
+            try { canal.postMessage({ tipo: "importar", de: self._abaId, para: outra, url: qTeste }); } catch (e) {}
+            setTimeout(function () {
+              canal.removeEventListener("message", ouvir);
+              if (!recebeu) { self.processarParam(true); return; }   /* a outra não respondeu a tempo: importa aqui mesmo */
+              try {
+                document.body.innerHTML = '<div style="font:16px system-ui,sans-serif;max-width:560px;margin:80px auto;padding:24px;border:1px solid #ccc;border-radius:12px;text-align:center">' +
+                  '<h2 style="margin-top:0">O OrçaPRO já estava aberto</h2><p>O pacote do CertamePRO foi enviado para a janela do OrçaPRO que já estava aberta ' +
+                  '(o título dela está piscando). Esta aba vai fechar para não ficarem dois OrçaPRO abertos.</p>' +
+                  '<button onclick="window.close()" style="font-size:15px;padding:8px 18px">Fechar esta aba</button></div>';
+              } catch (eB) {}
+              setTimeout(function () { try { window.close(); } catch (eW) {} }, 2500);
+            }, 1500);
+          });
+          return true;
+        }
+        /* sem pacote: só avisa se já houver outro OrçaPRO aberto */
+        this._outraAba(function (outra) { if (outra) { try { UI.toast("O OrçaPRO já está aberto em outra aba ou janela. Use só uma: duas abertas podem gravar uma por cima da outra.", "erro", 12000); } catch (e) {} } });
+      }
       try {
         var q = new URLSearchParams(location.search || "");
         url = String(q.get(PARAM) || "").trim();

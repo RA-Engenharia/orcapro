@@ -70297,8 +70297,71 @@ fetch(url, { cache: "no-store" })
 .catch(function (e) { cb(e); });
 } catch (e) { cb(e); }
 },
-processarParam: function () {
+_abaId: "a" + Math.random().toString(36).slice(2) + Date.now().toString(36),
+_canal: null,
+_iniciarCanal: function () {
+var self = this;
+try { if (!window.name) window.name = "orcapro"; } catch (eN) {}
+if (this._canal || typeof BroadcastChannel === "undefined") return this._canal;
+try { this._canal = new BroadcastChannel("orcapro-abas"); } catch (eC) { return null; }
+this._canal.onmessage = function (ev) {
+var m = (ev && ev.data) || {};
+if (!m || m.de === self._abaId) return;
+if (m.tipo === "quem") { try { self._canal.postMessage({ tipo: "estou", de: self._abaId, para: m.de, desde: self._desde }); } catch (e) {} return; }
+if (m.tipo === "importar" && m.para === self._abaId && m.url) {
+try { sessionStorage.setItem(CHAVE_PENDENTE, String(m.url)); } catch (e) {}
+try { self._canal.postMessage({ tipo: "recebi", de: self._abaId, para: m.de }); } catch (e) {}
+self._piscarTitulo();
+try { UI.toast("Pacote do CertamePRO recebido nesta janela do OrçaPRO (a aba nova foi fechada para não ficar duas abertas).", "ok", 9000); } catch (e) {}
+self.processarParam(true);
+}
+};
+return this._canal;
+},
+_desde: Date.now(),
+_piscarTitulo: function () {
+try {
+var orig = document.title, n = 0;
+var iv = setInterval(function () { n++; document.title = (n % 2 ? "● Pacote recebido — " : "") + orig; if (n > 15) { clearInterval(iv); document.title = orig; } }, 700);
+} catch (e) {}
+},
+_outraAba: function (cb) {
+var canal = this._iniciarCanal(), self = this, achou = null;
+if (!canal) { cb(null); return; }
+var ouvir = function (ev) { var m = (ev && ev.data) || {}; if (m.tipo === "estou" && m.para === self._abaId && !achou) achou = m.de; };
+canal.addEventListener("message", ouvir);
+try { canal.postMessage({ tipo: "quem", de: this._abaId }); } catch (e) {}
+setTimeout(function () { canal.removeEventListener("message", ouvir); cb(achou); }, 600);
+},
+processarParam: function (jaEncaminhado) {
 var self = this, url = "";
+this._iniciarCanal();
+if (!jaEncaminhado) {
+var qTeste = "";
+try { qTeste = String(new URLSearchParams(location.search || "").get(PARAM) || "").trim(); } catch (eQ) {}
+if (qTeste) {
+this._outraAba(function (outra) {
+if (!outra) { self.processarParam(true); return; }
+var canal = self._canal, recebeu = false;
+var ouvir = function (ev) { var m = (ev && ev.data) || {}; if (m.tipo === "recebi" && m.para === self._abaId) recebeu = true; };
+canal.addEventListener("message", ouvir);
+try { canal.postMessage({ tipo: "importar", de: self._abaId, para: outra, url: qTeste }); } catch (e) {}
+setTimeout(function () {
+canal.removeEventListener("message", ouvir);
+if (!recebeu) { self.processarParam(true); return; }
+try {
+document.body.innerHTML = '<div style="font:16px system-ui,sans-serif;max-width:560px;margin:80px auto;padding:24px;border:1px solid #ccc;border-radius:12px;text-align:center">' +
+'<h2 style="margin-top:0">O OrçaPRO já estava aberto</h2><p>O pacote do CertamePRO foi enviado para a janela do OrçaPRO que já estava aberta ' +
+'(o título dela está piscando). Esta aba vai fechar para não ficarem dois OrçaPRO abertos.</p>' +
+'<button onclick="window.close()" style="font-size:15px;padding:8px 18px">Fechar esta aba</button></div>';
+} catch (eB) {}
+setTimeout(function () { try { window.close(); } catch (eW) {} }, 2500);
+}, 1500);
+});
+return true;
+}
+this._outraAba(function (outra) { if (outra) { try { UI.toast("O OrçaPRO já está aberto em outra aba ou janela. Use só uma: duas abertas podem gravar uma por cima da outra.", "erro", 12000); } catch (e) {} } });
+}
 try {
 var q = new URLSearchParams(location.search || "");
 url = String(q.get(PARAM) || "").trim();
@@ -79540,7 +79603,7 @@ var u = lic && lic.urlCertame ? String(lic.urlCertame) : "";
 var b = [];
 if (comPdf) b.push({ texto: "Abrir a proposta", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
 if (/^https?:\/\//i.test(u)) {
-b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
+b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { var uc = u; try { var U0 = new URL(u); U0.searchParams.set("de", "orcapro"); uc = U0.toString(); } catch (eU) {} var wc = window.open(uc, "certamepro"); if (wc) { try { wc.focus(); } catch (eF) {} } } catch (e) {} } });
 b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
 } else {
 b.push({ texto: "Fechar", classe: comPdf ? "ghost" : "primary", onClick: function () { UI.fecharModal(); } });

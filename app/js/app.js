@@ -13544,7 +13544,7 @@
       /* devolveu o Excel: a proposta em PDF ainda é da pessoa (o CertamePRO só recebe o PDF por rota própria) */
       if (comPdf) b.push({ texto: "Abrir a proposta", classe: "primary", onClick: function () { UI.fecharModal(); self.licitacaoPacote(); } });
       if (/^https?:\/\//i.test(u)) {
-        b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
+        b.push({ texto: "Voltar ao certame", classe: comPdf ? "" : "primary", onClick: function () { UI.fecharModal(); try { var uc = u; try { var U0 = new URL(u); U0.searchParams.set("de", "orcapro"); uc = U0.toString(); } catch (eU) {} var wc = window.open(uc, "certamepro"); if (wc) { try { wc.focus(); } catch (eF) {} } } catch (e) {}   /* aba com nome: volta para a MESMA aba do certame em vez de abrir outra (27/11/2026) */ } });
         b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
       } else {
         b.push({ texto: "Fechar", classe: comPdf ? "ghost" : "primary", onClick: function () { UI.fecharModal(); } });
