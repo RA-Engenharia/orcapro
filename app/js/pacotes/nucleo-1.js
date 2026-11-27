@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.452",
+versao: "1.2.453",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -71418,7 +71418,42 @@ if (Array.isArray(bloco.itens_identificados)) {
 var ri = this.aplicarItensIdentificados(orc, bloco.itens_identificados);
 lic.itensIdentificados = { recebidos: bloco.itens_identificados.length, novos: ri.novos, mantidos: ri.mantidos, ignorados: ri.ignorados };
 }
+this.prepararPeloEdital(orc, lic);
 return lic;
+},
+prepararPeloEdital: function (orc, lic) {
+if (!orc || !lic) return [];
+var feito = [], leit = (lic.leitura && typeof lic.leitura === "object") ? lic.leitura : {};
+var bases = Array.isArray(lic.basesExigidas) ? lic.basesExigidas : [];
+var UFS = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+if (!s(orc.uf)) {
+var loc = s(orc.obra && orc.obra.local).toUpperCase(), m = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(loc), uf = "", de = "";
+if (m && UFS.indexOf(m[1]) >= 0) { uf = m[1]; de = "local da obra (" + s(orc.obra.local) + ")"; }
+if (!uf) {
+var ufsB = []; bases.forEach(function (b) { var u = s(b && b.uf).toUpperCase(); if (u && ufsB.indexOf(u) < 0) ufsB.push(u); });
+if (ufsB.length === 1) { uf = ufsB[0]; de = "base exigida no edital"; }
+}
+if (uf) { orc.uf = uf; feito.push({ campo: "UF", valor: uf, de: de }); }
+}
+if (orc.desonerado !== true && orc.desonerado !== false) {
+var rg = null, deR = "";
+if (leit.encargos && (leit.encargos.desonerado === true || leit.encargos.desonerado === false)) { rg = leit.encargos.desonerado; deR = "tabela de encargos do orgao"; }
+else if (leit.tabelas && (leit.tabelas.desonerado === true || leit.tabelas.desonerado === false)) { rg = leit.tabelas.desonerado; deR = "tabelas do projeto"; }
+else {
+var regs = []; bases.forEach(function (b) { var r = s(b && b.regime) || "?"; if (regs.indexOf(r) < 0) regs.push(r); });
+if (regs.length === 1 && regs[0] !== "?") { rg = regs[0] === "desonerado"; deR = "base exigida no edital"; }
+}
+if (rg !== null) { orc.desonerado = rg; feito.push({ campo: "regime", valor: rg ? "desonerado" : "nao desonerado", de: deR }); }
+}
+if (!s(orc.competenciaSinapi)) {
+var cs = []; bases.forEach(function (b) { if (b && /SINAPI/.test(s(b.catId)) && s(b.competencia) && cs.indexOf(s(b.competencia)) < 0) cs.push(s(b.competencia)); });
+if (cs.length === 1) { orc.competenciaSinapi = cs[0]; feito.push({ campo: "competencia SINAPI", valor: cs[0], de: "base exigida no edital" }); }
+}
+if (lic.prazoExecucaoDias && orc.comercial && !s(orc.comercial.prazoExecucao)) {
+orc.comercial.prazoExecucao = lic.prazoExecucaoDias + " dias"; feito.push({ campo: "prazo de execucao", valor: orc.comercial.prazoExecucao, de: "edital" });
+}
+lic.preparoAuto = feito;
+return feito;
 },
 NOME_ETAPA_IDENTIFICADOS: "Itens identificados no edital (fora da planilha do órgão)",
 ID_ETAPA_IDENTIFICADOS: "eta-ident-edital",
@@ -73984,6 +74019,9 @@ if (!lic || !lic.ativo) return { ok: false, erro: "O orçamento não está em mo
 if (Orc.garantirConfig(orc).bdiIncidencia === "final") return { ok: false, erro: "O pacote da proposta usa o BDI no preço unitário. Em Parâmetros do orçamento, troque a incidência do BDI para \"preço unitário\" e gere de novo." };
 var leitura = (lic.leitura && typeof lic.leitura === "object") ? lic.leitura : null;
 var pend = { preencher: [], conferencia: [], dados: [], licitante: [] };
+if (lic.certamepro && typeof Lic.prepararPeloEdital === "function") {
+try { (Lic.prepararPeloEdital(orc, lic) || []).forEach(function (f) { pend.dados.push("Preenchido pelo edital: " + f.campo + " = " + f.valor + " (" + f.de + ")."); }); } catch (ePrep) {}
+}
 avisosDeSecoes(opcoes.secoes, secoesExigidas(lic)).forEach(function (a) { pend.dados.push(a); });
 var valor = arr(Lic.totalProposta(orc), 2);
 var calc = Orc.calcular(orc);
@@ -74012,7 +74050,12 @@ pend.dados.push("A base de referência carregada é a tabela " + base.mes + ", e
 pend.dados.push("Base de referência (composições auxiliares) não carregada: as composições auxiliares saem sem detalhamento e as descrições ficam como lidas.");
 }
 var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {}, auxProp = 0, auxPropDif = 0;
-var ufOrcamento = s(orc.uf).toUpperCase();
+var UFS_BR = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+var ufOrcamento = s(orc.uf).toUpperCase(), ufOrigem = ufOrcamento ? "orcamento" : "";
+if (!ufOrcamento) {
+var mUf = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(semAcento(s(orc && orc.obra && orc.obra.local)).toUpperCase());
+if (mUf && UFS_BR.indexOf(mUf[1]) >= 0) { ufOrcamento = mUf[1]; ufOrigem = "obra"; }
+}
 function compAAAAMM(v) {
 var t = s(v), m = /(\d{4})\D+(\d{1,2})/.exec(t);
 if (m) return m[1] + "-" + ("0" + m[2]).slice(-2);
@@ -74066,7 +74109,8 @@ return { mo: mo / soma2, mat: mat / soma2, eq: eq / soma2, compDif: difC };
 if (recusou) semUfBase.push(cod);
 return null;
 }
-var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : null);
+var encRegP = leitura && leitura.encargos && (leitura.encargos.desonerado === true || leitura.encargos.desonerado === false) ? leitura.encargos.desonerado : null;
+var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : encRegP);
 var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0;
 function regimeOk(r) { return regimeProj !== null && (r === true || r === false) && r === regimeProj; }
 function ufOk(u) { var x = s(u).toUpperCase(); return !!(x && ufOrcamento && x === ufOrcamento); }
@@ -74077,7 +74121,11 @@ if (it.modoCusto === "mo" || it.modoCusto === "matEq") return null;
 if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao))) return null;
 var c = null, rot = "", mes = "";
 if (ehSeinfra) {
-if (!baseOk || !s(tab.seinfra)) return null;
+if (!baseOk) return null;
+if (!s(tab.seinfra)) {
+var exS = (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).filter(function (b) { return /SEINFRA/i.test(s(b && b.fonte)) && s(b && (b.mes || b.competencia || b.versao)); })[0];
+if (exS && norm(s(exS.mes || exS.competencia || exS.versao)) !== norm(baseOk.mes)) { daBaseRegime++; return null; }
+}
 if (!regimeOk(baseOk.desonerado) || !ufOk(baseOk.uf)) { daBaseRegime++; return null; }
 var rg = baseOk.obter(cod);
 if (rg && Array.isArray(rg.insumos) && rg.insumos.length) { c = rg; rot = s(baseOk.tabela) || "SEINFRA"; mes = s(baseOk.mes); }

@@ -802,7 +802,52 @@
         var ri = this.aplicarItensIdentificados(orc, bloco.itens_identificados);
         lic.itensIdentificados = { recebidos: bloco.itens_identificados.length, novos: ri.novos, mantidos: ri.mantidos, ignorados: ri.ignorados };
       }
+      this.prepararPeloEdital(orc, lic);
       return lic;
+    },
+
+    /* PREPARO AUTOMATICO PELO EDITAL (27/11/2026, pedido do Rogerio: "o sistema identifica tudo e ja marca o que for preciso;
+       se deixar para o usuario ele erra ou deixa desmarcado"). O que o edital/planilha do orgao DIZ entra sozinho no orcamento,
+       so nos campos VAZIOS (escolha ja feita por quem orca nunca e desfeita). Cada campo preenchido fica registrado em
+       lic.preparoAuto (de onde veio), para a tela e a auditoria. Morada Nova: sem o regime no orcamento, as 666 CPUs da
+       proposta saiam "Sem detalhamento" embora a tabela de encargos do orgao dissesse "desonerado". */
+    prepararPeloEdital: function (orc, lic) {
+      if (!orc || !lic) return [];
+      var feito = [], leit = (lic.leitura && typeof lic.leitura === "object") ? lic.leitura : {};
+      var bases = Array.isArray(lic.basesExigidas) ? lic.basesExigidas : [];
+      var UFS = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+      /* UF: a da obra ("Morada Nova/CE"); sem ela, a UNICA UF das bases exigidas */
+      if (!s(orc.uf)) {
+        var loc = s(orc.obra && orc.obra.local).toUpperCase(), m = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(loc), uf = "", de = "";
+        if (m && UFS.indexOf(m[1]) >= 0) { uf = m[1]; de = "local da obra (" + s(orc.obra.local) + ")"; }
+        if (!uf) {
+          var ufsB = []; bases.forEach(function (b) { var u = s(b && b.uf).toUpperCase(); if (u && ufsB.indexOf(u) < 0) ufsB.push(u); });
+          if (ufsB.length === 1) { uf = ufsB[0]; de = "base exigida no edital"; }
+        }
+        if (uf) { orc.uf = uf; feito.push({ campo: "UF", valor: uf, de: de }); }
+      }
+      /* regime (desonerado ou nao): tabela de encargos do orgao > tabelas do projeto > bases exigidas (todas no mesmo regime) */
+      if (orc.desonerado !== true && orc.desonerado !== false) {
+        var rg = null, deR = "";
+        if (leit.encargos && (leit.encargos.desonerado === true || leit.encargos.desonerado === false)) { rg = leit.encargos.desonerado; deR = "tabela de encargos do orgao"; }
+        else if (leit.tabelas && (leit.tabelas.desonerado === true || leit.tabelas.desonerado === false)) { rg = leit.tabelas.desonerado; deR = "tabelas do projeto"; }
+        else {
+          var regs = []; bases.forEach(function (b) { var r = s(b && b.regime) || "?"; if (regs.indexOf(r) < 0) regs.push(r); });   /* base sem regime informado = duvida: nao decide */
+          if (regs.length === 1 && regs[0] !== "?") { rg = regs[0] === "desonerado"; deR = "base exigida no edital"; }
+        }
+        if (rg !== null) { orc.desonerado = rg; feito.push({ campo: "regime", valor: rg ? "desonerado" : "nao desonerado", de: deR }); }
+      }
+      /* competencia SINAPI: a da base exigida (uma so) */
+      if (!s(orc.competenciaSinapi)) {
+        var cs = []; bases.forEach(function (b) { if (b && /SINAPI/.test(s(b.catId)) && s(b.competencia) && cs.indexOf(s(b.competencia)) < 0) cs.push(s(b.competencia)); });
+        if (cs.length === 1) { orc.competenciaSinapi = cs[0]; feito.push({ campo: "competencia SINAPI", valor: cs[0], de: "base exigida no edital" }); }
+      }
+      /* prazo de execucao do edital no comercial, se vazio */
+      if (lic.prazoExecucaoDias && orc.comercial && !s(orc.comercial.prazoExecucao)) {
+        orc.comercial.prazoExecucao = lic.prazoExecucaoDias + " dias"; feito.push({ campo: "prazo de execucao", valor: orc.comercial.prazoExecucao, de: "edital" });
+      }
+      lic.preparoAuto = feito;
+      return feito;
     },
 
     /* ------------------------------------------------------------------

@@ -662,6 +662,10 @@
     if (Orc.garantirConfig(orc).bdiIncidencia === "final") return { ok: false, erro: "O pacote da proposta usa o BDI no preço unitário. Em Parâmetros do orçamento, troque a incidência do BDI para \"preço unitário\" e gere de novo." };
     var leitura = (lic.leitura && typeof lic.leitura === "object") ? lic.leitura : null;
     var pend = { preencher: [], conferencia: [], dados: [], licitante: [] };
+    /* orcamento importado ANTES do preparo automatico (27/11/2026): o que o edital diz entra agora nos campos vazios, e fica dito */
+    if (lic.certamepro && typeof Lic.prepararPeloEdital === "function") {
+      try { (Lic.prepararPeloEdital(orc, lic) || []).forEach(function (f) { pend.dados.push("Preenchido pelo edital: " + f.campo + " = " + f.valor + " (" + f.de + ")."); }); } catch (ePrep) {}
+    }
     /* seção exigida pelo edital que a escolha desligou: fica registrada nas pendências (também no modo automático); nunca bloqueia */
     avisosDeSecoes(opcoes.secoes, secoesExigidas(lic)).forEach(function (a) { pend.dados.push(a); });
 
@@ -703,7 +707,14 @@
     /* Item sem composição e sem parcelas próprias: a base do MESMO tipo (SINAPI) só empresta a PROPORÇÃO
        material/mão de obra/equipamento do mesmo código. O custo, o preço e a composição do item não mudam. */
     var porProporcao = 0, fonteProporcao = "", porModoMO = 0, semUfBase = [], fontesProp = {}, auxProp = 0, auxPropDif = 0;
-    var ufOrcamento = s(orc.uf).toUpperCase();
+    /* UF do projeto: a do orçamento; vazia, a da obra ("Morada Nova/CE", a mesma do cabeçalho CIDADE). 27/11/2026: o orçamento de
+       Morada Nova sem o campo UF deixava as 666 CPUs "Sem detalhamento" embora a base SEINFRA/CE abrisse todas. */
+    var UFS_BR = "AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO".split(" ");
+    var ufOrcamento = s(orc.uf).toUpperCase(), ufOrigem = ufOrcamento ? "orcamento" : "";
+    if (!ufOrcamento) {
+      var mUf = /(?:^|[^A-Z])([A-Z]{2})\s*$/.exec(semAcento(s(orc && orc.obra && orc.obra.local)).toUpperCase());
+      if (mUf && UFS_BR.indexOf(mUf[1]) >= 0) { ufOrcamento = mUf[1]; ufOrigem = "obra"; }
+    }
     /* competência (AAAA-MM) que o órgão usa: a SINAPI exigida no edital; sem ela, a do orçamento */
     function compAAAAMM(v) {
       var t = s(v), m = /(\d{4})\D+(\d{1,2})/.exec(t);
@@ -773,15 +784,18 @@
        embora o botão "Analítico do item" abrisse a composição completa da MESMA base. Agora o item abre pela base, com as travas
        da revisão de 27/11/2026 (cada uma é um jeito de imprimir outra composição com cara de certa):
        - SEINFRA: só pela base do documento (baseOk) e só com a tabela do projeto declarada (tab.seinfra, competência conferida);
-         as outras bases: pelo resolvedor do app (opcoes.composicaoDe), que tem de dizer UF, competência e regime.
-       - UF da base = UF do orçamento, e regime da base = regime do projeto (tab.desonerado; sem ele, orc.desonerado). Algum
+         sem tab.seinfra (27/11/2026), vale a base carregada se a SEINFRA exigida no edital (quando informada) for a mesma; a soma ao centavo segue obrigatoria.
+         As outras bases: pelo resolvedor do app (opcoes.composicaoDe), que tem de dizer UF, competência e regime.
+       - UF da base = UF do orçamento, e regime da base = regime do projeto (tab.desonerado; sem ele, orc.desonerado; sem ele, o regime da tabela de encargos do orgao). UF: orc.uf; vazia, a do fim de orc.obra.local. Algum
          lado desconhecido: não abre.
        - Item "só mão de obra"/"material e equipamento" e administração local: não abre (fica a repartição de sempre).
        - A CPU IMPRESSA FECHA COM O CUSTO DO ITEM. Com desconto (custo do item ≠ o do órgão e a base explica o do órgão), os
          insumos recebem o mesmo fator de Licitacao._escalarInsumos (custo unitário x k, 4 casas). Se ainda assim a soma difere
          do custo do item em mais de R$ 0,01 (outra competência, preço à mão), NÃO imprime: "Sem detalhamento" + pendência.
        - Unidade diferente da do item ou soma zero: não abre. */
-    var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : null);
+    /* regime: o das tabelas do edital; sem ele, o do orçamento; sem ele, o da tabela de encargos do órgão (que diz o próprio regime) */
+    var encRegP = leitura && leitura.encargos && (leitura.encargos.desonerado === true || leitura.encargos.desonerado === false) ? leitura.encargos.desonerado : null;
+    var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : encRegP);
     var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0;
     function regimeOk(r) { return regimeProj !== null && (r === true || r === false) && r === regimeProj; }
     function ufOk(u) { var x = s(u).toUpperCase(); return !!(x && ufOrcamento && x === ufOrcamento); }
@@ -792,7 +806,12 @@
       if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao))) return null;
       var c = null, rot = "", mes = "";
       if (ehSeinfra) {
-        if (!baseOk || !s(tab.seinfra)) return null;
+        /* sem a competencia SEINFRA declarada no projeto, a prova e a soma: a CPU da base tem de fechar ao centavo com o custo do item (ou o do orgao) */
+        if (!baseOk) return null;
+        if (!s(tab.seinfra)) {   /* sem a competencia do projeto: a da SEINFRA exigida no edital, se vier, tem de ser a da base */
+          var exS = (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).filter(function (b) { return /SEINFRA/i.test(s(b && b.fonte)) && s(b && (b.mes || b.competencia || b.versao)); })[0];
+          if (exS && norm(s(exS.mes || exS.competencia || exS.versao)) !== norm(baseOk.mes)) { daBaseRegime++; return null; }
+        }
         if (!regimeOk(baseOk.desonerado) || !ufOk(baseOk.uf)) { daBaseRegime++; return null; }
         var rg = baseOk.obter(cod);
         if (rg && Array.isArray(rg.insumos) && rg.insumos.length) { c = rg; rot = s(baseOk.tabela) || "SEINFRA"; mes = s(baseOk.mes); }
