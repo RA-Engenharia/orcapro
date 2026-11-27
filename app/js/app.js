@@ -3003,6 +3003,8 @@
         case "escopo-completo-rev": this.escopoGerarCompleto("revisao"); break;
         case "pendentes-ia": this.precificarPendentesIA(); break;
         case "item-compor-ia": this.precificarPendentesIA(String(t.dataset.item || "")); break;
+        case "vaga-pdf": this.abrirVagaPdf(String(t.dataset.item || "")); break;
+        case "vaga-preencher": this.preencherVaga(String(t.dataset.item || "")); break;
         case "escopo-casar": this.refinarEscopoCasar(); break;
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;
@@ -13495,7 +13497,7 @@
       if (Orcamento.totais(orc).qtdItens < 1) { UI.toast("Adicione itens antes de devolver.", "erro"); return; }
       var d = Licitacao.destino(lic.devolverPara);
       if (!d.ok) { UI.toast(d.erro, "erro"); return; }
-      var seguir = function () {
+      var seguir0 = function () {
         var cx = self._licEmpresaCertame(orc);
         var ir = function (opcoes) {
           /* 21/11/2026 (Rogério): devolver ficava sem sinal nenhum e o cliente achava que não estava acontecendo nada.
@@ -13518,6 +13520,12 @@
            recusar CANCELA a devolução (nada sai em nome da conta sem a pessoa saber). */
         if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({ empresaAprovada: true }); }, function () { /* cancelou: nada foi enviado */ });
         else ir({});
+      };
+      /* VAGA não preenchida: avisa e deixa seguir (não bloqueia de vez) */
+      var seguir = function () {
+        var vgs = (typeof Licitacao !== "undefined" && Licitacao.vagas) ? Licitacao.vagas(orc) : [];
+        if (vgs.length && !window.confirm("Há " + vgs.length + " item(ns) não preenchidos (" + vgs.slice(0, 12).map(function (v) { return v.numero; }).join(", ") + "). Enviar assim mesmo?")) return;
+        seguir0();
       };
       var destinoOk = function () {
         if (d.local) { seguir(); return; }
@@ -14299,7 +14307,30 @@
         }).join("") + '</section>';
     },
 
+    /* VAGA do CertamePRO (item não lido): o botão abre o PDF do edital na página
+       do item. ⚠ janela "_blank" e noopener — NUNCA o nome "certamepro": é a aba
+       do CertamePRO e seria trocada pelo PDF. */
+    abrirVagaPdf: function (ref) {
+      var p = String(ref || "").split("|"), orc = this.orcAtual, et = orc && Orcamento._etapa(orc, p[0]);
+      var it = et && Util.arr(et.itens).filter(function (x) { return x.id === p[1]; })[0];
+      var link = (it && typeof Licitacao !== "undefined") ? Licitacao.linkVagaPdf(orc, it) : "";
+      if (!link) { UI.toast("Esta vaga não trouxe o PDF do edital.", "erro"); return; }
+      window.open(link, "_blank", "noopener");
+    },
+    /* Preencher a vaga: o MESMO fluxo de buscar na base (abrirBuscaSinapi); ao
+       escolher e informar a quantidade, o item escolhido ocupa a vaga
+       (Orcamento.preencherVaga) em vez de entrar como item novo. */
+    preencherVaga: function (ref) {
+      var p = String(ref || "").split("|"), orc = this.orcAtual, et = orc && Orcamento._etapa(orc, p[0]);
+      var it = et && Util.arr(et.itens).filter(function (x) { return x.id === p[1]; })[0];
+      if (!it) return;
+      var termo = /NÃO LIDO/.test(String(it.descricao || "")) ? String(it.codigo || "") : String(it.descricao || "");
+      this.abrirBuscaSinapi(p[0], termo, it.subEtapaId || "", it.id);
+      this._vagaAlvo = { etapa: p[0], item: it.id };
+    },
+
     abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId, aposId) {
+      this._vagaAlvo = null; // só o preencherVaga religa, depois de abrir a busca
       this._addItemEtapaId = etapaId;
       /* "inserir item abaixo" (Insert / Ctrl+Enter): o item lançado vai logo depois deste, e não ao fim da etapa */
       this._addItemApos = aposId || "";
@@ -14634,6 +14665,12 @@
         Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
         var _novoId = "";
         Util.arr(_etA && _etA.itens).forEach(function (x) { if (!_antes[x.id]) _novoId = x.id; });
+        /* VAGA do CertamePRO: o escolhido ocupa a vaga (mesmo lugar, mesmo número do órgão) e não entra como item novo */
+        var _vg = self._vagaAlvo; self._vagaAlvo = null;
+        if (_vg && _vg.etapa === etapaAlvo && _novoId) {
+          Orcamento.preencherVaga(self.orcAtual, etapaAlvo, _vg.item, _novoId);
+          _novoId = ""; aposAlvo = ""; continuar = false;
+        }
         if (aposAlvo && _novoId) Orcamento.inserirApos(self.orcAtual, etapaAlvo, _novoId, aposAlvo);
         /* item novo em etapa (ou sub etapa) recolhida nasceria invisível — o
            usuário reporta como "não lançou". */

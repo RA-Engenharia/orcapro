@@ -1009,6 +1009,13 @@ table.tbl-plan .ref-sbdi { font-size: var(--t-micro); }
 table.tbl-plan tr.etapa-ident > td:first-child { box-shadow: inset 4px 0 0 var(--col-ident); }
 table.tbl-plan tr.lin-ident > td { background: rgba(180, 120, 0, .07); }
 table.tbl-plan tr.lin-ident > td:first-child { box-shadow: inset 4px 0 0 var(--col-ident); }
+/* VAGA do CertamePRO: item do órgão que a leitura não trouxe (js/licitacao.js vagas) */
+table.tbl-plan tr.lin-vaga > td, tr.lin-vaga > td { background: #fff6cc; }
+table.tbl-plan tr.lin-vaga > td:first-child, tr.lin-vaga > td:first-child { box-shadow: inset 4px 0 0 #d99a00; }
+[data-tema="dark"] table.tbl-plan tr.lin-vaga > td, [data-tema="dark"] tr.lin-vaga > td { background: rgba(245, 158, 11, .20); }
+.vaga-aviso { margin-top: 4px; font-size: var(--t-micro, 11px); font-weight: 600; }
+.pill.vaga-pill { background: #d99a00; color: #fff; padding: 1px 6px; font-weight: 700; }
+.vaga-acoes { display: inline-flex; gap: 6px; margin-left: 6px; }
 /* menu "Colunas" */
 .col-menu { position: relative; }
 .col-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 280px; padding: 10px 12px;

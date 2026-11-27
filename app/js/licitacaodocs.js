@@ -685,6 +685,8 @@
       numOrg[k] = true;
     });
     Object.keys(dupOrg).forEach(function (k) { pend.dados.push("Número " + k + " repetido na planilha do órgão (mais de um item). Conferir a numeração."); });
+    /* VAGAS do CertamePRO ainda sem código e quantidade: a proposta sairia com linha em branco */
+    try { var _vgD = Lic.vagas ? Lic.vagas(orc) : []; if (_vgD.length) pend.dados.push(Lic.textoVagas(_vgD) + ". Abra a vaga na planilha e preencha antes de entregar."); } catch (eVg) {}
 
     /* ---- base de referência: só vale se for a MESMA tabela do projeto ---- */
     var base = opcoes.base || null;

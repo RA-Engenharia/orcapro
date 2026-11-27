@@ -615,6 +615,8 @@
       /* link para voltar à tela do certame depois de devolver (só http/https;
          qualquer outro esquema, como javascript:, é descartado) */
       lic.urlCertame = /^https?:\/\//i.test(s(bloco.url_certame)) ? s(bloco.url_certame) : "";
+      /* base do link dos PDFs do edital (vagas): url_arquivo + encodeURIComponent(caminho) + "#page=N" — só http/https */
+      lic.urlArquivo = /^https?:\/\//i.test(s(bloco.url_arquivo)) ? s(bloco.url_arquivo) : "";
       /* o que o CertamePRO avisou ao montar o pacote (item fora por falta de
          quantidade, item sem preço do órgão) — ver avisos(), chave "pacote" */
       lic.avisosPacote = (Array.isArray(bloco.avisos) ? bloco.avisos : []).map(function (x) { return s(x); }).filter(function (x) { return !!x; }).slice(0, 10);
@@ -872,6 +874,33 @@
     NOME_ETAPA_IDENTIFICADOS: "Itens identificados no edital (fora da planilha do órgão)",
     ID_ETAPA_IDENTIFICADOS: "eta-ident-edital",
     ehEtapaIdentificados: function (e) { return !!(e && (e.identificadosEdital === true || e.id === this.ID_ETAPA_IDENTIFICADOS)); },
+    /* ------------------------------------------------------------------
+     * VAGAS do CertamePRO: item do edital que a leitura não trouxe. Fica no
+     * lugar exato (a numeração é por posição) e sai da lista quando ganha
+     * código e quantidade (Orcamento.normalizarVaga).
+     * ------------------------------------------------------------------ */
+    ehVaga: function (it) { return !!(it && it.vaga === true); },
+    vagas: function (orc) {
+      var out = [];
+      ((orc && orc.etapas) || []).forEach(function (e, ei) {
+        ((e && e.itens) || []).forEach(function (it, ii) {
+          if (it && it.vaga === true) out.push({ etapaId: e.id, itemId: it.id, numero: s(it.numeroOrigem) || (typeof Orcamento !== "undefined" ? Orcamento.itemNumero(ei, ii) : "") || s(it.descricao).slice(0, 40), motivo: s(it.vagaMotivo) });
+        });
+      });
+      return out;
+    },
+    textoVagas: function (vs) {
+      var n = vs.length, lista = vs.slice(0, 12).map(function (v) { return v.numero; }).join(", ") + (n > 12 ? " e mais " + (n - 12) : "");
+      return n + " item(ns) do órgão ainda não preenchidos: " + lista;
+    },
+    /* link do PDF do edital na página do item; "" quando falta o arquivo ou a base do link */
+    linkVagaPdf: function (orc, it) {
+      var p = it && it.vagaPdf, c = this.cfg(orc);
+      if (!p || !s(p.caminho) || !c || !/^https?:\/\//i.test(s(c.urlArquivo))) return "";
+      var pg = parseInt(p.pagina, 10);
+      return s(c.urlArquivo) + encodeURIComponent(s(p.caminho)) + (pg > 0 ? "#page=" + pg : "");
+    },
+
     ehItemAComporIdentificado: function (it) { return !!(it && it.identificadoEdital && it.aCompor === true); },
     _memoriaIdentificado: function (x) {
       var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
@@ -936,7 +965,8 @@
      * ------------------------------------------------------------------ */
     itemTravado: function (orc, it) {
       var c = this.cfg(orc);
-      return !!(c && c.ativo && !c.travaLiberada && it && it.travadoOrgao);
+      /* VAGA do CertamePRO (item não lido): quantidade, descrição e unidade ficam editáveis — é o que a pessoa vai preencher */
+      return !!(c && c.ativo && !c.travaLiberada && it && it.travadoOrgao && it.vaga !== true);
     },
     liberarTrava: function (orc, liberar) {
       var c = this.cfg(orc); if (!c) return false;
@@ -1245,6 +1275,8 @@
          são só conferência — a proposta usa o preço do sintético e a composição
          da base que fecha ao centavo (licitacaodocs.js). Soltos na tela pareciam
          problema a resolver; vão juntos num bloco recolhido (chave "pacote-comp"). */
+      var _vgs = this.vagas(orc);
+      if (_vgs.length) out.resumo.unshift({ tom: "alerta", chave: "vagas", texto: this.textoVagas(_vgs) + " — abra a vaga e preencha." });
       var comp = [];
       (c.avisosPacote || []).forEach(function (t) {
         if (/R\$\s?0,01/.test(t)) return;

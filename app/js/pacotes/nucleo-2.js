@@ -72434,6 +72434,8 @@ case "escopo-completo": this.escopoGerarCompleto("entrada"); break;
 case "escopo-completo-rev": this.escopoGerarCompleto("revisao"); break;
 case "pendentes-ia": this.precificarPendentesIA(); break;
 case "item-compor-ia": this.precificarPendentesIA(String(t.dataset.item || "")); break;
+case "vaga-pdf": this.abrirVagaPdf(String(t.dataset.item || "")); break;
+case "vaga-preencher": this.preencherVaga(String(t.dataset.item || "")); break;
 case "escopo-casar": this.refinarEscopoCasar(); break;
 case "escopo-analisar": this.analisarEscopo(); break;
 case "escopo-confirmar": this.confirmarEscopo(); break;
@@ -79580,7 +79582,7 @@ if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgra
 if (Orcamento.totais(orc).qtdItens < 1) { UI.toast("Adicione itens antes de devolver.", "erro"); return; }
 var d = Licitacao.destino(lic.devolverPara);
 if (!d.ok) { UI.toast(d.erro, "erro"); return; }
-var seguir = function () {
+var seguir0 = function () {
 var cx = self._licEmpresaCertame(orc);
 var ir = function (opcoes) {
 self._licProgressoDevolucao("excel");
@@ -79594,6 +79596,11 @@ try { if (self._licAutoLog) self._licAutoLog("devolucao-manual", orc, { ok: !!re
 };
 if (cx.perguntar) self._licPerguntarEmpresa(cx.conta, "Cancelar", function () { ir({ empresaAprovada: true }); }, function () { });
 else ir({});
+};
+var seguir = function () {
+var vgs = (typeof Licitacao !== "undefined" && Licitacao.vagas) ? Licitacao.vagas(orc) : [];
+if (vgs.length && !window.confirm("Há " + vgs.length + " item(ns) não preenchidos (" + vgs.slice(0, 12).map(function (v) { return v.numero; }).join(", ") + "). Enviar assim mesmo?")) return;
+seguir0();
 };
 var destinoOk = function () {
 if (d.local) { seguir(); return; }
@@ -80212,7 +80219,23 @@ return '<div class="sinapi-result bs-sug-it" role="button" tabindex="0" data-pic
 '<span class="bs-conf ' + cls + '" title="' + Util.esc(r.motivo || "") + '">Confiança ' + Util.esc(String(niv.rotulo || "").toLowerCase()) + ' ' + r.confianca + '%</span></div></div>';
 }).join("") + '</section>';
 },
+abrirVagaPdf: function (ref) {
+var p = String(ref || "").split("|"), orc = this.orcAtual, et = orc && Orcamento._etapa(orc, p[0]);
+var it = et && Util.arr(et.itens).filter(function (x) { return x.id === p[1]; })[0];
+var link = (it && typeof Licitacao !== "undefined") ? Licitacao.linkVagaPdf(orc, it) : "";
+if (!link) { UI.toast("Esta vaga não trouxe o PDF do edital.", "erro"); return; }
+window.open(link, "_blank", "noopener");
+},
+preencherVaga: function (ref) {
+var p = String(ref || "").split("|"), orc = this.orcAtual, et = orc && Orcamento._etapa(orc, p[0]);
+var it = et && Util.arr(et.itens).filter(function (x) { return x.id === p[1]; })[0];
+if (!it) return;
+var termo = /NÃO LIDO/.test(String(it.descricao || "")) ? String(it.codigo || "") : String(it.descricao || "");
+this.abrirBuscaSinapi(p[0], termo, it.subEtapaId || "", it.id);
+this._vagaAlvo = { etapa: p[0], item: it.id };
+},
 abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId, aposId) {
+this._vagaAlvo = null;
 this._addItemEtapaId = etapaId;
 this._addItemApos = aposId || "";
 this._addItemSubId = subEtapaId || "";
@@ -80478,6 +80501,11 @@ Util.arr(_etA && _etA.itens).forEach(function (x) { _antes[x.id] = 1; });
 Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
 var _novoId = "";
 Util.arr(_etA && _etA.itens).forEach(function (x) { if (!_antes[x.id]) _novoId = x.id; });
+var _vg = self._vagaAlvo; self._vagaAlvo = null;
+if (_vg && _vg.etapa === etapaAlvo && _novoId) {
+Orcamento.preencherVaga(self.orcAtual, etapaAlvo, _vg.item, _novoId);
+_novoId = ""; aposAlvo = ""; continuar = false;
+}
 if (aposAlvo && _novoId) Orcamento.inserirApos(self.orcAtual, etapaAlvo, _novoId, aposAlvo);
 if (self.expandirEtapa) self.expandirEtapa(etapaAlvo, subAlvo);
 var gIt = self.persistir(); UI.fecharModal(); self.render();

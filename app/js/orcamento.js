@@ -356,6 +356,44 @@
     // de calcular() em L.numero — é ela que os entregáveis leem.
     itemNumero: function (etapaIdx, itemIdx) { return (etapaIdx + 1) + "." + (itemIdx + 1); },
 
+    /* ================= VAGA DO CERTAMEPRO =================
+     * Item do edital que a leitura não trouxe (ou trouxe pela metade): o
+     * CertamePRO manda uma VAGA no lugar exato, para a numeração por posição
+     * continuar igual à do órgão. Ela vira item comum quando tem CÓDIGO e
+     * QUANTIDADE (preenchida pela base ou à mão). Um ponto só — chamado ao
+     * fim de atualizarItem e de preencherVaga. */
+    ehVaga: function (it) { return !!(it && it.vaga === true); },
+    normalizarVaga: function (it) {
+      if (!it || it.vaga !== true) return false;
+      var cod = String(it.codigo == null ? "" : it.codigo).trim();
+      if (!cod || cod === "—" || !(Util.num(it.quantidade) > 0) || it.qtdPendente) return false;
+      delete it.vaga; delete it.vagaMotivo; delete it.qtdPendente; delete it.vagaPdf;
+      return true;
+    },
+    /* Preenche a vaga com um item escolhido na base (o item novo, já lançado na
+       mesma etapa) e descarta o item novo: a vaga mantém id, número do órgão e
+       sub etapa — a posição não muda. */
+    preencherVaga: function (orc, etapaId, vagaId, novoId) {
+      var et = this._etapa(orc, etapaId);
+      if (!et) return false;
+      var vaga = null, novo = null, iNovo = -1;
+      Util.arr(et.itens).forEach(function (x, i) { if (x.id === vagaId) vaga = x; if (x.id === novoId) { novo = x; iNovo = i; } });
+      if (!vaga || !novo || vaga === novo) return false;
+      var guarda = { id: vaga.id, numeroOrigem: vaga.numeroOrigem, subEtapaId: vaga.subEtapaId, vaga: vaga.vaga, vagaMotivo: vaga.vagaMotivo, vagaPdf: vaga.vagaPdf, qtdAntes: vaga.quantidade, pend: vaga.qtdPendente };
+      Object.keys(novo).forEach(function (k) { if (k !== "id" && k !== "subEtapaId") vaga[k] = Util.clone(novo[k]); });
+      vaga.id = guarda.id; vaga.vaga = guarda.vaga; vaga.vagaMotivo = guarda.vagaMotivo; vaga.vagaPdf = guarda.vagaPdf;
+      if (guarda.numeroOrigem != null) vaga.numeroOrigem = guarda.numeroOrigem; else delete vaga.numeroOrigem;
+      if (guarda.subEtapaId != null) vaga.subEtapaId = guarda.subEtapaId; else delete vaga.subEtapaId;
+      delete vaga.semPrecoReferencia;
+      /* quantidade: a digitada ao escolher; sem ela, a que a vaga já tinha */
+      if (Util.num(vaga.quantidade) > 0) delete vaga.qtdPendente;
+      else if (Util.num(guarda.qtdAntes) > 0 && !guarda.pend) { vaga.quantidade = guarda.qtdAntes; delete vaga.qtdPendente; }
+      else vaga.qtdPendente = true;
+      et.itens.splice(iNovo, 1);
+      this.normalizarVaga(vaga);
+      return true;
+    },
+
     /* ================= SUB ETAPAS (etapa > sub etapa > item) =================
      * O dado é ADITIVO e opcional: a etapa ganha `subetapas: [{id, nome}]` e o
      * item ganha `subEtapaId`. Ausentes = orçamento de hoje, numerado 1 / 1.1 /
@@ -1052,6 +1090,7 @@
         if (it.precoProvisorio && Math.abs(novo - antesU) > 0.004) { it.precoCotadoDe = it.precoProvisorio; delete it.precoProvisorio; }
       }
       if (campos.descricao != null) it.descricao = campos.descricao;
+      this.normalizarVaga(it);
       return orc;
     },
 

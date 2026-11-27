@@ -2166,6 +2166,8 @@
           var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : ((typeof Bases !== "undefined" && Bases.rotuloCurto) ? Bases.rotuloCurto(fonte) : fonte);
           // número vem da FONTE ÚNICA (1.2 solto, 1.1.1 dentro de sub etapa)
           var numItem = L.numero || Orcamento.itemNumero(ei, ii);
+          var _ehVaga = it.vaga === true;
+          var _linkVaga = (_ehVaga && typeof Licitacao !== "undefined") ? Licitacao.linkVagaPdf(orc, it) : "";
           var temCod = it.codigo && it.codigo !== "—";
           /* cadeia do accordion: item de sub etapa some se a SUB ou a ETAPA
              estiver recolhida — por isso os dois ids na mesma marcação. */
@@ -2190,7 +2192,7 @@
           /* ORÇAMENTO AUTOMÁTICO: "Ver itens" destaca as linhas que ficaram com o preço do órgão
              (js/licitacaoautoui.js; App._licAutoVer liga e desliga) */
           var _ehAutoBaixa = !!(it.autoOrc && it.autoOrc.baixa === true && typeof App !== "undefined" && App._licAutoVer === true);
-          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-fora' : '') + (_sel[e.id + "|" + it.id] ? ' lin-sel' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '" data-sel="' + e.id + '|' + it.id + '"' +
+          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-fora' : '') + (_sel[e.id + "|" + it.id] ? ' lin-sel' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + (_ehVaga ? ' lin-vaga' : '') + '" data-etapa-linhas="' + cadeia + '" data-sel="' + e.id + '|' + it.id + '"' +
             (_ehAutoBaixa ? ' title="' + Util.esc("Preço do órgão mantido pelo orçamento automático: " + (LicitacaoAuto.motivoDoItem(orc, it) || "")) + '"' : '') + '>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item" title="Clique para selecionar a linha. Ctrl ou Shift + clique seleciona várias."><b>' + numItem + '</b>' +
@@ -2213,6 +2215,9 @@
             '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
               (typeof MorUI !== 'undefined' ? MorUI.marcaItem(e, it) : '') +
               (_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
+              (_ehVaga ? '<div class="vaga-aviso"><span class="pill vaga-pill">vaga do órgão</span> ' + Util.esc(it.vagaMotivo || "item não lido") +
+                ' <span class="vaga-acoes">' + (_linkVaga ? '<button class="btn sm" data-acao="vaga-pdf" data-item="' + e.id + '|' + it.id + '" title="Abre o PDF do edital na página onde este item está">Abrir no PDF' + (it.vagaPdf && it.vagaPdf.pagina ? ' (p. ' + Util.esc(String(it.vagaPdf.pagina)) + ')' : '') + '</button> ' : '') +
+                '<button class="btn sm primary" data-acao="vaga-preencher" data-item="' + e.id + '|' + it.id + '" title="Busca o item na base e ocupa esta vaga, no mesmo lugar e com o mesmo número">Preencher</button></span></div>' : '') +
               (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
                 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
                   Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +

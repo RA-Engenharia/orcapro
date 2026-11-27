@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.459",
+versao: "1.2.460",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -14284,6 +14284,33 @@ Util.arr(orc && orc.etapas).forEach(function (e, i) { e.codigo = String(i + 1) +
 return orc;
 },
 itemNumero: function (etapaIdx, itemIdx) { return (etapaIdx + 1) + "." + (itemIdx + 1); },
+ehVaga: function (it) { return !!(it && it.vaga === true); },
+normalizarVaga: function (it) {
+if (!it || it.vaga !== true) return false;
+var cod = String(it.codigo == null ? "" : it.codigo).trim();
+if (!cod || cod === "—" || !(Util.num(it.quantidade) > 0) || it.qtdPendente) return false;
+delete it.vaga; delete it.vagaMotivo; delete it.qtdPendente; delete it.vagaPdf;
+return true;
+},
+preencherVaga: function (orc, etapaId, vagaId, novoId) {
+var et = this._etapa(orc, etapaId);
+if (!et) return false;
+var vaga = null, novo = null, iNovo = -1;
+Util.arr(et.itens).forEach(function (x, i) { if (x.id === vagaId) vaga = x; if (x.id === novoId) { novo = x; iNovo = i; } });
+if (!vaga || !novo || vaga === novo) return false;
+var guarda = { id: vaga.id, numeroOrigem: vaga.numeroOrigem, subEtapaId: vaga.subEtapaId, vaga: vaga.vaga, vagaMotivo: vaga.vagaMotivo, vagaPdf: vaga.vagaPdf, qtdAntes: vaga.quantidade, pend: vaga.qtdPendente };
+Object.keys(novo).forEach(function (k) { if (k !== "id" && k !== "subEtapaId") vaga[k] = Util.clone(novo[k]); });
+vaga.id = guarda.id; vaga.vaga = guarda.vaga; vaga.vagaMotivo = guarda.vagaMotivo; vaga.vagaPdf = guarda.vagaPdf;
+if (guarda.numeroOrigem != null) vaga.numeroOrigem = guarda.numeroOrigem; else delete vaga.numeroOrigem;
+if (guarda.subEtapaId != null) vaga.subEtapaId = guarda.subEtapaId; else delete vaga.subEtapaId;
+delete vaga.semPrecoReferencia;
+if (Util.num(vaga.quantidade) > 0) delete vaga.qtdPendente;
+else if (Util.num(guarda.qtdAntes) > 0 && !guarda.pend) { vaga.quantidade = guarda.qtdAntes; delete vaga.qtdPendente; }
+else vaga.qtdPendente = true;
+et.itens.splice(iNovo, 1);
+this.normalizarVaga(vaga);
+return true;
+},
 subEtapas: function (e) { return Util.arr(e && e.subetapas); },
 addSubEtapa: function (orc, etapaId, nome, moverItensSoltos) {
 var e = this._etapa(orc, etapaId); if (!e) return null;
@@ -14735,6 +14762,7 @@ this.repartirParcelas(it, novo, this.garantirConfig(orc).arredondamento, antesU)
 if (it.precoProvisorio && Math.abs(novo - antesU) > 0.004) { it.precoCotadoDe = it.precoProvisorio; delete it.precoProvisorio; }
 }
 if (campos.descricao != null) it.descricao = campos.descricao;
+this.normalizarVaga(it);
 return orc;
 },
 PARCELAS: ["custoMO", "custoMAT", "custoEQ"],
@@ -20489,6 +20517,8 @@ var attrBase = ehBaseAna ? ' data-vi-base="' + Util.esc(String(fonte).toUpperCas
 var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
 var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : ((typeof Bases !== "undefined" && Bases.rotuloCurto) ? Bases.rotuloCurto(fonte) : fonte);
 var numItem = L.numero || Orcamento.itemNumero(ei, ii);
+var _ehVaga = it.vaga === true;
+var _linkVaga = (_ehVaga && typeof Licitacao !== "undefined") ? Licitacao.linkVagaPdf(orc, it) : "";
 var temCod = it.codigo && it.codigo !== "—";
 var cadeia = subId ? (subId + " " + e.id) : e.id;
 var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
@@ -20497,7 +20527,7 @@ var _abcCls = _abcDe ? _abcDe[it.id] : "";
 var _abcFora = _abcModo === "A" && _abcCls !== "A";
 var _ehIdentIt = !!(it.identificadoEdital && it.aCompor);
 var _ehAutoBaixa = !!(it.autoOrc && it.autoOrc.baixa === true && typeof App !== "undefined" && App._licAutoVer === true);
-var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-fora' : '') + (_sel[e.id + "|" + it.id] ? ' lin-sel' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + '" data-etapa-linhas="' + cadeia + '" data-sel="' + e.id + '|' + it.id + '"' +
+var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-fora' : '') + (_sel[e.id + "|" + it.id] ? ' lin-sel' : '') + (_ehIdentIt ? ' lin-ident' : '') + (_ehAutoBaixa ? ' lin-auto-baixa' : '') + (_ehVaga ? ' lin-vaga' : '') + '" data-etapa-linhas="' + cadeia + '" data-sel="' + e.id + '|' + it.id + '"' +
 (_ehAutoBaixa ? ' title="' + Util.esc("Preço do órgão mantido pelo orçamento automático: " + (LicitacaoAuto.motivoDoItem(orc, it) || "")) + '"' : '') + '>' +
 '<td class="num-item" title="Clique para selecionar a linha. Ctrl ou Shift + clique seleciona várias."><b>' + numItem + '</b>' +
 (_abcCls ? '<span class="abc-marca abc-' + _abcCls.toLowerCase() + '" title="' + (_abcCls === "A" ? "Classe A: entre os itens que somam 80% do custo direto" : _abcCls === "B" ? "Classe B: os 15% seguintes do custo direto" : "Classe C: os 5% finais do custo direto") + '">' + _abcCls + '</span>' : '') + '</td>' +
@@ -20509,6 +20539,9 @@ var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + (_abcFora ? ' abc-for
 '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
 (typeof MorUI !== 'undefined' ? MorUI.marcaItem(e, it) : '') +
 (_ehIdentIt ? ' <span class="pill ident-edital" title="Item identificado no edital, fora da planilha do órgão. Sem código e sem preço: escolha a composição. Motivo e origem (documento, página, trecho) estão na memória de cálculo.">a compor · edital</span>' : '') +
+(_ehVaga ? '<div class="vaga-aviso"><span class="pill vaga-pill">vaga do órgão</span> ' + Util.esc(it.vagaMotivo || "item não lido") +
+' <span class="vaga-acoes">' + (_linkVaga ? '<button class="btn sm" data-acao="vaga-pdf" data-item="' + e.id + '|' + it.id + '" title="Abre o PDF do edital na página onde este item está">Abrir no PDF' + (it.vagaPdf && it.vagaPdf.pagina ? ' (p. ' + Util.esc(String(it.vagaPdf.pagina)) + ')' : '') + '</button> ' : '') +
+'<button class="btn sm primary" data-acao="vaga-preencher" data-item="' + e.id + '|' + it.id + '" title="Busca o item na base e ocupa esta vaga, no mesmo lugar e com o mesmo número">Preencher</button></span></div>' : '') +
 (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
 Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
@@ -71335,6 +71368,7 @@ lic.precosIncluemBdi = bloco.precos_incluem_bdi === true;
 lic.devolverPara = s(bloco.devolver_para);
 if (bloco.ultimo_lance != null && num(bloco.ultimo_lance) > 0) lic.ultimoLance = num(bloco.ultimo_lance);
 lic.urlCertame = /^https?:\/\//i.test(s(bloco.url_certame)) ? s(bloco.url_certame) : "";
+lic.urlArquivo = /^https?:\/\//i.test(s(bloco.url_arquivo)) ? s(bloco.url_arquivo) : "";
 lic.avisosPacote = (Array.isArray(bloco.avisos) ? bloco.avisos : []).map(function (x) { return s(x); }).filter(function (x) { return !!x; }).slice(0, 10);
 if (bloco.obra_engenharia === true || bloco.obra_engenharia === false) {
 lic.obra = bloco.obra_engenharia; lic.obraInformada = true;
@@ -71491,6 +71525,26 @@ return feito;
 NOME_ETAPA_IDENTIFICADOS: "Itens identificados no edital (fora da planilha do órgão)",
 ID_ETAPA_IDENTIFICADOS: "eta-ident-edital",
 ehEtapaIdentificados: function (e) { return !!(e && (e.identificadosEdital === true || e.id === this.ID_ETAPA_IDENTIFICADOS)); },
+ehVaga: function (it) { return !!(it && it.vaga === true); },
+vagas: function (orc) {
+var out = [];
+((orc && orc.etapas) || []).forEach(function (e, ei) {
+((e && e.itens) || []).forEach(function (it, ii) {
+if (it && it.vaga === true) out.push({ etapaId: e.id, itemId: it.id, numero: s(it.numeroOrigem) || (typeof Orcamento !== "undefined" ? Orcamento.itemNumero(ei, ii) : "") || s(it.descricao).slice(0, 40), motivo: s(it.vagaMotivo) });
+});
+});
+return out;
+},
+textoVagas: function (vs) {
+var n = vs.length, lista = vs.slice(0, 12).map(function (v) { return v.numero; }).join(", ") + (n > 12 ? " e mais " + (n - 12) : "");
+return n + " item(ns) do órgão ainda não preenchidos: " + lista;
+},
+linkVagaPdf: function (orc, it) {
+var p = it && it.vagaPdf, c = this.cfg(orc);
+if (!p || !s(p.caminho) || !c || !/^https?:\/\//i.test(s(c.urlArquivo))) return "";
+var pg = parseInt(p.pagina, 10);
+return s(c.urlArquivo) + encodeURIComponent(s(p.caminho)) + (pg > 0 ? "#page=" + pg : "");
+},
 ehItemAComporIdentificado: function (it) { return !!(it && it.identificadoEdital && it.aCompor === true); },
 _memoriaIdentificado: function (x) {
 var o = (x.origem && typeof x.origem === "object") ? x.origem : {};
@@ -71550,7 +71604,7 @@ return res;
 },
 itemTravado: function (orc, it) {
 var c = this.cfg(orc);
-return !!(c && c.ativo && !c.travaLiberada && it && it.travadoOrgao);
+return !!(c && c.ativo && !c.travaLiberada && it && it.travadoOrgao && it.vaga !== true);
 },
 liberarTrava: function (orc, liberar) {
 var c = this.cfg(orc); if (!c) return false;
@@ -71730,6 +71784,8 @@ out.resumo.push({ tom: "info", chave: "semref", texto: out.semReferencia + " ite
 var simb = this.itensSimbolicos(orc);
 out.simbolicos = simb;
 if (simb.length) out.resumo.unshift({ tom: "erro", chave: "simbolico", texto: this.textoSimbolicos(simb) });
+var _vgs = this.vagas(orc);
+if (_vgs.length) out.resumo.unshift({ tom: "alerta", chave: "vagas", texto: this.textoVagas(_vgs) + " — abra a vaga e preencha." });
 var comp = [];
 (c.avisosPacote || []).forEach(function (t) {
 if (/R\$\s?0,01/.test(t)) return;
@@ -74123,6 +74179,7 @@ if (numOrg[k]) dupOrg[k] = true;
 numOrg[k] = true;
 });
 Object.keys(dupOrg).forEach(function (k) { pend.dados.push("Número " + k + " repetido na planilha do órgão (mais de um item). Conferir a numeração."); });
+try { var _vgD = Lic.vagas ? Lic.vagas(orc) : []; if (_vgD.length) pend.dados.push(Lic.textoVagas(_vgD) + ". Abra a vaga na planilha e preencha antes de entregar."); } catch (eVg) {}
 var base = opcoes.base || null;
 var tab = leitura && leitura.tabelas ? leitura.tabelas : {};
 var tabelaRef = s(tab.seinfra) ? ("SEINFRA " + s(tab.seinfra)) : (s(tab.sinapi) ? ("SINAPI " + s(tab.sinapi)) : "");
