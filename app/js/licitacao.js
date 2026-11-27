@@ -980,6 +980,15 @@
      *   real. Devolve [{ itemId, etapaId, numero }] dos que AINDA estão no
      *   simbólico: o preço digitado tira o item da lista.
      * ------------------------------------------------------------------ */
+    /* Aviso do pacote que é da leitura das COMPOSIÇÕES do órgão (analítico):
+       "Conferir no PDF (p. 26): 2.5: insumo I2391: coeficiente × custo não confere",
+       "...: soma dos insumos ...", "...: VALOR da composição ...", "código X sem
+       composição lida". Não é do sintético (preço/quantidade do item). */
+    avisoDeComposicao: function (t) {
+      t = String(t || "");
+      if (!/Conferir no PDF/i.test(t)) return false;
+      return /insumo|composi[çc][ãa]o|do grupo|TOTAL do grupo/i.test(t) && !/sint[ée]tico|item do [óo]rg[ãa]o perdido/i.test(t);
+    },
     PRECO_SIMBOLICO: 0.01,
     itensSimbolicos: function (orc) {
       var self = this, out = [];
@@ -1229,10 +1238,19 @@
       /* os avisos do próprio pacote, menos o do R$ 0,01: o de cima diz o mesmo
          e SOME quando o preço entra — o do pacote ficaria lá para sempre,
          mandando preencher o que já foi preenchido */
+      /* Rogério, 27/11/2026: os avisos da LEITURA DAS COMPOSIÇÕES do órgão (páginas
+         do analítico lidas por OCR: insumo sem custo lido, soma do grupo ≠ VALOR)
+         são só conferência — a proposta usa o preço do sintético e a composição
+         da base que fecha ao centavo (licitacaodocs.js). Soltos na tela pareciam
+         problema a resolver; vão juntos num bloco recolhido (chave "pacote-comp"). */
+      var comp = [];
       (c.avisosPacote || []).forEach(function (t) {
         if (/R\$\s?0,01/.test(t)) return;
+        if (Licitacao.avisoDeComposicao(t)) { comp.push(t); return; }
         out.resumo.push({ tom: "info", chave: "pacote", texto: "Ao montar o pacote, o CertamePRO avisou: " + t });
       });
+      if (comp.length) out.resumo.push({ tom: "info", chave: "pacote-comp", detalhes: comp,
+        texto: "Leitura das composições do órgão: " + comp.length + " aviso(s) de conferência. Não mudam preço: a proposta usa o preço da planilha do órgão e a composição da base que fecha com ele." });
       return out;
     },
 

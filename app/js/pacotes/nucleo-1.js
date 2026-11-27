@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.457",
+versao: "1.2.458",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -21865,7 +21865,14 @@ textoHtml: "<span> " + Util.esc(partes.join(" · ") || "dados do edital não inf
 (lic.certamepro && !lic.travaLiberada ? " <span class=\"muted\">· itens do órgão travados (só o preço muda)</span>" : "") +
 (lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
 acaoHtml: acoes });
-av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+av.resumo.forEach(function (a) {
+if (a.detalhes && a.detalhes.length) {
+h += M.aviso({ tom: a.tom, textoHtml: "<details><summary>" + Util.esc(a.texto) + " <span class=\"muted\">(ver)</span></summary><ul style=\"margin:6px 0 0 18px\">" +
+a.detalhes.map(function (t) { return "<li>" + Util.esc(t) + "</li>"; }).join("") + "</ul></details>" });
+return;
+}
+h += M.aviso({ tom: a.tom, texto: a.texto });
+});
 h += this._licAutoAviso(orc);
 h += this._licBasesPainel(orc);
 return h;
@@ -71533,6 +71540,11 @@ remover: "ele não pode ser removido"
 return "Item da planilha do órgão: " + o + " no modo licitação, para a proposta sair igual ao edital. O preço continua editável. " +
 "Se o edital permitir alterar a planilha, use 'Liberar edição' no painel Licitação, no topo do orçamento.";
 },
+avisoDeComposicao: function (t) {
+t = String(t || "");
+if (!/Conferir no PDF/i.test(t)) return false;
+return /insumo|composi[çc][ãa]o|do grupo|TOTAL do grupo/i.test(t) && !/sint[ée]tico|item do [óo]rg[ãa]o perdido/i.test(t);
+},
 PRECO_SIMBOLICO: 0.01,
 itensSimbolicos: function (orc) {
 var self = this, out = [];
@@ -71691,10 +71703,14 @@ out.resumo.push({ tom: "info", chave: "semref", texto: out.semReferencia + " ite
 var simb = this.itensSimbolicos(orc);
 out.simbolicos = simb;
 if (simb.length) out.resumo.unshift({ tom: "erro", chave: "simbolico", texto: this.textoSimbolicos(simb) });
+var comp = [];
 (c.avisosPacote || []).forEach(function (t) {
 if (/R\$\s?0,01/.test(t)) return;
+if (Licitacao.avisoDeComposicao(t)) { comp.push(t); return; }
 out.resumo.push({ tom: "info", chave: "pacote", texto: "Ao montar o pacote, o CertamePRO avisou: " + t });
 });
+if (comp.length) out.resumo.push({ tom: "info", chave: "pacote-comp", detalhes: comp,
+texto: "Leitura das composições do órgão: " + comp.length + " aviso(s) de conferência. Não mudam preço: a proposta usa o preço da planilha do órgão e a composição da base que fecha com ele." });
 return out;
 },
 _custoParaPU: function (orc, alvoPU) {
@@ -74111,7 +74127,9 @@ return null;
 }
 var encRegP = leitura && leitura.encargos && (leitura.encargos.desonerado === true || leitura.encargos.desonerado === false) ? leitura.encargos.desonerado : null;
 var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : encRegP);
-var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0;
+var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0, daBaseMotivo = {};
+function naoAbriu(m) { daBaseRegime++; daBaseMotivo[m] = (daBaseMotivo[m] || 0) + 1; return null; }
+function txtReg(r) { return r === true ? "desonerado" : (r === false ? "não desonerado" : "não informado"); }
 function regimeOk(r) { return regimeProj !== null && (r === true || r === false) && r === regimeProj; }
 function ufOk(u) { var x = s(u).toUpperCase(); return !!(x && ufOrcamento && x === ufOrcamento); }
 function composicaoDaBase(it, Ln, fonteRaw, ehSeinfra, orgCusto) {
@@ -74121,20 +74139,21 @@ if (it.modoCusto === "mo" || it.modoCusto === "matEq") return null;
 if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao))) return null;
 var c = null, rot = "", mes = "";
 if (ehSeinfra) {
-if (!baseOk) return null;
+if (!baseOk) return naoAbriu("a base SEINFRA não foi carregada no programa ao gerar a proposta");
 if (!s(tab.seinfra)) {
 var exS = (Array.isArray(lic.basesExigidas) ? lic.basesExigidas : []).filter(function (b) { return /SEINFRA/i.test(s(b && b.fonte)) && s(b && (b.mes || b.competencia || b.versao)); })[0];
-if (exS && norm(s(exS.mes || exS.competencia || exS.versao)) !== norm(baseOk.mes)) { daBaseRegime++; return null; }
+if (exS && norm(s(exS.mes || exS.competencia || exS.versao)) !== norm(baseOk.mes)) return naoAbriu("a SEINFRA exigida no edital (" + s(exS.mes || exS.competencia || exS.versao) + ") não é a da base carregada (" + s(baseOk.mes) + ")");
 }
-if (!regimeOk(baseOk.desonerado) || !ufOk(baseOk.uf)) { daBaseRegime++; return null; }
+if (!regimeOk(baseOk.desonerado)) return naoAbriu("regime do projeto " + txtReg(regimeProj) + " e da base " + txtReg(baseOk.desonerado));
+if (!ufOk(baseOk.uf)) return naoAbriu("UF do orçamento " + (ufOrcamento || "não informada") + " e da base " + (s(baseOk.uf) || "não informada"));
 var rg = baseOk.obter(cod);
 if (rg && Array.isArray(rg.insumos) && rg.insumos.length) { c = rg; rot = s(baseOk.tabela) || "SEINFRA"; mes = s(baseOk.mes); }
 } else if (typeof opcoes.composicaoDe === "function") {
 try {
 var r = opcoes.composicaoDe(it);
 if (r && Array.isArray(r.insumos) && r.insumos.length) {
-if (!ufOk(r.uf) || !s(r.mes) || !regimeOk(r.desonerado)) { daBaseRegime++; return null; }
-if (/SINAPI/i.test(s(r.fonte)) && compOrgao && compAAAAMM(r.mes) !== compOrgao) { daBaseRegime++; return null; }
+if (!ufOk(r.uf) || !s(r.mes) || !regimeOk(r.desonerado)) return naoAbriu("UF, competência ou regime da base " + (s(r.fonte) || "do item") + " diferente do projeto (ou não informado)");
+if (/SINAPI/i.test(s(r.fonte)) && compOrgao && compAAAAMM(r.mes) !== compOrgao) return naoAbriu("competência da SINAPI (" + s(r.mes) + ") diferente da do órgão");
 c = r; rot = s(r.fonte) || fonteRaw.toUpperCase(); mes = s(r.mes);
 }
 } catch (eCd) { c = null; }
@@ -74276,7 +74295,8 @@ if (colidiu.length) pend.dados.push("Item(ns) acrescentado(s) por você com núm
 if (daBaseN) pend.dados.push(daBaseN + " item(ns) sem composição no pacote saíram com a composição da base de referência pelo código (a mesma do \"Analítico do item\"); o preço é o da proposta.");
 if (daBaseEsc) pend.dados.push(daBaseEsc + " composição(ões) da base reescalada(s) pelo fator do desconto do item (o mesmo dos itens com composição do órgão).");
 if (daBaseNao.length) pend.dados.push(daBaseNao.length + " item(ns) com composição na base que NÃO fecha com o custo do item (diferença acima de R$ 0,01, mesmo com o fator do desconto): saem sem detalhamento. " + daBaseNao.slice(0, 8).join("; ") + (daBaseNao.length > 8 ? " e mais " + (daBaseNao.length - 8) : "") + ". Conferir.");
-if (daBaseRegime) pend.dados.push(daBaseRegime + " item(ns) sem composição no pacote NÃO foram abertos pela base: UF, competência ou regime da base diferente do projeto (ou não informado).");
+if (daBaseRegime) pend.dados.push(daBaseRegime + " item(ns) sem composição no pacote NÃO foram abertos pela base e saem \"Sem detalhamento\". Motivo: " +
+Object.keys(daBaseMotivo).map(function (m) { return m + " (" + daBaseMotivo[m] + ")"; }).join("; ") + ". Corrija no orçamento (⚙ Parâmetros: UF e regime) ou envie o certame de novo ao OrçaPRO.");
 if (daBaseUn.length) pend.dados.push("Composição da base NÃO usada por unidade diferente da do item: " + daBaseUn.slice(0, 6).join("; ") + (daBaseUn.length > 6 ? " e mais " + (daBaseUn.length - 6) : "") + ".");
 if (porProporcao) pend.dados.push(porProporcao + " item(ns) com material, mão de obra e equipamento repartidos pela proporção da base " + fonteProporcao + " do mesmo código; o preço é o da proposta.");
 if (auxPropDif) pend.dados.push(auxPropDif + " composição(ões) auxiliar(es) repartida(s) em material, mão de obra e equipamento pela proporção da " + s(compDif.base) + "; o projeto usa a " + s(compDif.orgao) + ". A proporção pode diferir: conferir.");

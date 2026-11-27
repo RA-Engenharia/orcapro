@@ -4223,7 +4223,14 @@
           (lic.certamepro && !lic.travaLiberada ? " <span class=\"muted\">· itens do órgão travados (só o preço muda)</span>" : "") +
           (lic.travaLiberada ? " <span class=\"muted\">· trava liberada</span>" : ""),
         acaoHtml: acoes });
-      av.resumo.forEach(function (a) { h += M.aviso({ tom: a.tom, texto: a.texto }); });
+      av.resumo.forEach(function (a) {
+        if (a.detalhes && a.detalhes.length) {   /* bloco recolhido (ex.: leitura das composições do órgão) */
+          h += M.aviso({ tom: a.tom, textoHtml: "<details><summary>" + Util.esc(a.texto) + " <span class=\"muted\">(ver)</span></summary><ul style=\"margin:6px 0 0 18px\">" +
+            a.detalhes.map(function (t) { return "<li>" + Util.esc(t) + "</li>"; }).join("") + "</ul></details>" });
+          return;
+        }
+        h += M.aviso({ tom: a.tom, texto: a.texto });
+      });
       h += this._licAutoAviso(orc);
       h += this._licBasesPainel(orc);
       return h;
