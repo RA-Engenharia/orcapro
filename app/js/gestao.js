@@ -14664,7 +14664,7 @@
            "<li>Se aparecer <b>Trust?</b> ao lado da extensão, clique e confirme em <b>Enable</b> (o aviso é porque a extensão ainda não tem a assinatura da Trimble). Se aparecer <b>Blocked</b>: engrenagem (<i>Settings</i>) › <i>Loading Policy</i> › <b>Approve Unidentified Extensions</b> › <b>Confirm</b>, e volte ao passo anterior.</li>" +
            "<li><b>Feche e abra o SketchUp.</b> Em <b>Extensions › OrçaPRO › Exportar para OrçaPRO…</b> salve o .json e importe aqui, no botão abaixo.</li>" +
            '</ol><p style="margin:0">', bt("rbz", "Baixar a extensão (.rbz)") + bt("skp", "Importar o .json do SketchUp", true)) +
-        bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador, com o AutoCAD ou o ODA File Converter instalados (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Gerar de desenho.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Gerar de desenho") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
+        bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador: pelo AutoCAD ou ODA File Converter, se instalados, ou pelo próprio navegador (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Gerar de desenho.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Gerar de desenho") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
         bl("Malha 3D (glTF/GLB, OBJ, STL, DAE, FBX)", "Do Blender, 3ds Max, Rhino, D5, Lumion, SketchUp (exportado)… Cada objeto vira uma peça com nome, área e volume. Malha não traz parâmetro BIM — nada é inventado.",
            '<label class="field" style="margin:0">Unidade <select id="imp-un"><option value="auto">detectar</option><option value="m">metro</option><option value="cm">centímetro</option><option value="mm">milímetro</option><option value="pol">polegada</option></select></label>' +
            '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="imp-zup"> Z para cima (CAD)</label>' + bt("malha", "Importar malha…", true)) +
@@ -14674,7 +14674,7 @@
       /* conversão de DWG nesta máquina? (só existe no OrçaPRO instalado) */
       try { fetch("/__dwg/status").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
         var el = document.getElementById("imp-dwg-st"); if (!el) return;
-        el.textContent = !j ? "DWG: só no OrçaPRO instalado; aqui, vincule o .dxf." : j.disponivel ? "DWG convertido pelo " + j.conversor + "." : "DWG: " + j.motivo + ". " + (j.fazer || "");
+        el.textContent = j && j.disponivel ? "DWG convertido pelo " + j.conversor + "." : "DWG convertido no navegador (o arquivo não sai do computador).";
       })["catch"](function () {}); } catch (eS) {}
       if (m) { m.style.maxWidth = "640px"; m.addEventListener("click", function (e) {
         var b = e.target.closest ? e.target.closest("[data-imp]") : null; if (!b) return;
@@ -14715,11 +14715,15 @@
       var dxfTexto = file.arrayBuffer().then(function (ab) {
         if (/\.dxf$/i.test(file.name)) return dec(ab);
         BimShell.status("Convertendo " + file.name + " para DXF neste computador…");
-        return fetch("/__dwg/converter", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: ab }).then(function (r) {
-          if (r.status === 404) throw new Error("a conversão de DWG precisa do OrçaPRO instalado no computador (nesta versão online não há). Salve como DXF no AutoCAD e vincule o .dxf.");
-          if (!r.ok) return r.json().then(function (j) { throw new Error(j.erro || ("erro " + r.status)); }, function () { throw new Error("erro " + r.status); });
-          return r.arrayBuffer().then(dec);
-        });
+        /* DWG EM QUALQUER LUGAR (27/11/2026): a versão online não tem /__dwg/converter (GitHub Pages responde 405, outro
+           servidor 404) e o app instalado sem ODA/AutoCAD responde 501. Antes isso parava em "erro 405" e a cliente não
+           trazia o DWG. Agora, sem conversor na máquina (ou se ele falhar), o próprio navegador converte (_dwgNoNavegador). */
+        var noNav = function () { BimShell.status("Convertendo " + file.name + " para DXF no navegador…"); return self._dwgNoNavegador(ab.slice(0)).then(dec); };
+        return fetch("/__dwg/converter", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: ab.slice(0) }).then(function (r) {
+          if (r.ok) return r.arrayBuffer().then(dec);
+          if (r.status === 400 || r.status === 413) return r.json().then(function (j) { throw new Error(j.erro || ("erro " + r.status)); }, function () { throw new Error("erro " + r.status); });
+          return noNav();
+        }, noNav);
       });
       dxfTexto.then(function (txt) {
         /* COM os blocos: louça, porta e mobília são bloco no CAD — sem eles o fundo do hidrossanitário vinha sem vaso nem pia */
@@ -14737,6 +14741,30 @@
         }
         self._cadVincularInteiro(pacote);
       })["catch"](function (e) { UI.toast("Não vinculei " + file.name + ": " + e.message, "erro", 9000); });
+    },
+    /* DWG → DXF no navegador: LibreDWG em WebAssembly num Worker SEPARADO (bim/vendor/libredwg, GPLv3 — conversa só por
+       mensagens, como o dxf2dwg roda em processo separado no app instalado). Carrega na 1ª vez (~8 MB) e fica pronto.
+       Medido no DWG real de cliente (18 MB, 26/11): 2,4 s e o MESMO resultado do ODA (22.672 linhas, 469 textos, 263 blocos). */
+    _dwgNoNavegador: function (ab) {
+      var self = this;
+      return new Promise(function (ok, falha) {
+        var w;
+        try {
+          if (typeof Worker === "undefined") throw new Error("este navegador não roda o conversor");
+          if (!self._dwgWorker) self._dwgWorker = new Worker("bim/vendor/libredwg/dwg2dxf-worker.js", { type: "module" });
+          w = self._dwgWorker;
+        } catch (e) { falha(new Error("não consegui abrir o conversor de DWG do navegador (" + e.message + "). Salve como DXF no AutoCAD e vincule o .dxf.")); return; }
+        var id = (self._dwgSeq = (self._dwgSeq || 0) + 1), fim = false;
+        var tempo = setTimeout(function () { acabar(); try { w.terminate(); } catch (e) {} self._dwgWorker = null; falha(new Error("a conversão do DWG passou de 3 minutos. Salve como DXF no AutoCAD e vincule o .dxf.")); }, 180000);
+        function acabar() { fim = true; clearTimeout(tempo); w.removeEventListener("message", msg); w.removeEventListener("error", erro); }
+        function msg(ev) {
+          var m = ev.data || {}; if (m.id !== id || fim) return; acabar();
+          if (m.ok && m.dxf) ok(m.dxf); else falha(new Error((m.erro || "o DWG não converteu") + ". Se persistir, salve como DXF no AutoCAD e vincule o .dxf."));
+        }
+        function erro(ev) { if (fim) return; acabar(); self._dwgWorker = null; falha(new Error("o conversor de DWG do navegador parou (" + ((ev && ev.message) || "sem detalhe") + "). Salve como DXF no AutoCAD e vincule o .dxf.")); }
+        w.addEventListener("message", msg); w.addEventListener("error", erro);
+        w.postMessage({ id: id, buf: ab }, [ab]);
+      });
     },
     /* o desenho inteiro num nível só (o vínculo de sempre) */
     _cadVincularInteiro: function (pacote) {

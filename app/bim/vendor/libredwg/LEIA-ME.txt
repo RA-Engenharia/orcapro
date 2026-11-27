@@ -1,0 +1,10 @@
+LibreDWG em WebAssembly - conversor DWG -> DXF usado pelo OrcaPRO no navegador
+
+Programa separado, sob a GNU GPL versao 3 (texto completo em COPYING.txt).
+Roda num Worker proprio (dwg2dxf-worker.js) e troca com o OrcaPRO apenas os bytes do
+arquivo (DWG entra, DXF sai). O arquivo do usuario nao sai do computador.
+
+libredwg-web.js e libredwg-web.wasm: copiados sem modificacao de @mlightcad/libredwg-web 0.9.4
+  Codigo-fonte: https://github.com/mlightcad/libredwg-web (tag 0.9.4)
+  LibreDWG:     https://www.gnu.org/software/libredwg/  -  https://ftp.gnu.org/gnu/libredwg/
+dwg2dxf-worker.js: escrito pela RA Engenharia, distribuido sob a mesma GPLv3.
