@@ -279,12 +279,14 @@
    * ===================================================================== */
   var TW_A4 = { w: 11906, h: 16838, mt: 1021, mb: 1021, ml: 907, mr: 907 };       /* 210×297 mm, margens 18/16 mm */
   var TW_VERT = { w: 6803, h: 12076, mt: 794, mb: 794, ml: 680, mr: 680 };        /* 120×213 mm, margens 14/12 mm */
+  /* A4 deitado (27/11/2026, proposta da licitação em Word): planilha e CPUs de 6 a 9 colunas cabem sem virar meia página por linha */
+  var TW_A4P = { w: 16838, h: 11906, mt: 851, mb: 851, ml: 851, mr: 851, deitado: true };   /* 297×210 mm, margens 15 mm */
   var EMU_TW = 635;
 
   function Gerador(op) {
     op = op || {};
     this.op = op;
-    this.pg = (op.formato === "vertical") ? TW_VERT : TW_A4;
+    this.pg = (op.formato === "vertical") ? TW_VERT : (op.formato === "a4-paisagem" ? TW_A4P : TW_A4);
     this.largura = this.pg.w - this.pg.ml - this.pg.mr;        /* twips úteis */
     this.cores = {
       titulo: hex6(op.corTitulo) || "0F2740", texto: hex6(op.corTexto) || "1A2632",
@@ -639,9 +641,19 @@
     var nNum = numerica.filter(Boolean).length, nTx = nCols - nNum;
     var largNum = Math.round(this.largura * (nNum >= 4 ? 0.1 : 0.2)), largTx = nTx ? Math.floor((this.largura - largNum * nNum) / nTx) : 0;
     var larguras = numerica.map(function (b) { return b ? largNum : largTx; });
+    /* <colgroup> com a largura de cada coluna em mm (o pacote da licitação, js/licitacaodocs.js): a proporção do desenho vale no Word;
+       a tabela com largura própria em mm (o quadro do BDI) não estica até a margem */
+    var largTab = this.largura, colsMm = [];
+    (no.filhos || []).forEach(function (cg) { if (cg.tag === "colgroup") (cg.filhos || []).forEach(function (cc) { if (cc.tag === "col") { var mm = /([\d.]+)\s*mm/.exec(estiloDe(cc, "width")); colsMm.push(mm ? +mm[1] : 0); } }); });
+    if (colsMm.length === nCols && colsMm.every(function (x) { return x > 0; })) {
+      var somaMm = colsMm.reduce(function (a, x) { return a + x; }, 0), wMm = /([\d.]+)\s*mm/.exec(estiloDe(no, "width"));
+      if (wMm) largTab = Math.min(largTab, Math.round(+wMm[1] * 56.7));
+      larguras = colsMm.map(function (x) { return Math.floor(largTab * x / somaMm); });
+      largTab = larguras.reduce(function (a, x) { return a + x; }, 0);
+    }
     var corB = ctx.corTitulo || this.cores.titulo;
-    var semBorda = temClasse(no, "tp-cols");
-    var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+    var semBorda = temClasse(no, "tp-cols") || temClasse(no, "ld-fr");
+    var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + largTab + '" w:type="dxa"/>' + (largTab < this.largura ? '<w:jc w:val="center"/>' : "") + '<w:tblLayout w:type="fixed"/>'
       + (semBorda ? "" : '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="' + corB + '"/><w:left w:val="single" w:sz="4" w:color="' + corB + '"/><w:bottom w:val="single" w:sz="4" w:color="' + corB + '"/><w:right w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideH w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideV w:val="single" w:sz="4" w:color="' + corB + '"/></w:tblBorders>')
       + '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
     larguras.forEach(function (w) { xml += '<w:gridCol w:w="' + w + '"/>'; });
@@ -659,7 +671,7 @@
         var th = c.tag === "th";
         var fill = th ? corB : (grupo ? "E5E7EB" : (rodape ? "EEF4FA" : ""));
         var f = herda(ctx.f, { tamanho: tamanho, negrito: th || grupo || rodape, cor: th ? "FFFFFF" : ctx.f.cor, caixaAlta: grupo });
-        var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") ? "center" : "left");
+        var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || temClasse(c, "n") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") || temClasse(c, "c") || /center/i.test(estiloDe(c, "text-align")) ? "center" : "left");
         /* marcador da linha (tr id) e da célula (td id) vai no 1º parágrafo da célula */
         if (col === 0 && l.tr.attrs && l.tr.attrs.id) self.marcas.pendentes.push(l.tr.attrs.id);
         if (c.attrs && c.attrs.id) self.marcas.pendentes.push(c.attrs.id);
@@ -679,7 +691,8 @@
           if (!saida.runs) saida.runs = paragrafo({ depois: 0 }, "");
         }
         xml += '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/>' + (sp > 1 ? '<w:gridSpan w:val="' + sp + '"/>' : "")
-          + (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"center\"/></w:tcPr>" + saida.runs + "</w:tc>";
+          + (/solid/i.test(estiloDe(c, "border-bottom")) ? '<w:tcBorders><w:bottom w:val="single" w:sz="8" w:color="000000"/></w:tcBorders>' : "")
+          + (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"" + (/bottom/i.test(estiloDe(c, "vertical-align")) ? "bottom" : "center") + "\"/></w:tcPr>" + saida.runs + "</w:tc>";
         col += sp;
       });
       while (col < nCols) { xml += '<w:tc><w:tcPr><w:tcW w:w="' + (larguras[col] || 0) + '" w:type="dxa"/></w:tcPr>' + paragrafo({ depois: 0 }, "") + "</w:tc>"; col++; }
@@ -804,7 +817,7 @@
     if (g.marcas.pendentes.length) g.corpo.push(paragrafo({ depois: 0 }, g.tomarMarcas()));
     var corpo = g.corpo.join("");
     if (!corpo) corpo = paragrafo({}, run("(documento vazio)", g.fontes.texto ? { fonte: g.fontes.texto } : {}));
-    var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';
+    var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"' + (g.pg.deitado ? ' w:orient="landscape"' : "") + '/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';
     var documento = XMLH + "<w:document " + NS_W + "><w:body>" + corpo + sectPr + "</w:body></w:document>";
     var partes = [
       { nome: "[Content_Types].xml", dados: contentTypes(g) },

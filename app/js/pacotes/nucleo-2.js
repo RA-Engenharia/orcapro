@@ -78888,7 +78888,7 @@ if (relogio) { clearTimeout(relogio); relogio = null; }
 self._licPegarBase(lic, function (base) {
 if (!auto) { montarPacote(base); return; }
 try { montarPacote(base); } catch (eMp) { try { self.fecharProposta(); } catch (eFp) {} falhaAuto("falha ao montar o documento: " + (eMp && eMp.message ? eMp.message : eMp)); }
-});
+}, orc);
 };
 try { self._analiticoDoOrc(orc, depoisBase); } catch (eAn) { depoisBase(); return; }
 if (!andou) relogio = setTimeout(function () {
@@ -78901,6 +78901,24 @@ var montarPacote = function (base) {
 {
 var emp = cx.emp;
 var opc = { base: base };
+opc.composicaoDe = function (it) {
+var cod = String((it && it.codigo) == null ? "" : it.codigo).trim();
+if (!cod) return null;
+var F = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : (it.origem || ""))).toUpperCase().trim();
+if (Orcamento.ehSinapi(F)) {
+if (typeof Analitico === "undefined" || !Analitico.carregado || !Analitico.obter) return null;
+var compA = self._normComp(Analitico.competencia), compO = self._normComp(orc.competenciaSinapi);
+if (!compA || !compO || compA !== compO) return null;
+var a = Analitico.obter(cod);
+return a ? { codigo: cod, unidade: a.unidade, insumos: a.insumos, fonte: "SINAPI", uf: Analitico.uf, mes: String(Analitico.competencia || ""), desonerado: Analitico.desonerado } : null;
+}
+if (!F || F === "PROPRIA" || F === "PROPRIO" || typeof AnaliticoBases === "undefined" || !AnaliticoBases.suporta(F)) return null;
+var meta = AnaliticoBases.meta(F), inst = AnaliticoBases.baseInstalada(F);
+if (!meta || !inst || !AnaliticoBases.conferirCompetencia(meta, inst).mesmo || !meta.mes || !inst.competencia) return null;
+var b = AnaliticoBases.obter(F, cod);
+var reg = (meta.desonerado === true || meta.desonerado === false) ? meta.desonerado : inst.desonerado;
+return b ? { codigo: cod, unidade: b.unidade, insumos: b.insumos, fonte: F, uf: meta.uf, mes: meta.rotuloComp || meta.mes, desonerado: reg } : null;
+};
 try {
 var secPac = self._licSecoesPacote(orc), usouModelo = false;
 if (!secPac.gravada && typeof Saidas !== "undefined" && Saidas.previaLigada()) {
@@ -78933,7 +78951,11 @@ baixandoPdf = false;
 UI.toast("Não consegui gerar o PDF (" + (eG && eG.message ? eG.message : eG) + "). Use o botão Imprimir.", "erro");
 });
 };
-self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf });
+var baixarWord = function () {
+if (typeof Gestao === "undefined" || !Gestao.docxBaixar) { UI.toast("A saída em Word não está disponível nesta versão.", "erro"); return; }
+Gestao.docxBaixar(r.html, { titulo: "Proposta_" + String(orc.numero || "licitacao"), corTitulo: "#1F3864", corTexto: "#000000", corDestaque: "#1F3864", corFundoEscuro: "#1F3864", formato: "a4-paisagem", fonteTexto: "Arial", fonteTitulo: "Arial" });
+};
+self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf, word: baixarWord });
 try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { if (auto) { self.fecharProposta(); falhaAuto("falha ao paginar: " + eP.message); return; } UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
 if (auto) {
 var fl = document.querySelectorAll("#proposta-print .ld-pg");
@@ -78998,9 +79020,11 @@ if (self.orcAtual === orc) self.render();
 UI.toast(n + " texto(s) lido(s) do PDF do órgão corrigido(s): descrição oficial da SEINFRA pelo código e palavras separadas/acentuadas.", "ok");
 }, function () {});
 },
-_licPegarBase: function (lic, cb) {
+_licPegarBase: function (lic, cb, orc) {
 var tabs = (lic && lic.leitura && lic.leitura.tabelas) || {};
-if (!String(tabs.seinfra == null ? "" : tabs.seinfra).trim() || typeof AnaliticoBases === "undefined") { cb(null); return; }
+var temItemSeinfra = !!(orc && (orc.etapas || []).some(function (e) { return ((e && e.itens) || []).some(function (it) {
+return it && /SEINFRA/i.test(String(it.baseFonte || it.origem || "")); }); }));
+if ((!String(tabs.seinfra == null ? "" : tabs.seinfra).trim() && !temItemSeinfra) || typeof AnaliticoBases === "undefined") { cb(null); return; }
 AnaliticoBases.carregar("SEINFRA").then(function (ent) { cb(LicitacaoDocs.baseDe(ent && ent.pacote)); }, function () { cb(null); });
 },
 _licNomeEmpresaTitulo: function () {

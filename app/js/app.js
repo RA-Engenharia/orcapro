@@ -12791,7 +12791,7 @@
           self._licPegarBase(lic, function (base) {
             if (!auto) { montarPacote(base); return; }
             try { montarPacote(base); } catch (eMp) { try { self.fecharProposta(); } catch (eFp) {} falhaAuto("falha ao montar o documento: " + (eMp && eMp.message ? eMp.message : eMp)); }
-          });
+          }, orc);
         };
         try { self._analiticoDoOrc(orc, depoisBase); } catch (eAn) { depoisBase(); return; }
         /* TEMPO LIMITE: se o carregamento do analítico não responde (rede, arquivo grande), não fica em "Montando…" para sempre:
@@ -12806,6 +12806,28 @@
         {
           var emp = cx.emp;
           var opc = { base: base };
+          /* item sem composição no pacote abre pelo MESMO resolvedor do "Analítico do item" (js/licitacaodocs.js, composicaoDaBase) */
+          /* ⚠ revisão de 27/11/2026: devolve SÓ o que dá para conferir — UF, competência (mês) e regime da base que abriu; o motor
+             recusa se algum faltar ou divergir do projeto. SINAPI: o analítico na memória (Analitico) com a competência do orçamento.
+             Estadual: o analítico da base (AnaliticoBases) do MESMO mês da base instalada que precifica. */
+          opc.composicaoDe = function (it) {
+            var cod = String((it && it.codigo) == null ? "" : it.codigo).trim();
+            if (!cod) return null;
+            var F = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : (it.origem || ""))).toUpperCase().trim();
+            if (Orcamento.ehSinapi(F)) {
+              if (typeof Analitico === "undefined" || !Analitico.carregado || !Analitico.obter) return null;
+              var compA = self._normComp(Analitico.competencia), compO = self._normComp(orc.competenciaSinapi);
+              if (!compA || !compO || compA !== compO) return null;
+              var a = Analitico.obter(cod);
+              return a ? { codigo: cod, unidade: a.unidade, insumos: a.insumos, fonte: "SINAPI", uf: Analitico.uf, mes: String(Analitico.competencia || ""), desonerado: Analitico.desonerado } : null;
+            }
+            if (!F || F === "PROPRIA" || F === "PROPRIO" || typeof AnaliticoBases === "undefined" || !AnaliticoBases.suporta(F)) return null;
+            var meta = AnaliticoBases.meta(F), inst = AnaliticoBases.baseInstalada(F);
+            if (!meta || !inst || !AnaliticoBases.conferirCompetencia(meta, inst).mesmo || !meta.mes || !inst.competencia) return null;
+            var b = AnaliticoBases.obter(F, cod);
+            var reg = (meta.desonerado === true || meta.desonerado === false) ? meta.desonerado : inst.desonerado;
+            return b ? { codigo: cod, unidade: b.unidade, insumos: b.insumos, fonte: F, uf: meta.uf, mes: meta.rotuloComp || meta.mes, desonerado: reg } : null;
+          };
           /* Seções do pacote: 1º a escolha gravada (painel "O que sai na proposta", por licitante ou conta); sem ela, o modelo em uso da prévia
              (?previa=motor, "O que sai no documento"); sem nenhum dos dois, o PADRÃO da casa (sem custo por item, quantitativos, consumo e curva ABC). */
           try {
@@ -12842,7 +12864,12 @@
                 UI.toast("Não consegui gerar o PDF (" + (eG && eG.message ? eG.message : eG) + "). Use o botão Imprimir.", "erro");
               });
             };
-            self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf });
+            /* WORD (27/11/2026): o MESMO HTML do PDF vira .docx editável (js/docx.js), A4 deitado para a planilha e as CPUs caberem */
+            var baixarWord = function () {
+              if (typeof Gestao === "undefined" || !Gestao.docxBaixar) { UI.toast("A saída em Word não está disponível nesta versão.", "erro"); return; }
+              Gestao.docxBaixar(r.html, { titulo: "Proposta_" + String(orc.numero || "licitacao"), corTitulo: "#1F3864", corTexto: "#000000", corDestaque: "#1F3864", corFundoEscuro: "#1F3864", formato: "a4-paisagem", fonteTexto: "Arial", fonteTitulo: "Arial" });
+            };
+            self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir", { pdf: baixarPdf, word: baixarWord });
             try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { if (auto) { self.fecharProposta(); falhaAuto("falha ao paginar: " + eP.message); return; } UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
             if (auto) {
               /* as folhas precisam estar na tela para o PdfDireto medir o texto: grava e fecha logo em seguida */
@@ -12916,9 +12943,12 @@
     },
 
     /* Base SEINFRA do pacote (ou null), para as composições auxiliares do documento. */
-    _licPegarBase: function (lic, cb) {
+    _licPegarBase: function (lic, cb, orc) {
       var tabs = (lic && lic.leitura && lic.leitura.tabelas) || {};
-      if (!String(tabs.seinfra == null ? "" : tabs.seinfra).trim() || typeof AnaliticoBases === "undefined") { cb(null); return; }
+      /* 27/11/2026: item SEINFRA sem a tabela declarada na leitura também precisa da base (composição do item que não a trouxe) */
+      var temItemSeinfra = !!(orc && (orc.etapas || []).some(function (e) { return ((e && e.itens) || []).some(function (it) {
+        return it && /SEINFRA/i.test(String(it.baseFonte || it.origem || "")); }); }));
+      if ((!String(tabs.seinfra == null ? "" : tabs.seinfra).trim() && !temItemSeinfra) || typeof AnaliticoBases === "undefined") { cb(null); return; }
       AnaliticoBases.carregar("SEINFRA").then(function (ent) { cb(LicitacaoDocs.baseDe(ent && ent.pacote)); }, function () { cb(null); });
     },
 

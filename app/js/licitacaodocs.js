@@ -768,7 +768,70 @@
       return null;
     }
 
-    var descTrocadas = 0, descSemBase = [];
+    /* ===== COMPOSIÇÃO DA BASE PARA O ITEM QUE NÃO A TROUXE (27/11/2026, Morada Nova, SEINFRA 028.1) =====
+       Item sem composição no pacote saía "Sem detalhamento na base de referência" nas CPUs, com o custo em "outros" no resumo,
+       embora o botão "Analítico do item" abrisse a composição completa da MESMA base. Agora o item abre pela base, com as travas
+       da revisão de 27/11/2026 (cada uma é um jeito de imprimir outra composição com cara de certa):
+       - SEINFRA: só pela base do documento (baseOk) e só com a tabela do projeto declarada (tab.seinfra, competência conferida);
+         as outras bases: pelo resolvedor do app (opcoes.composicaoDe), que tem de dizer UF, competência e regime.
+       - UF da base = UF do orçamento, e regime da base = regime do projeto (tab.desonerado; sem ele, orc.desonerado). Algum
+         lado desconhecido: não abre.
+       - Item "só mão de obra"/"material e equipamento" e administração local: não abre (fica a repartição de sempre).
+       - A CPU IMPRESSA FECHA COM O CUSTO DO ITEM. Com desconto (custo do item ≠ o do órgão e a base explica o do órgão), os
+         insumos recebem o mesmo fator de Licitacao._escalarInsumos (custo unitário x k, 4 casas). Se ainda assim a soma difere
+         do custo do item em mais de R$ 0,01 (outra competência, preço à mão), NÃO imprime: "Sem detalhamento" + pendência.
+       - Unidade diferente da do item ou soma zero: não abre. */
+    var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : null);
+    var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0;
+    function regimeOk(r) { return regimeProj !== null && (r === true || r === false) && r === regimeProj; }
+    function ufOk(u) { var x = s(u).toUpperCase(); return !!(x && ufOrcamento && x === ufOrcamento); }
+    function composicaoDaBase(it, Ln, fonteRaw, ehSeinfra, orgCusto) {
+      var cod = s(Ln.codigo || it.codigo);
+      if (!cod || cod === "—") return null;
+      if (it.modoCusto === "mo" || it.modoCusto === "matEq") return null;
+      if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao))) return null;
+      var c = null, rot = "", mes = "";
+      if (ehSeinfra) {
+        if (!baseOk || !s(tab.seinfra)) return null;
+        if (!regimeOk(baseOk.desonerado) || !ufOk(baseOk.uf)) { daBaseRegime++; return null; }
+        var rg = baseOk.obter(cod);
+        if (rg && Array.isArray(rg.insumos) && rg.insumos.length) { c = rg; rot = s(baseOk.tabela) || "SEINFRA"; mes = s(baseOk.mes); }
+      } else if (typeof opcoes.composicaoDe === "function") {
+        try {
+          var r = opcoes.composicaoDe(it);
+          if (r && Array.isArray(r.insumos) && r.insumos.length) {
+            /* o resolvedor tem de dizer de onde veio: UF, competência e regime, os três conferidos */
+            if (!ufOk(r.uf) || !s(r.mes) || !regimeOk(r.desonerado)) { daBaseRegime++; return null; }
+            if (/SINAPI/i.test(s(r.fonte)) && compOrgao && compAAAAMM(r.mes) !== compOrgao) { daBaseRegime++; return null; }
+            c = r; rot = s(r.fonte) || fonteRaw.toUpperCase(); mes = s(r.mes);
+          }
+        } catch (eCd) { c = null; }
+      }
+      if (!c) return null;
+      var Ut4 = U(), unI = s(Ln.unidade || it.unidade), unB = s(c.unidade);
+      if (unI && unB && Ut4 && Ut4.unidadeChave && Ut4.unidadeChave(unI) !== Ut4.unidadeChave(unB)) { daBaseUn.push(cod + " (" + unI + " x " + unB + ")"); return null; }
+      var ins = c.insumos.map(function (x) {
+        var o = {}, k; for (k in x) if (Object.prototype.hasOwnProperty.call(x, k)) o[k] = x[k];
+        if (!s(o.fonte)) o.fonte = rot;
+        delete o.custoTotalOrgao;   // total impresso pelo órgão não existe aqui: a linha é coeficiente x unitário da base
+        return o;
+      });
+      function soma() { var t = 0; ins.forEach(function (x) { t += nm(x.coeficiente) * nm(x.custoUnitario); }); return t; }
+      var cu = nm(Ln.custoUnitario), sm = soma();
+      if (!(sm > 0)) return null;
+      if (Math.abs(sm - cu) > 0.01) {
+        /* desconto: a base explica o custo do ÓRGÃO e o item tem outro custo → o fator de _escalarInsumos */
+        if (orgCusto !== null && orgCusto > 0 && Math.abs(sm - orgCusto) <= 0.01 && Math.abs(cu - orgCusto) > 0.011) {
+          var kf = cu / orgCusto;
+          ins.forEach(function (x) { x.custoUnitario = Math.round(nm(x.custoUnitario) * kf * 1e4) / 1e4; if (x.custoTotal != null) x.custoTotal = Math.round(nm(x.coeficiente) * nm(x.custoUnitario) * 1e4) / 1e4; });
+          sm = soma(); daBaseEsc++;
+        }
+        if (Math.abs(sm - cu) > 0.01) { daBaseNao.push(s(Ln.numero) + " (" + cod + ": base " + R(sm) + " x item " + R(cu) + ")"); return null; }
+      }
+      return { rotulo: rot, mes: mes, insumos: ins };
+    }
+
+    var descTrocadas = 0, descSemBase = [], descInsOficial = [];
     function soLetras(x) { return semAcento(s(x)).toUpperCase().replace(/[^A-Z0-9]/g, ""); }
     function lidaEstragada(t, oficial) {
       if (/R\$\s*\d/.test(t)) return true;                                   /* preço grudado na descrição */
@@ -778,7 +841,7 @@
       if (b.length >= 10 && a.indexOf(b) === 0) return true;                    /* oficial + lixo no fim */
       return false;
     }
-    function descPelaBase(cod, lida, ehInsumo) {
+    function descPelaBase(cod, lida, ehInsumo, unLida) {
       var t = s(lida);
       if (!baseOk || !cod) return t;
       var reg = ehInsumo ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(cod));
@@ -789,6 +852,11 @@
          "SERVENTE R$54,D9" (valor grudado), "CAMINHAOTANOUEBOCOICHP" (palavras coladas), "LONA C APLICAÇÃO DE ILHOS ESE ... IMPRESSA C" (cortado). */
       if (t && lidaEstragada(t, reg.descricao)) { descTrocadas++; return s(reg.descricao); }
       if (p < LIM_PARECIDO && !t) return s(reg.descricao);
+      /* 27/11/2026: INSUMO da composição com o código na base é o insumo da base — o nome lido pelo OCR ("CARPINTEIRO RS1932860",
+         "PEDREIRO ?") dá lugar ao oficial; o preço e o coeficiente continuam os do órgão. A troca fica nas pendências internas.
+         Só com a UNIDADE lida igual à da base (revisão de 27/11/2026): unidade diferente pode ser outro insumo com o código trocado. */
+      var Ut5 = U(), ukL = Ut5 && Ut5.unidadeChave ? Ut5.unidadeChave(s(unLida)) : s(unLida).toLowerCase(), ukB = Ut5 && Ut5.unidadeChave ? Ut5.unidadeChave(s(reg.unidade)) : s(reg.unidade).toLowerCase();
+      if (ehInsumo && s(unLida) && ukL === ukB) { descTrocadas++; descInsOficial.push(cod + " (\"" + t + "\" → \"" + s(reg.descricao) + "\")"); return s(reg.descricao); }
       descSemBase.push(cod + " (\"" + t + "\" x \"" + s(reg.descricao) + "\")");
       return t;
     }
@@ -812,9 +880,16 @@
       var custoIgualOrgao = orgCusto === null || Math.abs(nm(Ln.custoUnitario) - orgCusto) <= 0.011;
       var propriaOrgao = !!(it.composicaoOrgao && it.composicaoOrgao.propria);
       var propria = propriaOrgao || /PROPRI/i.test(fonteRaw);
-      var ins = (Array.isArray(it.insumos) ? it.insumos : []).map(function (x) {
+      var insRaw = Array.isArray(it.insumos) ? it.insumos : [], daBase = null;
+      if (!insRaw.length && !(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao")) {
+        daBase = composicaoDaBase(it, Ln, fonteRaw, ehSeinfra, orgCusto);
+        if (daBase) { insRaw = daBase.insumos; daBaseN++; }
+      }
+      var ins = insRaw.map(function (x) {
         var cod = s(x.codigo), cat = catDe(x), eh = String(x.tipo || "").toUpperCase() !== "COMPOSICAO";
-        var d = (/SEINFRA/i.test(s(x.fonte)) || ehSeinfra) ? descPelaBase(cod, x.descricao, eh) : s(x.descricao);
+        /* insumo sem fonte com código no formato SEINFRA (I0498, C0171) também é conferido na base SEINFRA do projeto */
+        var pelaBase = /SEINFRA/i.test(s(x.fonte)) || ehSeinfra || (!s(x.fonte) && /^[IC]\d{4}$/i.test(cod) && !!baseOk && !!(baseOk.insumo(cod) || baseOk.obter(cod)));
+        var d = pelaBase ? descPelaBase(cod, x.descricao, eh, x.unidade) : s(x.descricao);
         var un = s(x.unidade);
         if (!un && baseOk) { var rg = eh ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(cod)); if (rg && parecido(d, rg.descricao) >= LIM_PARECIDO) un = s(rg.unidade); }
         var co = nm(x.coeficiente), cu = nm(x.custoUnitario);
@@ -874,7 +949,8 @@
         descricaoLida: s(Ln.descricao),
         unidade: s(Ln.unidade), fonte: propriaOrgao ? "PRÓPRIO" : (propria ? "PRÓPRIA" : fonteRaw.toUpperCase()),
         quantidade: Ln.quantidade, cu: Ln.custoUnitario, pu: Ln.precoUnit, ct: Ln.custoTotal, pt: Ln.precoTotal,
-        insumos: ins, adm: adm, formatoAdm: !!(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao"), cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null
+        insumos: ins, adm: adm, formatoAdm: !!(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao"), cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null,
+        daBase: daBase ? (daBase.rotulo + (daBase.mes ? " " + daBase.mes : "")) : ""
       };
       try { var rf = Lic.refDoItem ? Lic.refDoItem(orc, it) : null; if (rf && rf.comBdi > 0) linhaI.refMax = rf.comBdi; } catch (eRf) {}
       itens.push(linhaI);
@@ -888,6 +964,11 @@
       tot.semBdi += Ln.custoTotal; tot.comBdi += Ln.precoTotal;
     });
     if (colidiu.length) pend.dados.push("Item(ns) acrescentado(s) por você com número igual ao do órgão (" + colidiu.slice(0, 8).join(", ") + (colidiu.length > 8 ? " e mais" : "") + "): saem com o número A.<nº> para não se confundir com a planilha do órgão.");
+    if (daBaseN) pend.dados.push(daBaseN + " item(ns) sem composição no pacote saíram com a composição da base de referência pelo código (a mesma do \"Analítico do item\"); o preço é o da proposta.");
+    if (daBaseEsc) pend.dados.push(daBaseEsc + " composição(ões) da base reescalada(s) pelo fator do desconto do item (o mesmo dos itens com composição do órgão).");
+    if (daBaseNao.length) pend.dados.push(daBaseNao.length + " item(ns) com composição na base que NÃO fecha com o custo do item (diferença acima de R$ 0,01, mesmo com o fator do desconto): saem sem detalhamento. " + daBaseNao.slice(0, 8).join("; ") + (daBaseNao.length > 8 ? " e mais " + (daBaseNao.length - 8) : "") + ". Conferir.");
+    if (daBaseRegime) pend.dados.push(daBaseRegime + " item(ns) sem composição no pacote NÃO foram abertos pela base: UF, competência ou regime da base diferente do projeto (ou não informado).");
+    if (daBaseUn.length) pend.dados.push("Composição da base NÃO usada por unidade diferente da do item: " + daBaseUn.slice(0, 6).join("; ") + (daBaseUn.length > 6 ? " e mais " + (daBaseUn.length - 6) : "") + ".");
     if (porProporcao) pend.dados.push(porProporcao + " item(ns) com material, mão de obra e equipamento repartidos pela proporção da base " + fonteProporcao + " do mesmo código; o preço é o da proposta.");
     if (auxPropDif) pend.dados.push(auxPropDif + " composição(ões) auxiliar(es) repartida(s) em material, mão de obra e equipamento pela proporção da " + s(compDif.base) + "; o projeto usa a " + s(compDif.orgao) + ". A proporção pode diferir: conferir.");
     if (compDif.n) pend.dados.push(compDif.n + " item(ns) sem composição no pacote repartidos pela proporção da SINAPI " + compDif.base + "; o órgão usa " + compDif.orgao + ". A proporção pode diferir da do órgão: conferir.");
@@ -956,6 +1037,7 @@
     var somaCats = arr(tot.cat.MO + tot.cat.MAT + tot.cat.EQ + tot.cat.OUTROS, 2);
     var difCats = arr(tot.semBdi - somaCats, 2);
 
+    if (descInsOficial.length) pend.dados.push(descInsOficial.length + " insumo(s) com o nome lido do órgão trocado pelo nome oficial da base pelo código (preço e coeficiente do órgão mantidos): " + descInsOficial.slice(0, 6).join("; ") + (descInsOficial.length > 6 ? " e mais " + (descInsOficial.length - 6) : "") + ".");
     if (descSemBase.length) pend.dados.push("Descrição lida difere da base e foi mantida como lida: " + descSemBase.slice(0, 6).join("; ") + (descSemBase.length > 6 ? " e mais " + (descSemBase.length - 6) : "") + ".");
 
     /* ---- cabeçalho ---- */
@@ -1216,6 +1298,9 @@
     else {
       bdi.avisos.forEach(function (a) { pend.dados.push("BDI: " + a + "."); });
       if (bdi.incoerente) pend.dados.push("BDI: " + bdi.msgIncoerente);
+      /* quadro no formato do órgão: as parcelas impressas, pela fórmula, têm de dar o BDI da proposta (0,01 p.p.) */
+      var qdB = quadroBdi(bdi);
+      if (qdB && qdB.calculado != null && Math.abs(qdB.calculado - bdiPct) > 0.01) pend.dados.push("BDI: as parcelas do quadro dão " + fmt(qdB.calculado, 2) + "% pela fórmula e a proposta usa " + fmt(bdiPct, 2) + "%. Conferir.");
     }
     /* ENCARGOS: a tabela lida do órgão tem preferência. Se o órgão publicou só os totais (lic.encargosTotais),
        tenta a tabela da base (EncargosTab) cujos totais batem; sem ela, PENDÊNCIA. Nada é estimado. */
@@ -1763,7 +1848,7 @@
       var usaOrg = usaTotalOrgao(d, I), somaI = 0; I.insumos.forEach(function (x) { somaI += usaOrg ? x.ctOrg : x.ct; });
       /* sem o total do órgão no pacote (pacote antigo), coeficiente x unitário passa do valor por até R$ 0,01 por linha (o órgão trunca): isso não é divergência dele */
       var limNota = usaOrg ? 0.005 : 0.01 * I.insumos.length + 0.005;
-      var notaI = (!d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
+      var notaI = (!I.daBase && !d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
       var titI = I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")";
       if (I.adm) { h += blocoAdministracao(titI, I, d.bdiPct, I.unidade, I.numero + ". " + I.codigo); return; }
       h += blocoComposicao(titI, I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade, notaI, usaOrg, I.numero + ". " + I.codigo);
@@ -1900,6 +1985,72 @@
     return '<section class="ld-sec" data-tipo="corpo" data-titulo="Cronograma">' + h + '</section>';
   }
 
+  /* ===== QUADRO DO BDI NO FORMATO DO ÓRGÃO (27/11/2026, modelo SEINFRA/Morada Nova) =====
+     Os grupos vinham pela POSIÇÃO das linhas "TOTAL" da leitura, e o PDF do órgão traz S+G e Lucro antes de AC/DF/R: saía
+     "Despesas Indiretas" com S+G e Lucro. Agora o grupo vem da SIGLA: Despesas Indiretas = AC, DF, R; Benefício = S+G (ou S e G), L;
+     I Impostos = PIS, COFINS, ISS, CPRB, com o total. Sem total por grupo (só o dos impostos). Sigla fora desse conjunto → null
+     (o quadro antigo, pela leitura). Puro. */
+  var BDI_GRUPOS = [
+    { nome: "Despesas Indiretas", siglas: ["AC", "DF", "R"] },
+    { nome: "Benefício", siglas: ["S+G", "SG", "S", "G", "L"] },
+    { nome: "Impostos", siglas: ["PIS", "COFINS", "ISS", "CPRB"], impostos: true }
+  ];
+  function quadroBdi(bdi) {
+    if (!bdi || !Array.isArray(bdi.grupos)) return null;
+    var por = {}, ordem = [], desconhecida = false;
+    bdi.grupos.forEach(function (g) { (g.itens || []).forEach(function (i) {
+      var k = String(i.sigla || "").toUpperCase().replace(/\s+/g, "");
+      if (k === "SG") k = "S+G";
+      var ok = BDI_GRUPOS.some(function (G) { return G.siglas.indexOf(k) >= 0; });
+      if (!ok) { desconhecida = true; return; }
+      if (!por[k]) { por[k] = { sigla: k, descricao: BDI_NOMES[k === "S+G" ? "SG" : k] || s(i.descricao), pct: 0 }; ordem.push(k); }
+      por[k].pct += nm(i.pct);
+    }); });
+    if (desconhecida || !ordem.length) return null;
+    var grupos = BDI_GRUPOS.map(function (G) {
+      var itens = G.siglas.filter(function (k) { return por[k]; }).map(function (k) { return por[k]; });
+      var sm = 0; itens.forEach(function (i) { sm += i.pct; });
+      return { nome: G.nome, impostos: !!G.impostos, itens: itens, total: arr(sm, 4) };
+    });
+    var f = function (k) { return (por[k] ? por[k].pct : 0) / 100; };
+    var I = f("PIS") + f("COFINS") + f("ISS") + f("CPRB");
+    var calc = I < 1 ? ((1 + f("AC") + f("S+G") + f("S") + f("G") + f("R")) * (1 + f("DF")) * (1 + f("L")) / (1 - I) - 1) * 100 : null;
+    return { grupos: grupos, impostos: arr(I * 100, 4), calculado: calc };
+  }
+  /* A fórmula lida do edital é a PADRÃO (acórdão TCU 2622/2013: (1+AC+S+R+G)(1+DF)(1+L)/(1−I) − 1) em outra grafia?
+     Normaliza (sem espaço, colchete, sinal de vezes, comentário entre parênteses, ordem das parcelas) e compara os fatores.
+     Padrão → sai a fração do quadro; diferente → o texto do edital como ele escreveu. Puro. */
+  function formulaBdiPadrao(f) {
+    var t = semAcento(s(f)).replace(/\([^()]*[a-z]{3,}[^()]*\)/g, "").replace(/\)\s*x\s*\(/g, ")(").toUpperCase().replace(/[−–—]/g, "-");
+    t = t.replace(/^\s*BDI\s*=?/, "").replace(/[^A-Z0-9+\-\/]/g, "");
+    var m = /^(.+)\/1-I-1$/.exec(t);
+    if (!m) return false;
+    var fatores = m[1].split("1+").filter(function (x) { return x; }).map(function (x) {
+      return x.split("+").map(function (p) { return p === "SG" ? "S+G" : p; }).join("+").split("+").sort().join("+");
+    }).sort();
+    return fatores.join("|") === ["AC+G+R+S", "DF", "L"].sort().join("|");
+  }
+  function htmlQuadroBdi(qd, bdiPct, formulaEdital) {
+    var t = '<table class="ld-t ld-bdi" style="width:130mm;margin:0 auto"><colgroup><col style="width:18mm"><col style="width:84mm"><col style="width:28mm"></colgroup><thead><tr><th>COD</th><th>DESCRIÇÃO</th><th>%</th></tr></thead><tbody>';
+    qd.grupos.forEach(function (g) {
+      if (!g.itens.length) return;
+      if (g.impostos) t += '<tr class="et"><td>I</td><td>Impostos</td>' + tdN(P(qd.impostos)) + '</tr>';
+      else t += '<tr class="et"><td colspan="3">' + esc(g.nome) + '</td></tr>';
+      g.itens.forEach(function (i) { t += '<tr>' + td(esc(i.sigla)) + td(esc(i.descricao)) + tdN(P(i.pct)) + '</tr>'; });
+      if (g.impostos) t += '<tr class="gr"><td></td><td>TOTAL DOS IMPOSTOS</td>' + tdN(P(qd.impostos)) + '</tr>';
+    });
+    t += '<tr class="tt"><td colspan="2">BDI =</td>' + tdN(P(bdiPct)) + '</tr></tbody></table>';
+    /* fórmula em FRAÇÃO: tabela de 2 linhas (numerador com traço embaixo) — o conversor do Word (js/docx.js) leva a tabela igual */
+    var bd = 'border:0;padding:.6mm 1.5mm;text-align:center;font-size:8.5pt;white-space:nowrap';
+    /* a fórmula do EDITAL, quando a leitura a trouxe, sai como ele escreveu (regra de sempre) */
+    if (s(formulaEdital) && !formulaBdiPadrao(formulaEdital)) return t +'<p class="ld-ext" style="font-style:normal">' + esc(formulaEdital) + '</p>';
+    /* sem rowspan (o Word do js/docx.js não junta linhas): "BDI =" e "− 1" na 1ª linha, encostados no traço */
+    t += '<table class="ld-fr" style="width:100mm;margin:3mm auto 0;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:14mm"><col style="width:74mm"><col style="width:12mm"></colgroup><tbody>' +
+      '<tr><td style="' + bd + ';vertical-align:bottom;text-align:right">BDI =</td><td style="' + bd + ';border-bottom:.8pt solid #000">(1 + AC + S + R + G) × (1 + DF) × (1 + L)</td><td style="' + bd + ';vertical-align:bottom;text-align:left">− 1</td></tr>' +
+      '<tr><td style="' + bd + '"></td><td style="' + bd + '">(1 − I)</td><td style="' + bd + '"></td></tr></tbody></table>';
+    return t;
+  }
+
   function secBdi(d) {
     var h = '<div class="ld-tit">Composição do BDI</div>';
     if (!d.bdi.ok) {
@@ -1912,6 +2063,8 @@
       h += '<div class="ld-pend">PENDÊNCIA: ' + esc(d.bdi.msgIncoerente) + ' BDI usado na proposta: ' + esc(P(d.bdiPct)) + '.</div>';
       return '<section class="ld-sec" data-tipo="corpo" data-titulo="BDI">' + h + '</section>';
     }
+    var qd = quadroBdi(d.bdi);
+    if (qd) return '<section class="ld-sec" data-tipo="corpo" data-titulo="BDI">' + h + htmlQuadroBdi(qd, d.bdiPct, d.bdi.formula) + '</section>';
     var t = '<table class="ld-t" style="width:120mm;margin:0 auto"><colgroup><col style="width:22mm"><col style="width:74mm"><col style="width:24mm"></colgroup><thead><tr><th>COD</th><th>DESCRIÇÃO</th><th>%</th></tr></thead><tbody>';
     d.bdi.grupos.forEach(function (g) {
       t += '<tr class="et"><td colspan="3">' + esc(g.nome) + '</td></tr>';
@@ -2378,7 +2531,7 @@
   var LicitacaoDocs = {
     montar: montar, html: html, gerar: gerar, pendencias: pendencias, paginar: paginar, documento: documento,
     elaborarCronograma: elaborarCronograma, empresaDoCertame: empresaDoCertame, temLicitante: temLicitante, conferirEdital: conferirEdital,
-    baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, conferirValores: conferirValores,
+    baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, quadroBdi: quadroBdi, formulaBdiPadrao: formulaBdiPadrao, conferirValores: conferirValores,
     css: CSS,
     secoesPacote: secoesPacote, secoesPadraoPacote: secoesPadraoPacote, chaveLicitante: chaveLicitante, secoesDoPacote: secoesDoPacote, secoesExigidas: secoesExigidas, temEscolhaPacote: temEscolhaPacote,
     gravarSecoesPacote: gravarSecoesPacote, secoesParaGerar: secoesParaGerar, avisosDeSecoes: avisosDeSecoes,

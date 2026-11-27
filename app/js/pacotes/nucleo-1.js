@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.449",
+versao: "1.2.450",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -18230,11 +18230,12 @@ return /^(serif|sans-serif|monospace|system-ui)$/i.test(f) ? "" : f;
 }
 var TW_A4 = { w: 11906, h: 16838, mt: 1021, mb: 1021, ml: 907, mr: 907 };
 var TW_VERT = { w: 6803, h: 12076, mt: 794, mb: 794, ml: 680, mr: 680 };
+var TW_A4P = { w: 16838, h: 11906, mt: 851, mb: 851, ml: 851, mr: 851, deitado: true };
 var EMU_TW = 635;
 function Gerador(op) {
 op = op || {};
 this.op = op;
-this.pg = (op.formato === "vertical") ? TW_VERT : TW_A4;
+this.pg = (op.formato === "vertical") ? TW_VERT : (op.formato === "a4-paisagem" ? TW_A4P : TW_A4);
 this.largura = this.pg.w - this.pg.ml - this.pg.mr;
 this.cores = {
 titulo: hex6(op.corTitulo) || "0F2740", texto: hex6(op.corTexto) || "1A2632",
@@ -18550,9 +18551,17 @@ var k0 = 0;
 var nNum = numerica.filter(Boolean).length, nTx = nCols - nNum;
 var largNum = Math.round(this.largura * (nNum >= 4 ? 0.1 : 0.2)), largTx = nTx ? Math.floor((this.largura - largNum * nNum) / nTx) : 0;
 var larguras = numerica.map(function (b) { return b ? largNum : largTx; });
+var largTab = this.largura, colsMm = [];
+(no.filhos || []).forEach(function (cg) { if (cg.tag === "colgroup") (cg.filhos || []).forEach(function (cc) { if (cc.tag === "col") { var mm = /([\d.]+)\s*mm/.exec(estiloDe(cc, "width")); colsMm.push(mm ? +mm[1] : 0); } }); });
+if (colsMm.length === nCols && colsMm.every(function (x) { return x > 0; })) {
+var somaMm = colsMm.reduce(function (a, x) { return a + x; }, 0), wMm = /([\d.]+)\s*mm/.exec(estiloDe(no, "width"));
+if (wMm) largTab = Math.min(largTab, Math.round(+wMm[1] * 56.7));
+larguras = colsMm.map(function (x) { return Math.floor(largTab * x / somaMm); });
+largTab = larguras.reduce(function (a, x) { return a + x; }, 0);
+}
 var corB = ctx.corTitulo || this.cores.titulo;
-var semBorda = temClasse(no, "tp-cols");
-var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+var semBorda = temClasse(no, "tp-cols") || temClasse(no, "ld-fr");
+var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + largTab + '" w:type="dxa"/>' + (largTab < this.largura ? '<w:jc w:val="center"/>' : "") + '<w:tblLayout w:type="fixed"/>'
 + (semBorda ? "" : '<w:tblBorders><w:top w:val="single" w:sz="4" w:color="' + corB + '"/><w:left w:val="single" w:sz="4" w:color="' + corB + '"/><w:bottom w:val="single" w:sz="4" w:color="' + corB + '"/><w:right w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideH w:val="single" w:sz="4" w:color="' + corB + '"/><w:insideV w:val="single" w:sz="4" w:color="' + corB + '"/></w:tblBorders>')
 + '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
 larguras.forEach(function (w) { xml += '<w:gridCol w:w="' + w + '"/>'; });
@@ -18569,7 +18578,7 @@ for (var q = 0; q < sp; q++) w += larguras[col + q] || 0;
 var th = c.tag === "th";
 var fill = th ? corB : (grupo ? "E5E7EB" : (rodape ? "EEF4FA" : ""));
 var f = herda(ctx.f, { tamanho: tamanho, negrito: th || grupo || rodape, cor: th ? "FFFFFF" : ctx.f.cor, caixaAlta: grupo });
-var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") ? "center" : "left");
+var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || temClasse(c, "n") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") || temClasse(c, "c") || /center/i.test(estiloDe(c, "text-align")) ? "center" : "left");
 if (col === 0 && l.tr.attrs && l.tr.attrs.id) self.marcas.pendentes.push(l.tr.attrs.id);
 if (c.attrs && c.attrs.id) self.marcas.pendentes.push(c.attrs.id);
 var saida = { runs: "", imagens: [] };
@@ -18586,7 +18595,8 @@ saida.runs = (saida.runs || !imgsCel ? paragrafo({ alinha: alinha, depois: 0 }, 
 if (!saida.runs) saida.runs = paragrafo({ depois: 0 }, "");
 }
 xml += '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/>' + (sp > 1 ? '<w:gridSpan w:val="' + sp + '"/>' : "")
-+ (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"center\"/></w:tcPr>" + saida.runs + "</w:tc>";
++ (/solid/i.test(estiloDe(c, "border-bottom")) ? '<w:tcBorders><w:bottom w:val="single" w:sz="8" w:color="000000"/></w:tcBorders>' : "")
++ (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"" + (/bottom/i.test(estiloDe(c, "vertical-align")) ? "bottom" : "center") + "\"/></w:tcPr>" + saida.runs + "</w:tc>";
 col += sp;
 });
 while (col < nCols) { xml += '<w:tc><w:tcPr><w:tcW w:w="' + (larguras[col] || 0) + '" w:type="dxa"/></w:tcPr>' + paragrafo({ depois: 0 }, "") + "</w:tc>"; col++; }
@@ -18694,7 +18704,7 @@ g.documento(Docx.arvore(html));
 if (g.marcas.pendentes.length) g.corpo.push(paragrafo({ depois: 0 }, g.tomarMarcas()));
 var corpo = g.corpo.join("");
 if (!corpo) corpo = paragrafo({}, run("(documento vazio)", g.fontes.texto ? { fonte: g.fontes.texto } : {}));
-var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';
+var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"' + (g.pg.deitado ? ' w:orient="landscape"' : "") + '/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';
 var documento = XMLH + "<w:document " + NS_W + "><w:body>" + corpo + sectPr + "</w:body></w:document>";
 var partes = [
 { nome: "[Content_Types].xml", dados: contentTypes(g) },
@@ -20878,7 +20888,13 @@ if (Array.isArray(it.insumos) && it.insumos.length) lista = it.insumos;
 else if (cod && cod !== "—") {
 try {
 var fonte = it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : "PROPRIO");
+var fEst = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "" : (it.origem || ""))).toUpperCase().trim();
 if (fonte === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) base = Bases.obter("PROPRIA", cod);
+else if (fEst && fEst !== "PROPRIA" && fEst !== "PROPRIO" && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fEst)) {
+var metaE = AnaliticoBases.meta(fEst);
+var instE = AnaliticoBases.baseInstalada(fEst);
+if (metaE && instE && !AnaliticoBases.regimeDiverge(metaE, instE) && AnaliticoBases.conferirCompetencia(metaE, instE).mesmo) base = AnaliticoBases.obter(fEst, cod);
+}
 else if (Orcamento.ehSinapi(fonte) && typeof Analitico !== "undefined" && Analitico.carregado && Analitico.obter) {
 var regOk = !(typeof it.desonerado === "boolean" && Analitico.desonerado !== null && Analitico.desonerado !== undefined && Analitico.desonerado !== it.desonerado);
 if (regOk) base = Analitico.obter(cod);
@@ -20909,12 +20925,33 @@ custoMO: soma.MO, custoMAT: soma.MAT, custoEQ: soma.EQ, insumos: ins };
 },
 renderAnaliticoItem: function (it) {
 var a = UI._analiticoDoItem(it);
-if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+if (!a) {
+var fE = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "" : (it.origem || ""))).toUpperCase().trim();
+if (fE && it.codigo && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fE) && !AnaliticoBases.semPublicacao(fE) && !AnaliticoBases.meta(fE) && AnaliticoBases.baseInstalada(fE)) {
+var stE = (UI._anaEmbSt = UI._anaEmbSt || {})[fE];
+if (!stE || (stE.falhou && Date.now() - stE.quando > 60000)) {
+UI._anaEmbSt[fE] = { quando: Date.now() };
+AnaliticoBases.carregar(fE).then(function () {
+delete UI._anaEmbSt[fE];
+try { if (typeof App !== "undefined" && App.render) App.render(); } catch (eR) {}
+}, function () { UI._anaEmbSt[fE] = { falhou: true, quando: Date.now() }; });
+}
+if (!UI._anaEmbSt[fE] || !UI._anaEmbSt[fE].falhou) return '<p class="muted" style="margin:6px 4px;font-size:12px">Abrindo a composição na base ' + Util.esc(fE) + '…</p>';
+}
+if (fE && it.codigo && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fE) && AnaliticoBases.meta(fE)) {
+return '<p class="muted" style="margin:6px 4px;font-size:12px">O código ' + Util.esc(String(it.codigo)) + ' não tem composição detalhada na base ' + Util.esc(fE) + ' (ou ela é de outro regime). O preço do item é o da planilha.</p>';
+}
+return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+}
 var orcUf = (typeof App !== "undefined" && App.orcAtual && App.orcAtual.uf) ? String(App.orcAtual.uf).toUpperCase() : null;
 var fonteIt = String(it.baseFonte || it.origem || "").toUpperCase();
 if (Array.isArray(it.insumos) && it.insumos.length && fonteIt && !/SINAPI/.test(fonteIt)) {
 return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
 rotulo: fonteIt + " (composição publicada pelo órgão)", avisos: [] }) + '</div>';
+}
+if (fonteIt && !/SINAPI|PROPRI/.test(fonteIt) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonteIt)) {
+return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
+rotulo: fonteIt + " (tabela de referência, pelo código)", avisos: [] }) + '</div>';
 }
 var ufAtivo = orcUf || (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
 return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
@@ -74029,7 +74066,54 @@ return { mo: mo / soma2, mat: mat / soma2, eq: eq / soma2, compDif: difC };
 if (recusou) semUfBase.push(cod);
 return null;
 }
-var descTrocadas = 0, descSemBase = [];
+var regimeProj = (tab.desonerado === true || tab.desonerado === false) ? tab.desonerado : ((orc.desonerado === true || orc.desonerado === false) ? orc.desonerado : null);
+var daBaseN = 0, daBaseNao = [], daBaseRegime = 0, daBaseUn = [], daBaseEsc = 0;
+function regimeOk(r) { return regimeProj !== null && (r === true || r === false) && r === regimeProj; }
+function ufOk(u) { var x = s(u).toUpperCase(); return !!(x && ufOrcamento && x === ufOrcamento); }
+function composicaoDaBase(it, Ln, fonteRaw, ehSeinfra, orgCusto) {
+var cod = s(Ln.codigo || it.codigo);
+if (!cod || cod === "—") return null;
+if (it.modoCusto === "mo" || it.modoCusto === "matEq") return null;
+if (/ADMINISTRA[ÇC][ÃA]O\s+(LOCAL|DA\s+OBRA|DE\s+OBRA)/i.test(s(Ln.descricao))) return null;
+var c = null, rot = "", mes = "";
+if (ehSeinfra) {
+if (!baseOk || !s(tab.seinfra)) return null;
+if (!regimeOk(baseOk.desonerado) || !ufOk(baseOk.uf)) { daBaseRegime++; return null; }
+var rg = baseOk.obter(cod);
+if (rg && Array.isArray(rg.insumos) && rg.insumos.length) { c = rg; rot = s(baseOk.tabela) || "SEINFRA"; mes = s(baseOk.mes); }
+} else if (typeof opcoes.composicaoDe === "function") {
+try {
+var r = opcoes.composicaoDe(it);
+if (r && Array.isArray(r.insumos) && r.insumos.length) {
+if (!ufOk(r.uf) || !s(r.mes) || !regimeOk(r.desonerado)) { daBaseRegime++; return null; }
+if (/SINAPI/i.test(s(r.fonte)) && compOrgao && compAAAAMM(r.mes) !== compOrgao) { daBaseRegime++; return null; }
+c = r; rot = s(r.fonte) || fonteRaw.toUpperCase(); mes = s(r.mes);
+}
+} catch (eCd) { c = null; }
+}
+if (!c) return null;
+var Ut4 = U(), unI = s(Ln.unidade || it.unidade), unB = s(c.unidade);
+if (unI && unB && Ut4 && Ut4.unidadeChave && Ut4.unidadeChave(unI) !== Ut4.unidadeChave(unB)) { daBaseUn.push(cod + " (" + unI + " x " + unB + ")"); return null; }
+var ins = c.insumos.map(function (x) {
+var o = {}, k; for (k in x) if (Object.prototype.hasOwnProperty.call(x, k)) o[k] = x[k];
+if (!s(o.fonte)) o.fonte = rot;
+delete o.custoTotalOrgao;
+return o;
+});
+function soma() { var t = 0; ins.forEach(function (x) { t += nm(x.coeficiente) * nm(x.custoUnitario); }); return t; }
+var cu = nm(Ln.custoUnitario), sm = soma();
+if (!(sm > 0)) return null;
+if (Math.abs(sm - cu) > 0.01) {
+if (orgCusto !== null && orgCusto > 0 && Math.abs(sm - orgCusto) <= 0.01 && Math.abs(cu - orgCusto) > 0.011) {
+var kf = cu / orgCusto;
+ins.forEach(function (x) { x.custoUnitario = Math.round(nm(x.custoUnitario) * kf * 1e4) / 1e4; if (x.custoTotal != null) x.custoTotal = Math.round(nm(x.coeficiente) * nm(x.custoUnitario) * 1e4) / 1e4; });
+sm = soma(); daBaseEsc++;
+}
+if (Math.abs(sm - cu) > 0.01) { daBaseNao.push(s(Ln.numero) + " (" + cod + ": base " + R(sm) + " x item " + R(cu) + ")"); return null; }
+}
+return { rotulo: rot, mes: mes, insumos: ins };
+}
+var descTrocadas = 0, descSemBase = [], descInsOficial = [];
 function soLetras(x) { return semAcento(s(x)).toUpperCase().replace(/[^A-Z0-9]/g, ""); }
 function lidaEstragada(t, oficial) {
 if (/R\$\s*\d/.test(t)) return true;
@@ -74039,7 +74123,7 @@ if (a.length >= 10 && b.indexOf(a) === 0) return true;
 if (b.length >= 10 && a.indexOf(b) === 0) return true;
 return false;
 }
-function descPelaBase(cod, lida, ehInsumo) {
+function descPelaBase(cod, lida, ehInsumo, unLida) {
 var t = s(lida);
 if (!baseOk || !cod) return t;
 var reg = ehInsumo ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(cod));
@@ -74048,6 +74132,8 @@ var p = parecido(t, reg.descricao);
 if (p >= LIM_PARECIDO) { if (s(reg.descricao) !== t) descTrocadas++; return s(reg.descricao); }
 if (t && lidaEstragada(t, reg.descricao)) { descTrocadas++; return s(reg.descricao); }
 if (p < LIM_PARECIDO && !t) return s(reg.descricao);
+var Ut5 = U(), ukL = Ut5 && Ut5.unidadeChave ? Ut5.unidadeChave(s(unLida)) : s(unLida).toLowerCase(), ukB = Ut5 && Ut5.unidadeChave ? Ut5.unidadeChave(s(reg.unidade)) : s(reg.unidade).toLowerCase();
+if (ehInsumo && s(unLida) && ukL === ukB) { descTrocadas++; descInsOficial.push(cod + " (\"" + t + "\" → \"" + s(reg.descricao) + "\")"); return s(reg.descricao); }
 descSemBase.push(cod + " (\"" + t + "\" x \"" + s(reg.descricao) + "\")");
 return t;
 }
@@ -74066,9 +74152,15 @@ var orgCusto = (it.orgao && typeof it.orgao === "object" && it.orgao.custo != nu
 var custoIgualOrgao = orgCusto === null || Math.abs(nm(Ln.custoUnitario) - orgCusto) <= 0.011;
 var propriaOrgao = !!(it.composicaoOrgao && it.composicaoOrgao.propria);
 var propria = propriaOrgao || /PROPRI/i.test(fonteRaw);
-var ins = (Array.isArray(it.insumos) ? it.insumos : []).map(function (x) {
+var insRaw = Array.isArray(it.insumos) ? it.insumos : [], daBase = null;
+if (!insRaw.length && !(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao")) {
+daBase = composicaoDaBase(it, Ln, fonteRaw, ehSeinfra, orgCusto);
+if (daBase) { insRaw = daBase.insumos; daBaseN++; }
+}
+var ins = insRaw.map(function (x) {
 var cod = s(x.codigo), cat = catDe(x), eh = String(x.tipo || "").toUpperCase() !== "COMPOSICAO";
-var d = (/SEINFRA/i.test(s(x.fonte)) || ehSeinfra) ? descPelaBase(cod, x.descricao, eh) : s(x.descricao);
+var pelaBase = /SEINFRA/i.test(s(x.fonte)) || ehSeinfra || (!s(x.fonte) && /^[IC]\d{4}$/i.test(cod) && !!baseOk && !!(baseOk.insumo(cod) || baseOk.obter(cod)));
+var d = pelaBase ? descPelaBase(cod, x.descricao, eh, x.unidade) : s(x.descricao);
 var un = s(x.unidade);
 if (!un && baseOk) { var rg = eh ? baseOk.insumo(cod) : (baseOk.obter(cod) || baseOk.insumo(cod)); if (rg && parecido(d, rg.descricao) >= LIM_PARECIDO) un = s(rg.unidade); }
 var co = nm(x.coeficiente), cu = nm(x.custoUnitario);
@@ -74118,7 +74210,8 @@ descricao: ehSeinfra ? descPelaBase(Ln.codigo, Ln.descricao, false) : s(Ln.descr
 descricaoLida: s(Ln.descricao),
 unidade: s(Ln.unidade), fonte: propriaOrgao ? "PRÓPRIO" : (propria ? "PRÓPRIA" : fonteRaw.toUpperCase()),
 quantidade: Ln.quantidade, cu: Ln.custoUnitario, pu: Ln.precoUnit, ct: Ln.custoTotal, pt: Ln.precoTotal,
-insumos: ins, adm: adm, formatoAdm: !!(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao"), cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null
+insumos: ins, adm: adm, formatoAdm: !!(it.composicaoOrgao && it.composicaoOrgao.formato === "administracao"), cats: cats, propria: propria, propriaOrgao: propriaOrgao, doOrgao: !!it.composicaoOrgao, custoIgualOrgao: custoIgualOrgao, auxOutros: auxRaw, id: Ln.itemId, refMax: null,
+daBase: daBase ? (daBase.rotulo + (daBase.mes ? " " + daBase.mes : "")) : ""
 };
 try { var rf = Lic.refDoItem ? Lic.refDoItem(orc, it) : null; if (rf && rf.comBdi > 0) linhaI.refMax = rf.comBdi; } catch (eRf) {}
 itens.push(linhaI);
@@ -74132,6 +74225,11 @@ CATS.forEach(function (c) { E.cat[c] += cats[c]; });
 tot.semBdi += Ln.custoTotal; tot.comBdi += Ln.precoTotal;
 });
 if (colidiu.length) pend.dados.push("Item(ns) acrescentado(s) por você com número igual ao do órgão (" + colidiu.slice(0, 8).join(", ") + (colidiu.length > 8 ? " e mais" : "") + "): saem com o número A.<nº> para não se confundir com a planilha do órgão.");
+if (daBaseN) pend.dados.push(daBaseN + " item(ns) sem composição no pacote saíram com a composição da base de referência pelo código (a mesma do \"Analítico do item\"); o preço é o da proposta.");
+if (daBaseEsc) pend.dados.push(daBaseEsc + " composição(ões) da base reescalada(s) pelo fator do desconto do item (o mesmo dos itens com composição do órgão).");
+if (daBaseNao.length) pend.dados.push(daBaseNao.length + " item(ns) com composição na base que NÃO fecha com o custo do item (diferença acima de R$ 0,01, mesmo com o fator do desconto): saem sem detalhamento. " + daBaseNao.slice(0, 8).join("; ") + (daBaseNao.length > 8 ? " e mais " + (daBaseNao.length - 8) : "") + ". Conferir.");
+if (daBaseRegime) pend.dados.push(daBaseRegime + " item(ns) sem composição no pacote NÃO foram abertos pela base: UF, competência ou regime da base diferente do projeto (ou não informado).");
+if (daBaseUn.length) pend.dados.push("Composição da base NÃO usada por unidade diferente da do item: " + daBaseUn.slice(0, 6).join("; ") + (daBaseUn.length > 6 ? " e mais " + (daBaseUn.length - 6) : "") + ".");
 if (porProporcao) pend.dados.push(porProporcao + " item(ns) com material, mão de obra e equipamento repartidos pela proporção da base " + fonteProporcao + " do mesmo código; o preço é o da proposta.");
 if (auxPropDif) pend.dados.push(auxPropDif + " composição(ões) auxiliar(es) repartida(s) em material, mão de obra e equipamento pela proporção da " + s(compDif.base) + "; o projeto usa a " + s(compDif.orgao) + ". A proporção pode diferir: conferir.");
 if (compDif.n) pend.dados.push(compDif.n + " item(ns) sem composição no pacote repartidos pela proporção da SINAPI " + compDif.base + "; o órgão usa " + compDif.orgao + ". A proporção pode diferir da do órgão: conferir.");
@@ -74182,6 +74280,7 @@ CATS.forEach(function (c) { tot.cat[c] = arr(tot.cat[c] + E.cat[c], 2); });
 });
 var somaCats = arr(tot.cat.MO + tot.cat.MAT + tot.cat.EQ + tot.cat.OUTROS, 2);
 var difCats = arr(tot.semBdi - somaCats, 2);
+if (descInsOficial.length) pend.dados.push(descInsOficial.length + " insumo(s) com o nome lido do órgão trocado pelo nome oficial da base pelo código (preço e coeficiente do órgão mantidos): " + descInsOficial.slice(0, 6).join("; ") + (descInsOficial.length > 6 ? " e mais " + (descInsOficial.length - 6) : "") + ".");
 if (descSemBase.length) pend.dados.push("Descrição lida difere da base e foi mantida como lida: " + descSemBase.slice(0, 6).join("; ") + (descSemBase.length > 6 ? " e mais " + (descSemBase.length - 6) : "") + ".");
 var emp = empresaResolvida(empresa);
 var tipoLic = s(lic.tipo), proc = s(lic.processo) || s(lic.certame);
@@ -74401,6 +74500,8 @@ if (!bdi.ok) pend.dados.push("BDI: " + bdi.motivo + ".");
 else {
 bdi.avisos.forEach(function (a) { pend.dados.push("BDI: " + a + "."); });
 if (bdi.incoerente) pend.dados.push("BDI: " + bdi.msgIncoerente);
+var qdB = quadroBdi(bdi);
+if (qdB && qdB.calculado != null && Math.abs(qdB.calculado - bdiPct) > 0.01) pend.dados.push("BDI: as parcelas do quadro dão " + fmt(qdB.calculado, 2) + "% pela fórmula e a proposta usa " + fmt(bdiPct, 2) + "%. Conferir.");
 }
 var leituraEnc = leitura, encFalta = "", encOrigem = null;
 var temLinhasEnc = !!(leitura && leitura.encargos && Array.isArray(leitura.encargos.linhas) && leitura.encargos.linhas.length);
@@ -74864,7 +74965,7 @@ d.itens.forEach(function (I) {
 n++;
 var usaOrg = usaTotalOrgao(d, I), somaI = 0; I.insumos.forEach(function (x) { somaI += usaOrg ? x.ctOrg : x.ct; });
 var limNota = usaOrg ? 0.005 : 0.01 * I.insumos.length + 0.005;
-var notaI = (!d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
+var notaI = (!I.daBase && !d.desconto && I.doOrgao && I.custoIgualOrgao !== false && Math.abs(somaI - I.cu) >= limNota) ? "A soma das linhas (" + R(somaI) + ") difere do valor do item (" + R(I.cu) + ") já na planilha do órgão. Vale o valor da planilha." : "";
 var titI = I.numero + ". " + I.codigo + " " + I.descricao + " (" + I.unidade + ")";
 if (I.adm) { h += blocoAdministracao(titI, I, d.bdiPct, I.unidade, I.numero + ". " + I.codigo); return; }
 h += blocoComposicao(titI, I.insumos, I.cu, d.bdiPct, I.pu, I.unidade, I.quantidade, notaI, usaOrg, I.numero + ". " + I.codigo);
@@ -74989,6 +75090,60 @@ h += t + (ultimo ? "" : '<div style="height:4mm"></div>');
 h += '<p class="ld-nota">Em cada mês: percentual da etapa e valor em R$. ' + (c.elaborado ? 'Cronograma elaborado pela proponente. ' + esc(c.criterio) + ' ' : 'Percentuais mensais conforme o cronograma do órgão; ') + 'Valores calculados sobre o total de cada etapa' + (d.desconto ? ' já com o desconto da proposta' : '') + '. A diferença de centavos fica no último mês de cada etapa.</p>';
 return '<section class="ld-sec" data-tipo="corpo" data-titulo="Cronograma">' + h + '</section>';
 }
+var BDI_GRUPOS = [
+{ nome: "Despesas Indiretas", siglas: ["AC", "DF", "R"] },
+{ nome: "Benefício", siglas: ["S+G", "SG", "S", "G", "L"] },
+{ nome: "Impostos", siglas: ["PIS", "COFINS", "ISS", "CPRB"], impostos: true }
+];
+function quadroBdi(bdi) {
+if (!bdi || !Array.isArray(bdi.grupos)) return null;
+var por = {}, ordem = [], desconhecida = false;
+bdi.grupos.forEach(function (g) { (g.itens || []).forEach(function (i) {
+var k = String(i.sigla || "").toUpperCase().replace(/\s+/g, "");
+if (k === "SG") k = "S+G";
+var ok = BDI_GRUPOS.some(function (G) { return G.siglas.indexOf(k) >= 0; });
+if (!ok) { desconhecida = true; return; }
+if (!por[k]) { por[k] = { sigla: k, descricao: BDI_NOMES[k === "S+G" ? "SG" : k] || s(i.descricao), pct: 0 }; ordem.push(k); }
+por[k].pct += nm(i.pct);
+}); });
+if (desconhecida || !ordem.length) return null;
+var grupos = BDI_GRUPOS.map(function (G) {
+var itens = G.siglas.filter(function (k) { return por[k]; }).map(function (k) { return por[k]; });
+var sm = 0; itens.forEach(function (i) { sm += i.pct; });
+return { nome: G.nome, impostos: !!G.impostos, itens: itens, total: arr(sm, 4) };
+});
+var f = function (k) { return (por[k] ? por[k].pct : 0) / 100; };
+var I = f("PIS") + f("COFINS") + f("ISS") + f("CPRB");
+var calc = I < 1 ? ((1 + f("AC") + f("S+G") + f("S") + f("G") + f("R")) * (1 + f("DF")) * (1 + f("L")) / (1 - I) - 1) * 100 : null;
+return { grupos: grupos, impostos: arr(I * 100, 4), calculado: calc };
+}
+function formulaBdiPadrao(f) {
+var t = semAcento(s(f)).replace(/\([^()]*[a-z]{3,}[^()]*\)/g, "").replace(/\)\s*x\s*\(/g, ")(").toUpperCase().replace(/[−–—]/g, "-");
+t = t.replace(/^\s*BDI\s*=?/, "").replace(/[^A-Z0-9+\-\/]/g, "");
+var m = /^(.+)\/1-I-1$/.exec(t);
+if (!m) return false;
+var fatores = m[1].split("1+").filter(function (x) { return x; }).map(function (x) {
+return x.split("+").map(function (p) { return p === "SG" ? "S+G" : p; }).join("+").split("+").sort().join("+");
+}).sort();
+return fatores.join("|") === ["AC+G+R+S", "DF", "L"].sort().join("|");
+}
+function htmlQuadroBdi(qd, bdiPct, formulaEdital) {
+var t = '<table class="ld-t ld-bdi" style="width:130mm;margin:0 auto"><colgroup><col style="width:18mm"><col style="width:84mm"><col style="width:28mm"></colgroup><thead><tr><th>COD</th><th>DESCRIÇÃO</th><th>%</th></tr></thead><tbody>';
+qd.grupos.forEach(function (g) {
+if (!g.itens.length) return;
+if (g.impostos) t += '<tr class="et"><td>I</td><td>Impostos</td>' + tdN(P(qd.impostos)) + '</tr>';
+else t += '<tr class="et"><td colspan="3">' + esc(g.nome) + '</td></tr>';
+g.itens.forEach(function (i) { t += '<tr>' + td(esc(i.sigla)) + td(esc(i.descricao)) + tdN(P(i.pct)) + '</tr>'; });
+if (g.impostos) t += '<tr class="gr"><td></td><td>TOTAL DOS IMPOSTOS</td>' + tdN(P(qd.impostos)) + '</tr>';
+});
+t += '<tr class="tt"><td colspan="2">BDI =</td>' + tdN(P(bdiPct)) + '</tr></tbody></table>';
+var bd = 'border:0;padding:.6mm 1.5mm;text-align:center;font-size:8.5pt;white-space:nowrap';
+if (s(formulaEdital) && !formulaBdiPadrao(formulaEdital)) return t +'<p class="ld-ext" style="font-style:normal">' + esc(formulaEdital) + '</p>';
+t += '<table class="ld-fr" style="width:100mm;margin:3mm auto 0;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:14mm"><col style="width:74mm"><col style="width:12mm"></colgroup><tbody>' +
+'<tr><td style="' + bd + ';vertical-align:bottom;text-align:right">BDI =</td><td style="' + bd + ';border-bottom:.8pt solid #000">(1 + AC + S + R + G) × (1 + DF) × (1 + L)</td><td style="' + bd + ';vertical-align:bottom;text-align:left">− 1</td></tr>' +
+'<tr><td style="' + bd + '"></td><td style="' + bd + '">(1 − I)</td><td style="' + bd + '"></td></tr></tbody></table>';
+return t;
+}
 function secBdi(d) {
 var h = '<div class="ld-tit">Composição do BDI</div>';
 if (!d.bdi.ok) {
@@ -74999,6 +75154,8 @@ if (d.bdi.incoerente) {
 h += '<div class="ld-pend">PENDÊNCIA: ' + esc(d.bdi.msgIncoerente) + ' BDI usado na proposta: ' + esc(P(d.bdiPct)) + '.</div>';
 return '<section class="ld-sec" data-tipo="corpo" data-titulo="BDI">' + h + '</section>';
 }
+var qd = quadroBdi(d.bdi);
+if (qd) return '<section class="ld-sec" data-tipo="corpo" data-titulo="BDI">' + h + htmlQuadroBdi(qd, d.bdiPct, d.bdi.formula) + '</section>';
 var t = '<table class="ld-t" style="width:120mm;margin:0 auto"><colgroup><col style="width:22mm"><col style="width:74mm"><col style="width:24mm"></colgroup><thead><tr><th>COD</th><th>DESCRIÇÃO</th><th>%</th></tr></thead><tbody>';
 d.bdi.grupos.forEach(function (g) {
 t += '<tr class="et"><td colspan="3">' + esc(g.nome) + '</td></tr>';
@@ -75394,7 +75551,7 @@ return out;
 var LicitacaoDocs = {
 montar: montar, html: html, gerar: gerar, pendencias: pendencias, paginar: paginar, documento: documento,
 elaborarCronograma: elaborarCronograma, empresaDoCertame: empresaDoCertame, temLicitante: temLicitante, conferirEdital: conferirEdital,
-baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, conferirValores: conferirValores,
+baseDe: baseDe, parseEncargos: parseEncargos, parseBdi: parseBdi, quadroBdi: quadroBdi, formulaBdiPadrao: formulaBdiPadrao, conferirValores: conferirValores,
 css: CSS,
 secoesPacote: secoesPacote, secoesPadraoPacote: secoesPadraoPacote, chaveLicitante: chaveLicitante, secoesDoPacote: secoesDoPacote, secoesExigidas: secoesExigidas, temEscolhaPacote: temEscolhaPacote,
 gravarSecoesPacote: gravarSecoesPacote, secoesParaGerar: secoesParaGerar, avisosDeSecoes: avisosDeSecoes,

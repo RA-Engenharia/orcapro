@@ -2782,7 +2782,15 @@
       else if (cod && cod !== "—") {
         try {
           var fonte = it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : "PROPRIO");
+          var fEst = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "" : (it.origem || ""))).toUpperCase().trim();
           if (fonte === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) base = Bases.obter("PROPRIA", cod);
+          /* 27/11/2026: base estadual (SEINFRA, IOPES…) pelo MESMO caminho do botão "Analítico do item" (AnaliticoBases.obter,
+             síncrono: só o que já está carregado; renderAnaliticoItem pede a carga) */
+          else if (fEst && fEst !== "PROPRIA" && fEst !== "PROPRIO" && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fEst)) {
+            var metaE = AnaliticoBases.meta(fEst);
+            var instE = AnaliticoBases.baseInstalada(fEst);
+            if (metaE && instE && !AnaliticoBases.regimeDiverge(metaE, instE) && AnaliticoBases.conferirCompetencia(metaE, instE).mesmo) base = AnaliticoBases.obter(fEst, cod);
+          }
           else if (Orcamento.ehSinapi(fonte) && typeof Analitico !== "undefined" && Analitico.carregado && Analitico.obter) {
             var regOk = !(typeof it.desonerado === "boolean" && Analitico.desonerado !== null && Analitico.desonerado !== undefined && Analitico.desonerado !== it.desonerado);
             if (regOk) base = Analitico.obter(cod);
@@ -2814,7 +2822,25 @@
     /* HTML do analítico embutido embaixo do item: o MESMO desenho do modal "Analítico do item" (renderInsumos) */
     renderAnaliticoItem: function (it) {
       var a = UI._analiticoDoItem(it);
-      if (!a) return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+      if (!a) {
+        /* base estadual ainda não aberta: abre uma vez (cache do AnaliticoBases) e redesenha; falha não vira laço (60 s) */
+        var fE = String(it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "" : (it.origem || ""))).toUpperCase().trim();
+        if (fE && it.codigo && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fE) && !AnaliticoBases.semPublicacao(fE) && !AnaliticoBases.meta(fE) && AnaliticoBases.baseInstalada(fE)) {
+          var stE = (UI._anaEmbSt = UI._anaEmbSt || {})[fE];
+          if (!stE || (stE.falhou && Date.now() - stE.quando > 60000)) {
+            UI._anaEmbSt[fE] = { quando: Date.now() };
+            AnaliticoBases.carregar(fE).then(function () {
+              delete UI._anaEmbSt[fE];
+              try { if (typeof App !== "undefined" && App.render) App.render(); } catch (eR) {}
+            }, function () { UI._anaEmbSt[fE] = { falhou: true, quando: Date.now() }; });
+          }
+          if (!UI._anaEmbSt[fE] || !UI._anaEmbSt[fE].falhou) return '<p class="muted" style="margin:6px 4px;font-size:12px">Abrindo a composição na base ' + Util.esc(fE) + '…</p>';
+        }
+        if (fE && it.codigo && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fE) && AnaliticoBases.meta(fE)) {
+          return '<p class="muted" style="margin:6px 4px;font-size:12px">O código ' + Util.esc(String(it.codigo)) + ' não tem composição detalhada na base ' + Util.esc(fE) + ' (ou ela é de outro regime). O preço do item é o da planilha.</p>';
+        }
+        return '<p class="muted" style="margin:6px 4px;font-size:12px">Composição não carregada neste item (preço lançado à mão ou base ainda não aberta). Use o botão "Analítico do item" para carregá-la.</p>';
+      }
       /* 20/11 (Rogério): item com a composição do órgão (SEINFRA etc., it.insumos) não é "analítico SINAPI de referência":
          mostra a fonte do item e a UF do ORÇAMENTO, sem o aviso "base ativa é PA" quando o orçamento é do CE. */
       var orcUf = (typeof App !== "undefined" && App.orcAtual && App.orcAtual.uf) ? String(App.orcAtual.uf).toUpperCase() : null;
@@ -2822,6 +2848,10 @@
       if (Array.isArray(it.insumos) && it.insumos.length && fonteIt && !/SINAPI/.test(fonteIt)) {
         return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
           rotulo: fonteIt + " (composição publicada pelo órgão)", avisos: [] }) + '</div>';
+      }
+      if (fonteIt && !/SINAPI|PROPRI/.test(fonteIt) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonteIt)) {
+        return '<div class="an-embutido">' + UI.renderInsumos(a, orcUf, { embutido: true, fonte: fonteIt, uf: orcUf,
+          rotulo: fonteIt + " (tabela de referência, pelo código)", avisos: [] }) + '</div>';
       }
       var ufAtivo = orcUf || (typeof App !== "undefined" && App._baseUf) || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
       return '<div class="an-embutido">' + UI.renderInsumos(a, ufAtivo, { embutido: true }) + '</div>';
