@@ -1680,7 +1680,7 @@
               ") — as subetapas mudaram depois da aprovação. Confira o cronograma antes de enviar.";
         }
       } catch (ePr) { prazoRev = ""; }
-      Store.salvarOrcamento(eid, nova);
+      if (!this._novoOrcGravou(Store.salvarOrcamento(eid, nova), "criar a revisão")) return;
       this._avisouTravado = null;
       this.abrirOrcamento(nova.id);
       UI.toast("Revisão " + nova.numero + " criada a partir do aprovado " + (orc.numero || "") +
@@ -11627,7 +11627,7 @@
             semQuantidades: !!((UI.el("co-semqtd") || {}).checked)
           });
           self._materializarSeExec(novo);   // sem quantidades o vão muda: o gravado acompanha
-          Store.salvarOrcamento(eid, novo);
+          if (!self._novoOrcGravou(Store.salvarOrcamento(eid, novo), "copiar o orçamento")) return;
           UI.fecharModal();
           self.orcAtual = novo; self.tela = "editor"; self.aba = "planilha";
           self.render();
@@ -18124,7 +18124,7 @@
           }
         });
       });
-      Store.salvarOrcamento(Auth.empresaId(), orc);
+      if (!this._novoOrcGravou(Store.salvarOrcamento(Auth.empresaId(), orc), "importar a planilha")) return;
       UI.fecharModal();
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
       UI.toast("Importado: " + orc.etapas.length + " etapas · " + (casados + proprios) + " itens (" + casados + " casados no SINAPI" + (semCusto ? " · " + semCusto + " sem custo p/ revisar" : "") + ").", "ok");
@@ -18143,7 +18143,7 @@
       seed.itens.forEach(function (it) {
         Orcamento.addItem(orc, etapaId, { codigo: "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: 0 }, it.quantidade);
       });
-      Store.salvarOrcamento(Auth.empresaId(), orc);
+      if (!this._novoOrcGravou(Store.salvarOrcamento(Auth.empresaId(), orc), "lançar do BIM")) return;
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
       var estim = (levantamento && levantamento.resumo && levantamento.resumo.nEstimados) || 0;
       UI.toast("Lançado do BIM: " + seed.itens.length + " serviços quantificados" + (estim ? " (algumas quantidades estimadas — revise)" : "") + ". Agora case no SINAPI / informe os preços.", "ok");
@@ -18792,6 +18792,22 @@
     /* O recado da recusa. Texto puro (UI.toast escreve por textContent). Diz o
        que aconteceu, a hora do que está salvo e o que fazer — "erro ao salvar"
        a pessoa lê como formalidade; hora ela confere na outra janela. */
+    /* ORÇAMENTO NOVO (cópia, revisão, importação, lançado do BIM) QUE NÃO GRAVOU.
+     * ⚠ Store.salvarOrcamento devolve null quando recusa (cota cheia, lista ilegível, não
+     * conseguiu conferir o disco). Quem ignorava o retorno abria o editor num orçamento que
+     * não existe no disco e dizia "criado": a pessoa trabalhava horas nele e perdia tudo ao
+     * fechar o app. Devolve true se gravou; senão diz o que houve (o mesmo recado das outras
+     * gravações) e devolve false — o chamador NÃO abre o editor nem anuncia sucesso. */
+    _novoOrcGravou: function (g, rotulo) {
+      if (g) return true;
+      var rec = null; try { rec = Store.ultimaRecusa || null; } catch (eR) { rec = null; }
+      var txt = rec ? this._recadoRecusa(rec, { rotulo: rotulo })
+        : "Não consegui gravar: o armazenamento deste aparelho recusou (cheio?). Libere espaço em Backup e tente de novo.";
+      txt += " Nada foi criado.";
+      UI.toast(txt, "erro", this._msRecado(txt));
+      return false;
+    },
+
     _recadoRecusa: function (rec, opts) {
       rec = rec || {};
       var hora = "";

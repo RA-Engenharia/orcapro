@@ -37,7 +37,17 @@
   function numOuNull(v) {
     if (ehNum(v)) return v;
     if (typeof v === "string" && v.replace(/\s/g, "") !== "") {
-      var n = Number(v.replace(/\s/g, "").replace(",", "."));
+      /* 28/11/2026 (auditoria): "1.234,56" e "R$ 10,00" (formato brasileiro colado de planilha/pesquisa) viravam NaN -> "sem valor".
+         Só se tira o ponto de milhar quando NÃO há dúvida: tem vírgula decimal ("1.234,56") ou mais de um grupo ("1.234.567").
+         "1.234" sozinho fica como está (1,234): pode ser quantidade decimal, e ler 1234 multiplicaria por mil. */
+      /* Com "R$" na frente o ponto é sempre de milhar ("R$ 2.500" = 2500): preço não tem 3 casas. Revisor 28/11 pegou "R$ 2.500" -> 2,5. */
+      var semEsp = v.replace(/\s/g, ""), temMoeda = /^-?R\$/i.test(semEsp);
+      var sb = semEsp.replace(/^(-?)R\$/i, "$1");
+      /* Só número escrito à mão: "0x1A"/"0b11" (que o Number aceitaria) e lixo ficam sem valor. */
+      if (!/^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$/.test(sb) && !/^[-+]?\d{1,3}(\.\d{3})+(,\d+)?$/.test(sb)) return null;
+      if (/^[-+]?\d{1,3}(\.\d{3})+,\d+$/.test(sb) || /^[-+]?\d{1,3}(\.\d{3}){2,}$/.test(sb) ||
+          (temMoeda && /^[-+]?\d{1,3}(\.\d{3})+$/.test(sb))) sb = sb.replace(/\./g, "");
+      var n = Number(sb.replace(",", "."));
       return isFinite(n) ? n : null;
     }
     return null;

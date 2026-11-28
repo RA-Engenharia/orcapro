@@ -1228,13 +1228,13 @@
         ".p3-fixo{font-size:11.5px;opacity:.7}",
         ".p3-versao{font-weight:700;font-variant-numeric:tabular-nums}",
         ".p3-c-versao small,.p3-c-sit small{display:block;font-size:10px;opacity:.66;line-height:1.35;margin-top:2px;max-width:30ch}",
-        ".p3-nova{color:#b45309;font-weight:700;opacity:1!important}",
-        ".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:#166534}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:#b45309;font-weight:600;opacity:1!important}",
+        ".p3-nova{color:var(--amarelo,#b45309);font-weight:700;opacity:1!important}",
+        ".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:var(--verde,#166534)}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:var(--amarelo,#b45309);font-weight:600;opacity:1!important}",
         ".p3-lacunas{margin:8px 0;font-size:12px}.p3-lacunas ul{margin:4px 0 0 18px;padding:0}",
         ".p3-selo{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap}",
         ".p3-g1{background:rgba(127,127,127,.18)}",                       /* sem fonte */
         ".p3-g2{background:rgba(46,111,158,.16);color:var(--aco,#2e6f9e)}", /* vem no app */
-        ".p3-g3{background:rgba(22,163,74,.16);color:#15803d}",            /* servidor */
+        ".p3-g3{background:rgba(22,163,74,.16);color:var(--verde,#15803d)}",            /* servidor */
         ".p3-nota{font-style:italic}",
         ".p3-toggle{margin-top:12px;background:none;border:0;padding:4px 0;font:inherit;font-size:11.5px;font-weight:700;color:var(--aco,#2e6f9e);cursor:pointer;text-decoration:underline}",
         ".p3-rodape{font-size:11px;opacity:.72;line-height:1.5;margin:8px 0 0}",

@@ -778,9 +778,9 @@
     var g = st.escopoGerado || {};
     var corpo = '<p style="font-size:13.5px;margin-top:0"><b>' + plano.length + " serviços gravados no orçamento</b> — custo direto estimado " + Util.fmtMoeda(Math.round(custo * 100) / 100) + " (antes do BDI).</p>" +
       '<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
-        '<span class="pill" style="background:#16a34a;color:#fff">' + n.casado + " da base oficial</span>" +
+        '<span class="pill" style="background:#15803d;color:#fff">' + n.casado + " da base oficial</span>" +
         '<span class="pill" style="background:#2e6f9e;color:#fff">' + Object.keys(codsProprias).length + " composições próprias criadas" + (n.propria > Object.keys(codsProprias).length ? " (" + n.propria + " linhas)" : "") + "</span>" +
-        '<span class="pill" style="background:#f59e0b;color:#fff">' + n.revisar + " a conferir</span>" +
+        '<span class="pill" style="background:#b45309;color:#fff">' + n.revisar + " a conferir</span>" +
         (n.pendente ? '<span class="pill" style="background:#dc2626;color:#fff">' + n.pendente + " sem preço</span>" : "") +
       "</div>" +
       (info && info.blocos ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Texto estruturado pela IA em ' + info.blocos + " parte(s)" + (info.modelo ? " (" + esc(info.modelo) + ")" : "") + "." +

@@ -117,9 +117,11 @@
     if (!qs.length) return par(pre("quantitativos do objeto"));
     return tabela(["Item", "Descrição", "Un.", "Quantidade", "Origem (arquivo, página ou linha)"], qs.map(function (q) {
       var o = q.origem || {};
+      /* item sem número (planilha sem coluna de item) não pode sair como "undefined" no documento */
+      var rot = !vazio(q.item) ? q.item : (!vazio(q.itemRef) ? q.itemRef : "s/n");
       /* leva F: quantidade lida de planilha tem origem em ARQUIVO + LINHA (de projeto em PDF: ARQUIVO + PÁGINA) */
-      return [esc(q.item === undefined ? q.itemRef : q.item), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
-        (vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha))) ? pre("origem do item " + (q.item === undefined ? q.itemRef : q.item)) : esc(o.arquivo + (vazio(o.pagina) ? ", linha " + o.linha : ", p. " + o.pagina))];
+      return [esc(rot), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
+        (vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha))) ? pre("origem do item " + rot) : esc(o.arquivo + (vazio(o.pagina) ? ", linha " + o.linha : ", p. " + o.pagina))];
     }));
   }
 

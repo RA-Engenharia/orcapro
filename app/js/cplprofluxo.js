@@ -681,6 +681,17 @@
     return { id: "pap-demo", usuarioId: usuarioId, nome: "Visitante da demonstração", papeis: Object.keys(R.PAPEIS) };
   };
 
+  /* Mensagem de erro técnica do navegador (TypeError, rede, JSON) nunca vai para o servidor público na tela: vira frase de gente.
+     Só erro de programa é trocado; a mensagem de regra do CPLPRO («Você ainda não tem perfil…») passa intacta. */
+  var RE_TECNICO = /Cannot (read|set|create|convert|destructure)[^.]*(propert|undefined|null)|is not (a function|defined|iterable|a constructor)|of (undefined|null)\b|Unexpected (token|end of JSON|character)|JSON\.parse|Invalid (typed )?array length|Maximum call stack|Failed to fetch|NetworkError|Load failed|QuotaExceeded|\[object \w+\]|^undefined$|^null$/i;
+  Fluxo.msgUsuario = function (m, padrao) {
+    var s = (m === null || m === undefined) ? "" : String(m);
+    if (!s.replace(/\s/g, "")) return padrao || "Não consegui concluir. Nada foi gravado no processo.";
+    if (/Failed to fetch|NetworkError|Load failed/i.test(s)) return "Sem conexão com o serviço agora. Confira a internet e tente de novo; nada foi gravado.";
+    if (RE_TECNICO.test(s)) return padrao || "Algo inesperado aconteceu e nada foi gravado. Atualize a tela e tente de novo; se repetir, avise o suporte.";
+    return s;
+  };
+
   Fluxo.hash = hash; Fluxo.num = num; Fluxo.codigoDe = codigoDe;
   global.CplproFluxo = Fluxo;
   if (typeof module !== "undefined" && module.exports) module.exports = Fluxo;

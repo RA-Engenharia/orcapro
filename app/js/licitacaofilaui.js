@@ -38,7 +38,16 @@
 
   function st() { try { return global.localStorage; } catch (e) { return null; } }
   function eid() { try { return Auth.empresaId(); } catch (e) { return "default"; } }
-  function cliente() { return F.criar({ fetch: function (u, o) { return global.fetch(u, o); }, storage: st(), emp: eid() }); }
+  /* ⚠ FETCH COM LIMITE DE TEMPO: sem ele, uma conexão que fica pendurada (servidor que aceita e não responde, rede que cai
+     no meio) deixa o `rodando` verdadeiro para sempre — a fila para de consultar o CertamePRO até recarregar o app, e o
+     setInterval de 60 s não religa enquanto `rodando` estiver preso. 60 s é bem mais que a resposta normal. */
+  function buscaComLimite(u, o) {
+    var ctl = null, t = null, init = o || {};
+    try { if (typeof global.AbortController === "function") { ctl = new global.AbortController(); init = {}; Object.keys(o || {}).forEach(function (k) { init[k] = o[k]; }); init.signal = ctl.signal; } } catch (e) { ctl = null; init = o; }
+    if (ctl) t = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 60000);
+    return global.fetch(u, init).then(function (r) { if (t) clearTimeout(t); return r; }, function (e) { if (t) clearTimeout(t); throw e; });
+  }
+  function cliente() { return F.criar({ fetch: buscaComLimite, storage: st(), emp: eid() }); }
   /* aviso discreto: uma vez por motivo (não repete a cada consulta) */
   function avisar(chave, msg, tipo) {
     if (avisados[chave]) return;
@@ -59,7 +68,7 @@
       var corpo = '<p style="font-size:13px;margin-top:0">O CertamePRO vai ligar <b>este computador</b> à conta abaixo, para o OrçaPRO buscar certames da fila e devolver orçamentos. Confira antes de confirmar.</p>' +
         '<ul style="font-size:13px"><li>Conta: <b>' + esc(pv.conta || "—") + '</b>' + (pv.papel ? " (" + esc(pv.papel) + ")" : "") + '</li>' +
         '<li>Empresas: ' + (pv.empresas.length ? pv.empresas.map(function (e) { return "<b>" + esc(e.nome) + "</b>"; }).join(", ") : (pv.todasAsDoUsuario ? "todas as do usuário" : "<i>nenhuma marcada (a fila fica vazia)</i>")) + '</li></ul>' +
-        (dec.perguntarTroca ? '<p style="font-size:13px;color:#b91c1c"><b>Atenção: este OrçaPRO já está conectado à conta ' + esc(atual.conta || "—") + '.</b> Confirmar TROCA a conexão para a conta acima. Se você não pediu essa troca, cancele: um link de outra pessoa poderia ligar a sua base de preços à conta dela.</p>' : '') +
+        (dec.perguntarTroca ? '<p style="font-size:13px;color:var(--vermelho,#b91c1c)"><b>Atenção: este OrçaPRO já está conectado à conta ' + esc(atual.conta || "—") + '.</b> Confirmar TROCA a conexão para a conta acima. Se você não pediu essa troca, cancele: um link de outra pessoa poderia ligar a sua base de preços à conta dela.</p>' : '') +
         '<p class="muted" style="font-size:12.5px">A conexão fica guardada só neste computador e pode ser desligada a qualquer hora. Nada é enviado antes de você ligar o interruptor da fila.</p>';
       UI.modal(dec.perguntarTroca ? "Trocar a conta do CertamePRO?" : "Conectar ao CertamePRO", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },

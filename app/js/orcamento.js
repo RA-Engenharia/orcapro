@@ -1826,9 +1826,19 @@
       var n = function (v) { return Util.fmtNum(v, casas); };
       var head = ["Item", "Etapa", "Sub etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Unit", "Preco Total"];
       var rows = [head.join(";")];
+      /* ⚠ TEXTO LIVRE NO CSV: aspas dobradas e fórmula neutralizada. Descrição da
+         SINAPI traz polegada (TUBO PVC 3/4") — com aspas cruas o Excel fecha o
+         campo no meio e empurra o resto da linha para colunas erradas (quantidade
+         vira "Unid", total some). E descrição digitada como =HYPERLINK(...) ou
+         @cmd viraria FÓRMULA ao abrir (mesma regra do Gestao._exportarCSV). */
+      var q = function (v) {
+        var t = String(v == null ? "" : v);
+        if (/^[=+\-@]/.test(t) && !/^-?\d/.test(t)) t = "'" + t;
+        return '"' + t.replace(/"/g, '""') + '"';
+      };
       this.analitico(orc).forEach(function (l) {
         rows.push([
-          l.numero, '"' + l.etapa + '"', '"' + (l.subEtapa || "") + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
+          l.numero, q(l.etapa), q(l.subEtapa), l.origem, l.codigo, q(l.descricao), l.unidade,
           Util.fmtNum(l.quantidade, 2), n(l.custoUnitario), n(l.custoTotal),
           n(l.precoUnitario), n(l.precoVenda)
         ].join(";"));

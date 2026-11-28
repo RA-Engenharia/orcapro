@@ -18,7 +18,7 @@ painelIA: false,
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.460",
+versao: "1.2.461",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -15178,9 +15178,14 @@ var casas = (c.modo === "nenhum") ? 4 : 2;
 var n = function (v) { return Util.fmtNum(v, casas); };
 var head = ["Item", "Etapa", "Sub etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Unit", "Preco Total"];
 var rows = [head.join(";")];
+var q = function (v) {
+var t = String(v == null ? "" : v);
+if (/^[=+\-@]/.test(t) && !/^-?\d/.test(t)) t = "'" + t;
+return '"' + t.replace(/"/g, '""') + '"';
+};
 this.analitico(orc).forEach(function (l) {
 rows.push([
-l.numero, '"' + l.etapa + '"', '"' + (l.subEtapa || "") + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
+l.numero, q(l.etapa), q(l.subEtapa), l.origem, l.codigo, q(l.descricao), l.unidade,
 Util.fmtNum(l.quantidade, 2), n(l.custoUnitario), n(l.custoTotal),
 n(l.precoUnitario), n(l.precoVenda)
 ].join(";"));
@@ -17296,13 +17301,13 @@ st.textContent = [
 ".p3-fixo{font-size:11.5px;opacity:.7}",
 ".p3-versao{font-weight:700;font-variant-numeric:tabular-nums}",
 ".p3-c-versao small,.p3-c-sit small{display:block;font-size:10px;opacity:.66;line-height:1.35;margin-top:2px;max-width:30ch}",
-".p3-nova{color:#b45309;font-weight:700;opacity:1!important}",
-".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:#166534}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:#b45309;font-weight:600;opacity:1!important}",
+".p3-nova{color:var(--amarelo,#b45309);font-weight:700;opacity:1!important}",
+".p3-hist{display:block;font-size:11px}.p3-hist-ok{color:var(--verde,#166534)}.p3-hist-nd,.p3-hist-0{opacity:.7}.p3-lac{color:var(--amarelo,#b45309);font-weight:600;opacity:1!important}",
 ".p3-lacunas{margin:8px 0;font-size:12px}.p3-lacunas ul{margin:4px 0 0 18px;padding:0}",
 ".p3-selo{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;white-space:nowrap}",
 ".p3-g1{background:rgba(127,127,127,.18)}",
 ".p3-g2{background:rgba(46,111,158,.16);color:var(--aco,#2e6f9e)}",
-".p3-g3{background:rgba(22,163,74,.16);color:#15803d}",
+".p3-g3{background:rgba(22,163,74,.16);color:var(--verde,#15803d)}",
 ".p3-nota{font-style:italic}",
 ".p3-toggle{margin-top:12px;background:none;border:0;padding:4px 0;font:inherit;font-size:11.5px;font-weight:700;color:var(--aco,#2e6f9e);cursor:pointer;text-decoration:underline}",
 ".p3-rodape{font-size:11px;opacity:.72;line-height:1.5;margin:8px 0 0}",
@@ -19382,6 +19387,19 @@ b.disabled = true; b.textContent = "Parando…";
 try { if (opts.botao.aoClicar) opts.botao.aoClicar(); } catch (e) { try { console.error("[loading] botão:", e); } catch (e2) {} }
 };
 d.appendChild(b);
+} else {
+setTimeout(function () {
+try {
+if (!d.parentNode || d.querySelector("#ui-loading-sair")) return;
+var sair = document.createElement("button");
+sair.type = "button"; sair.id = "ui-loading-sair";
+sair.style.cssText = "background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 16px;font-weight:600;color:#1e293b;cursor:pointer";
+sair.textContent = "Está demorando — fechar este aviso";
+sair.onclick = function () { if (d.parentNode) d.parentNode.removeChild(d); };
+d.style.flexDirection = "column"; d.style.gap = "12px";
+d.appendChild(sair);
+} catch (eS) {}
+}, this.LOADING_SAIDA_MS || 120000);
 }
 document.body.appendChild(d);
 },
@@ -76964,21 +76982,21 @@ if (!orc || !OR || !UI) return;
 var salvo = lerSalvo(orc.id), emp = (global.Empresa && global.Empresa.dados) ? global.Empresa.dados() : {};
 var tipos = global.Bdi.FAIXAS_TCU;
 var opt = '<option value="">(escolha o tipo de obra)</option>' + Object.keys(tipos).map(function (k) { return '<option value="' + k + '"' + (salvo.tipoObra === k ? " selected" : "") + '>' + esc(tipos[k].label) + '</option>'; }).join("");
-function campo(rot, id, v) { return '<label style="display:block;margin:6px 0"><span style="font-size:12px;color:#64748b">' + rot + '</span><input id="' + id + '" value="' + esc(v) + '" style="width:100%"></label>'; }
+function campo(rot, id, v) { return '<label style="display:block;margin:6px 0"><span style="font-size:12px;color:var(--texto-fraco,#64748b)">' + rot + '</span><input id="' + id + '" value="' + esc(v) + '" style="width:100%"></label>'; }
 var corpo = '<p style="font-size:13px;margin-top:0">Gera o <b>orçamento de referência</b> no padrão que o órgão público precisa: sintética, analítica, BDI, encargos, curva ABC de serviços e de insumos, cronograma físico-financeiro, memória de cálculo, mapa de cotação, declarações e (com recurso da União) a aba para a CAIXA. PDF em A4 e Excel com fórmulas vivas.</p>' +
-'<label style="display:block;margin:6px 0"><span style="font-size:12px;color:#64748b">Tipo de obra (define a faixa do BDI do Acórdão TCU 2.622/2013)</span><select id="orcref-tipo" style="width:100%">' + opt + '</select></label>' +
+'<label style="display:block;margin:6px 0"><span style="font-size:12px;color:var(--texto-fraco,#64748b)">Tipo de obra (define a faixa do BDI do Acórdão TCU 2.622/2013)</span><select id="orcref-tipo" style="width:100%">' + opt + '</select></label>' +
 '<label style="display:block;margin:8px 0"><input type="checkbox" id="orcref-fed"' + (salvo.recursoFederal ? " checked" : "") + '> Obra com recurso da União (repasse): exige SINAPI e monta a aba CAIXA</label>' +
 campo("Processo / edital", "orcref-proc", salvo.processo || "") +
 campo("Responsável técnico pelo orçamento", "orcref-rt", salvo.rtNome || s(emp.rtNome) || s(emp.responsavel)) +
 campo("Registro profissional (CREA/CAU)", "orcref-reg", salvo.rtReg || s(emp.rtCrea) || s(emp.crea)) +
-'<div style="display:flex;gap:8px"><label style="flex:0 0 90px"><span style="font-size:12px;color:#64748b">Tipo</span><select id="orcref-arttipo" style="width:100%"><option>ART</option><option' + (salvo.artTipo === "RRT" ? " selected" : "") + '>RRT</option></select></label>' +
+'<div style="display:flex;gap:8px"><label style="flex:0 0 90px"><span style="font-size:12px;color:var(--texto-fraco,#64748b)">Tipo</span><select id="orcref-arttipo" style="width:100%"><option>ART</option><option' + (salvo.artTipo === "RRT" ? " selected" : "") + '>RRT</option></select></label>' +
 '<div style="flex:1">' + campo("Número da ART/RRT do orçamento", "orcref-art", salvo.artNum || "") + '</div></div>' +
 '<div id="orcref-pend" style="margin-top:8px"></div>';
 function mostrarPend() {
 var f = lerForm(), r = OR.montar(orc, opcoesDe(orc, f)), box = el("orcref-pend");
 if (!box) return r;
-if (!r.ok) box.innerHTML = '<div style="border:1px solid #c00000;color:#c00000;padding:8px;font-size:12.5px"><b>O pacote não pode sair assim:</b> ' + esc(r.erro) + '</div>';
-else box.innerHTML = (r.dados.pronto ? '<div style="color:#1a7f37;font-size:12.5px"><b>Sem pendências que impeçam publicar.</b></div>' : '<div style="color:#c00000;font-size:12.5px"><b>Com pendências: o arquivo sai marcado "NÃO PUBLICAR".</b></div>') +
+if (!r.ok) box.innerHTML = '<div style="border:1px solid #c00000;color:var(--vermelho,#c00000);padding:8px;font-size:12.5px"><b>O pacote não pode sair assim:</b> ' + esc(r.erro) + '</div>';
+else box.innerHTML = (r.dados.pronto ? '<div style="color:var(--verde,#1a7f37);font-size:12.5px"><b>Sem pendências que impeçam publicar.</b></div>' : '<div style="color:var(--vermelho,#c00000);font-size:12.5px"><b>Com pendências: o arquivo sai marcado "NÃO PUBLICAR".</b></div>') +
 listaHtml("Em aberto", r.pendencias.bloqueios, "#c00000") + listaHtml("Conferir", r.pendencias.conferir, "#b45309");
 return r;
 }

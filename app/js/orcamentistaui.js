@@ -45,7 +45,7 @@
     var famL = (App._orcmFamiliaLic && App._orcmFamiliaLic()) || null, exL = "";
     if (famL && typeof Licitacao !== "undefined") {
       var exS = Licitacao.basesExigidas(App.orcAtual).filter(function (e) { return e.catId === famL; })[0];
-      exL = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid #b45309;background:rgba(234,88,12,.08)"><b>Licitação:</b> o edital exige ' +
+      exL = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--amarelo,#b45309);background:rgba(234,88,12,.08)"><b>Licitação:</b> o edital exige ' +
         esc(exS ? Licitacao.fmtBase(exS) : famL) + ". Para item SINAPI o Orçamentista usa <b>só " + (famL === "SINAPI_DES" ? "a SINAPI desonerada" : "a SINAPI onerada") +
         "</b> (mesmo desmarcada abaixo) — nunca a do outro regime.</p>";
     }
@@ -70,7 +70,7 @@
        sempre, escondido quando vazio: quem escreve nele não pode depender de a
        revisão ter sido redesenhada. Texto por esc()/textContent, nunca HTML —
        por aqui passa mensagem de exceção. */
-    var html = '<p id="orcm-recado" role="alert" style="color:#b91c1c;font-weight:600;font-size:12.5px;margin:0 0 8px' + (st.recado ? "" : ";display:none") + '">' + esc(st.recado || "") + "</p>";
+    var html = '<p id="orcm-recado" role="alert" style="color:var(--vermelho,#b91c1c);font-weight:600;font-size:12.5px;margin:0 0 8px' + (st.recado ? "" : ";display:none") + '">' + esc(st.recado || "") + "</p>";
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' + pill("casado") + pill("revisar") + pill("propria") + pill("pendente") +
       '<span class="muted" style="font-size:12.5px">' + r.total + " itens · custo direto " + Util.fmtMoeda(r.custoDireto || 0) + (r.semPreco ? " · " + r.semPreco + " sem preço" : "") + "</span>" +
       '<span style="flex:1"></span><select id="orcm-filtro" style="font-size:12px;padding:3px 6px">' +
@@ -86,7 +86,7 @@
       if (L.comp && (L.comp.insumos || []).length) opts += '<option value="propria"' + (L.status === "propria" ? " selected" : "") + ">" + esc("[PRÓPRIA] " + (L.comp.codigo || "nova") + " · " + L.comp.insumos.length + " insumos · " + Util.fmtMoeda(L.custoUnitario) + "/" + Util.unidadeExibir(L.comp.unidade || it.unidade)) + "</option>";
       opts += '<option value="pendente"' + (L.status === "pendente" ? " selected" : "") + ">— Pendente (casca de composição própria, sem preço) —</option>";
       var precoPlan = Number(it.custoUnitario) > 0 ? '<div class="muted" style="font-size:11px">planilha: ' + Util.fmtMoeda(it.custoUnitario) + "</div>" : "";
-      var av = (L.avisos || []).length ? '<div class="muted" style="font-size:11px;margin-top:3px;color:#92400e" title="' + esc(L.avisos.join("\n")) + '">' + L.avisos.map(function (a) { a = String(a); return esc(a.length > 220 ? a.slice(0, 217) + "…" : a); }).join("<br>") + "</div>" : "";
+      var av = (L.avisos || []).length ? '<div class="muted" style="font-size:11px;margin-top:3px;color:var(--amarelo,#92400e)" title="' + esc(L.avisos.join("\n")) + '">' + L.avisos.map(function (a) { a = String(a); return esc(a.length > 220 ? a.slice(0, 217) + "…" : a); }).join("<br>") + "</div>" : "";
       var ver = (L.status === "propria" && L.comp) ? ' <button class="btn ghost sm" data-orcm-ver="' + L.i + '" title="Ver insumos e coeficientes">' + ic("tabela", 13) + "</button>" : "";
       linhas.push('<tr data-orcm-i="' + L.i + '"><td style="font-size:11px;color:var(--fraca)">' + esc(it.numero || (L.i + 1)) + "</td>" +
         "<td><div>" + esc(it.descricao) + '</div><div class="muted" style="font-size:11px">' + esc((it.fonte ? it.fonte + " " : "") + (L.codigoLido || "sem código")) + " · " + esc(Util.unidadeExibir(it.unidade)) + " · qtd " + Util.fmtNum(it.quantidade, 2) + "</div></td>" +

@@ -376,6 +376,22 @@
           try { if (opts.botao.aoClicar) opts.botao.aoClicar(); } catch (e) { try { console.error("[loading] botão:", e); } catch (e2) {} }
         };
         d.appendChild(b);
+      } else {
+        /* ⚠ SAÍDA DE EMERGÊNCIA: o aviso cobre a tela inteira. Chamada que fica pendurada (servidor de IA que não
+           responde, rede que caiu no meio) deixava a pessoa presa atrás dele, sem nenhum botão, até fechar o app.
+           Passado o tempo, aparece "Fechar este aviso" — a operação segue por baixo e responde quando puder. */
+        setTimeout(function () {
+          try {
+            if (!d.parentNode || d.querySelector("#ui-loading-sair")) return;
+            var sair = document.createElement("button");
+            sair.type = "button"; sair.id = "ui-loading-sair";
+            sair.style.cssText = "background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 16px;font-weight:600;color:#1e293b;cursor:pointer";
+            sair.textContent = "Está demorando — fechar este aviso";
+            sair.onclick = function () { if (d.parentNode) d.parentNode.removeChild(d); };
+            d.style.flexDirection = "column"; d.style.gap = "12px";
+            d.appendChild(sair);
+          } catch (eS) {}
+        }, this.LOADING_SAIDA_MS || 120000);
       }
       document.body.appendChild(d);
     },

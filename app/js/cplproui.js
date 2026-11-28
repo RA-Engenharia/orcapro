@@ -162,6 +162,10 @@
   }
   /* o aviso do sino (UI.toast) continua; o retorno ao lado do botão é novo. `corrigir` = {passo, campo, item} */
   function toast(m, t, corrigir) {
+    if (t === "erro") {
+      var mTec = m; m = F.msgUsuario(m);
+      if (m !== String(mTec) && typeof console !== "undefined" && console.error) console.error("[CPLPRO] erro técnico escondido do usuário:", mTec);
+    }
     if (typeof UI !== "undefined") UI.toast(m, t || "ok");
     try { registrarRetorno(m, t || "ok", corrigir); } catch (eR) {}
   }
@@ -1109,7 +1113,13 @@
   function pareamento() { var s = storageLocal(); return s ? H.lerPareamento(s, eid()) : null; }
   function cfgServico() {
     var par = pareamento();
-    return { fetch: function (u, o) { return global.fetch(u, o); }, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
+    /* tempo limite: servidor que não responde deixava a tela «analisando…» para sempre; agora vira «sem conexão» (a rejeição cai no semConexao()) */
+    return { fetch: function (u, o) {
+      if (typeof AbortController === "undefined") return global.fetch(u, o);
+      var ac = new AbortController(), tm = setTimeout(function () { try { ac.abort(); } catch (eA) {} }, 300000), o2 = {};
+      Object.keys(o || {}).forEach(function (k) { o2[k] = o[k]; }); o2.signal = ac.signal;
+      return global.fetch(u, o2).then(function (r) { clearTimeout(tm); return r; }, function (e) { clearTimeout(tm); throw e; });
+    }, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
   }
   function msgErroHab(e) { return e && e.mensagem ? e.mensagem : (e && e.message ? e.message : "Não consegui concluir. Nada foi gravado no processo."); }
   function tomSit(s) { return (H.SITUACOES[s] || {}).tom || "neutro"; }
@@ -1675,7 +1685,9 @@
   }
   function abrirPainel() {
     fecharPainel();
-    var dados = F.painel(listaProc().filter(function (p) { return !G._cplObra || p.obraId === G._cplObra; }), hoje());
+    var obraFiltro = G._cplObra;
+    function carregarDados() { return F.painel(listaProc().filter(function (p) { return !obraFiltro || p.obraId === obraFiltro; }), hoje()); }
+    var dados = carregarDados();
     var el = document.createElement("div");
     el.id = "cpl-tv"; el.className = "cpl-tv"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Painel da CPL");
     el.innerHTML = '<button type="button" class="cpl-tv-fechar" id="cpl-tv-fechar" aria-label="Sair do painel (Esc)">Sair (Esc)</button><div class="cpl-tv-corpo" id="cpl-tv-corpo"></div><div class="cpl-tv-pontos" id="cpl-tv-pontos"></div>';
@@ -1688,7 +1700,11 @@
       el.setAttribute("data-quadro", dados.quadros[i].id);
     }
     mostrar(0);
-    tvTimer = setInterval(function () { mostrar(i + 1); }, 15000);
+    /* painel de parede fica aberto o dia todo: a cada volta completa dos quadros relê os processos (antes mostrava o retrato da hora em que abriu) */
+    tvTimer = setInterval(function () {
+      if (i + 1 >= dados.quadros.length) { try { var novo = carregarDados(); if (novo && novo.quadros && novo.quadros.length) dados = novo; } catch (eR) {} }
+      mostrar(i + 1);
+    }, 15000);
     document.getElementById("cpl-tv-fechar").onclick = fecharPainel;
     document.addEventListener("keydown", aoTeclar);
     try { if (el.requestFullscreen) { el.requestFullscreen().then(function () { document.addEventListener("fullscreenchange", aoMudarTela); }, function () {}); } } catch (e) {}

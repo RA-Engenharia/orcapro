@@ -52322,7 +52322,12 @@ function ehNum(v) { return typeof v === "number" && isFinite(v); }
 function numOuNull(v) {
 if (ehNum(v)) return v;
 if (typeof v === "string" && v.replace(/\s/g, "") !== "") {
-var n = Number(v.replace(/\s/g, "").replace(",", "."));
+var semEsp = v.replace(/\s/g, ""), temMoeda = /^-?R\$/i.test(semEsp);
+var sb = semEsp.replace(/^(-?)R\$/i, "$1");
+if (!/^[-+]?(\d+([.,]\d*)?|[.,]\d+)([eE][-+]?\d+)?$/.test(sb) && !/^[-+]?\d{1,3}(\.\d{3})+(,\d+)?$/.test(sb)) return null;
+if (/^[-+]?\d{1,3}(\.\d{3})+,\d+$/.test(sb) || /^[-+]?\d{1,3}(\.\d{3}){2,}$/.test(sb) ||
+(temMoeda && /^[-+]?\d{1,3}(\.\d{3})+$/.test(sb))) sb = sb.replace(/\./g, "");
+var n = Number(sb.replace(",", "."));
 return isFinite(n) ? n : null;
 }
 return null;
@@ -53669,6 +53674,14 @@ return p;
 Fluxo.papeisDemo = function (usuarioId) {
 return { id: "pap-demo", usuarioId: usuarioId, nome: "Visitante da demonstração", papeis: Object.keys(R.PAPEIS) };
 };
+var RE_TECNICO = /Cannot (read|set|create|convert|destructure)[^.]*(propert|undefined|null)|is not (a function|defined|iterable|a constructor)|of (undefined|null)\b|Unexpected (token|end of JSON|character)|JSON\.parse|Invalid (typed )?array length|Maximum call stack|Failed to fetch|NetworkError|Load failed|QuotaExceeded|\[object \w+\]|^undefined$|^null$/i;
+Fluxo.msgUsuario = function (m, padrao) {
+var s = (m === null || m === undefined) ? "" : String(m);
+if (!s.replace(/\s/g, "")) return padrao || "Não consegui concluir. Nada foi gravado no processo.";
+if (/Failed to fetch|NetworkError|Load failed/i.test(s)) return "Sem conexão com o serviço agora. Confira a internet e tente de novo; nada foi gravado.";
+if (RE_TECNICO.test(s)) return padrao || "Algo inesperado aconteceu e nada foi gravado. Atualize a tela e tente de novo; se repetir, avise o suporte.";
+return s;
+};
 Fluxo.hash = hash; Fluxo.num = num; Fluxo.codigoDe = codigoDe;
 global.CplproFluxo = Fluxo;
 if (typeof module !== "undefined" && module.exports) module.exports = Fluxo;
@@ -53757,8 +53770,9 @@ var qs = arr(p.quantitativos);
 if (!qs.length) return par(pre("quantitativos do objeto"));
 return tabela(["Item", "Descrição", "Un.", "Quantidade", "Origem (arquivo, página ou linha)"], qs.map(function (q) {
 var o = q.origem || {};
-return [esc(q.item === undefined ? q.itemRef : q.item), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
-(vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha))) ? pre("origem do item " + (q.item === undefined ? q.itemRef : q.item)) : esc(o.arquivo + (vazio(o.pagina) ? ", linha " + o.linha : ", p. " + o.pagina))];
+var rot = !vazio(q.item) ? q.item : (!vazio(q.itemRef) ? q.itemRef : "s/n");
+return [esc(rot), esc(q.descricao), esc(q.un), esc(numBR(Number(q.qtd), 2)),
+(vazio(o.arquivo) || (vazio(o.pagina) && vazio(o.linha))) ? pre("origem do item " + rot) : esc(o.arquivo + (vazio(o.pagina) ? ", linha " + o.linha : ", p. " + o.pagina))];
 }));
 }
 function dfd(p, ctx) {
@@ -56290,6 +56304,10 @@ if (t) ultimoClique = { gacao: t.getAttribute("data-gacao"), el: t, t: Date.now(
 }, true);
 }
 function toast(m, t, corrigir) {
+if (t === "erro") {
+var mTec = m; m = F.msgUsuario(m);
+if (m !== String(mTec) && typeof console !== "undefined" && console.error) console.error("[CPLPRO] erro técnico escondido do usuário:", mTec);
+}
 if (typeof UI !== "undefined") UI.toast(m, t || "ok");
 try { registrarRetorno(m, t || "ok", corrigir); } catch (eR) {}
 }
@@ -57137,7 +57155,12 @@ return d && d.ok ? d.url : H.SERVICO_OFICIAL;
 function pareamento() { var s = storageLocal(); return s ? H.lerPareamento(s, eid()) : null; }
 function cfgServico() {
 var par = pareamento();
-return { fetch: function (u, o) { return global.fetch(u, o); }, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
+return { fetch: function (u, o) {
+if (typeof AbortController === "undefined") return global.fetch(u, o);
+var ac = new AbortController(), tm = setTimeout(function () { try { ac.abort(); } catch (eA) {} }, 300000), o2 = {};
+Object.keys(o || {}).forEach(function (k) { o2[k] = o[k]; }); o2.signal = ac.signal;
+return global.fetch(u, o2).then(function (r) { clearTimeout(tm); return r; }, function (e) { clearTimeout(tm); throw e; });
+}, FormData: global.FormData, servico: servicoAtual(), token: par ? par.token : "" };
 }
 function msgErroHab(e) { return e && e.mensagem ? e.mensagem : (e && e.message ? e.message : "Não consegui concluir. Nada foi gravado no processo."); }
 function tomSit(s) { return (H.SITUACOES[s] || {}).tom || "neutro"; }
@@ -57653,7 +57676,9 @@ return h;
 }
 function abrirPainel() {
 fecharPainel();
-var dados = F.painel(listaProc().filter(function (p) { return !G._cplObra || p.obraId === G._cplObra; }), hoje());
+var obraFiltro = G._cplObra;
+function carregarDados() { return F.painel(listaProc().filter(function (p) { return !obraFiltro || p.obraId === obraFiltro; }), hoje()); }
+var dados = carregarDados();
 var el = document.createElement("div");
 el.id = "cpl-tv"; el.className = "cpl-tv"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Painel da CPL");
 el.innerHTML = '<button type="button" class="cpl-tv-fechar" id="cpl-tv-fechar" aria-label="Sair do painel (Esc)">Sair (Esc)</button><div class="cpl-tv-corpo" id="cpl-tv-corpo"></div><div class="cpl-tv-pontos" id="cpl-tv-pontos"></div>';
@@ -57666,7 +57691,10 @@ pontos.innerHTML = dados.quadros.map(function (q, k) { return '<span class="' + 
 el.setAttribute("data-quadro", dados.quadros[i].id);
 }
 mostrar(0);
-tvTimer = setInterval(function () { mostrar(i + 1); }, 15000);
+tvTimer = setInterval(function () {
+if (i + 1 >= dados.quadros.length) { try { var novo = carregarDados(); if (novo && novo.quadros && novo.quadros.length) dados = novo; } catch (eR) {} }
+mostrar(i + 1);
+}, 15000);
 document.getElementById("cpl-tv-fechar").onclick = fecharPainel;
 document.addEventListener("keydown", aoTeclar);
 try { if (el.requestFullscreen) { el.requestFullscreen().then(function () { document.addEventListener("fullscreenchange", aoMudarTela); }, function () {}); } } catch (e) {}
@@ -71455,7 +71483,7 @@ prazoRev = " Atenção ao prazo: esta revisão dá " + rNv.totalDias + " dias ú
 ") — as subetapas mudaram depois da aprovação. Confira o cronograma antes de enviar.";
 }
 } catch (ePr) { prazoRev = ""; }
-Store.salvarOrcamento(eid, nova);
+if (!this._novoOrcGravou(Store.salvarOrcamento(eid, nova), "criar a revisão")) return;
 this._avisouTravado = null;
 this.abrirOrcamento(nova.id);
 UI.toast("Revisão " + nova.numero + " criada a partir do aprovado " + (orc.numero || "") +
@@ -78031,7 +78059,7 @@ obra: (UI.el("co-obra") || {}).value || "",
 semQuantidades: !!((UI.el("co-semqtd") || {}).checked)
 });
 self._materializarSeExec(novo);
-Store.salvarOrcamento(eid, novo);
+if (!self._novoOrcGravou(Store.salvarOrcamento(eid, novo), "copiar o orçamento")) return;
 UI.fecharModal();
 self.orcAtual = novo; self.tela = "editor"; self.aba = "planilha";
 self.render();
@@ -83045,7 +83073,7 @@ if (itN) itN.origemPdf = it.origemPdf;
 }
 });
 });
-Store.salvarOrcamento(Auth.empresaId(), orc);
+if (!this._novoOrcGravou(Store.salvarOrcamento(Auth.empresaId(), orc), "importar a planilha")) return;
 UI.fecharModal();
 this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
 UI.toast("Importado: " + orc.etapas.length + " etapas · " + (casados + proprios) + " itens (" + casados + " casados no SINAPI" + (semCusto ? " · " + semCusto + " sem custo p/ revisar" : "") + ").", "ok");
@@ -83061,7 +83089,7 @@ var etapaId = orc.etapas[orc.etapas.length - 1].id;
 seed.itens.forEach(function (it) {
 Orcamento.addItem(orc, etapaId, { codigo: "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: 0 }, it.quantidade);
 });
-Store.salvarOrcamento(Auth.empresaId(), orc);
+if (!this._novoOrcGravou(Store.salvarOrcamento(Auth.empresaId(), orc), "lançar do BIM")) return;
 this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
 var estim = (levantamento && levantamento.resumo && levantamento.resumo.nEstimados) || 0;
 UI.toast("Lançado do BIM: " + seed.itens.length + " serviços quantificados" + (estim ? " (algumas quantidades estimadas — revise)" : "") + ". Agora case no SINAPI / informe os preços.", "ok");
@@ -83466,6 +83494,15 @@ else m = obra;
 if (!m) m = ms.visivel ? "visivel" : "?";
 try { self._relerAberto(m, obra); } catch (e) {}
 }, 120);
+},
+_novoOrcGravou: function (g, rotulo) {
+if (g) return true;
+var rec = null; try { rec = Store.ultimaRecusa || null; } catch (eR) { rec = null; }
+var txt = rec ? this._recadoRecusa(rec, { rotulo: rotulo })
+: "Não consegui gravar: o armazenamento deste aparelho recusou (cheio?). Libere espaço em Backup e tente de novo.";
+txt += " Nada foi criado.";
+UI.toast(txt, "erro", this._msRecado(txt));
+return false;
 },
 _recadoRecusa: function (rec, opts) {
 rec = rec || {};
@@ -87196,7 +87233,7 @@ var lidas = Object.keys(fontesLidas).map(function (f) { return f + " (" + fontes
 var famL = (App._orcmFamiliaLic && App._orcmFamiliaLic()) || null, exL = "";
 if (famL && typeof Licitacao !== "undefined") {
 var exS = Licitacao.basesExigidas(App.orcAtual).filter(function (e) { return e.catId === famL; })[0];
-exL = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid #b45309;background:rgba(234,88,12,.08)"><b>Licitação:</b> o edital exige ' +
+exL = '<p style="font-size:12.5px;margin:0 0 8px;padding:6px 8px;border-left:3px solid var(--amarelo,#b45309);background:rgba(234,88,12,.08)"><b>Licitação:</b> o edital exige ' +
 esc(exS ? Licitacao.fmtBase(exS) : famL) + ". Para item SINAPI o Orçamentista usa <b>só " + (famL === "SINAPI_DES" ? "a SINAPI desonerada" : "a SINAPI onerada") +
 "</b> (mesmo desmarcada abaixo) — nunca a do outro regime.</p>";
 }
@@ -87215,7 +87252,7 @@ UI.renderOrcamentistaRevisao = function (st) {
 var P = st.plano || [], r = (typeof Orcamentista !== "undefined") ? Orcamentista.resumo(P) : {};
 var pill = function (k) { return '<span class="g-pill" style="background:' + COR[k] + '22;color:' + COR[k] + '">' + ROTULO[k] + ': <b>' + (r[k] || 0) + '</b></span>'; };
 var filtro = st.filtro || "todos";
-var html = '<p id="orcm-recado" role="alert" style="color:#b91c1c;font-weight:600;font-size:12.5px;margin:0 0 8px' + (st.recado ? "" : ";display:none") + '">' + esc(st.recado || "") + "</p>";
+var html = '<p id="orcm-recado" role="alert" style="color:var(--vermelho,#b91c1c);font-weight:600;font-size:12.5px;margin:0 0 8px' + (st.recado ? "" : ";display:none") + '">' + esc(st.recado || "") + "</p>";
 html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' + pill("casado") + pill("revisar") + pill("propria") + pill("pendente") +
 '<span class="muted" style="font-size:12.5px">' + r.total + " itens · custo direto " + Util.fmtMoeda(r.custoDireto || 0) + (r.semPreco ? " · " + r.semPreco + " sem preço" : "") + "</span>" +
 '<span style="flex:1"></span><select id="orcm-filtro" style="font-size:12px;padding:3px 6px">' +
@@ -87231,7 +87268,7 @@ opts += '<option value="c' + k + '"' + ((L.status === "casado" || L.status === "
 if (L.comp && (L.comp.insumos || []).length) opts += '<option value="propria"' + (L.status === "propria" ? " selected" : "") + ">" + esc("[PRÓPRIA] " + (L.comp.codigo || "nova") + " · " + L.comp.insumos.length + " insumos · " + Util.fmtMoeda(L.custoUnitario) + "/" + Util.unidadeExibir(L.comp.unidade || it.unidade)) + "</option>";
 opts += '<option value="pendente"' + (L.status === "pendente" ? " selected" : "") + ">— Pendente (casca de composição própria, sem preço) —</option>";
 var precoPlan = Number(it.custoUnitario) > 0 ? '<div class="muted" style="font-size:11px">planilha: ' + Util.fmtMoeda(it.custoUnitario) + "</div>" : "";
-var av = (L.avisos || []).length ? '<div class="muted" style="font-size:11px;margin-top:3px;color:#92400e" title="' + esc(L.avisos.join("\n")) + '">' + L.avisos.map(function (a) { a = String(a); return esc(a.length > 220 ? a.slice(0, 217) + "…" : a); }).join("<br>") + "</div>" : "";
+var av = (L.avisos || []).length ? '<div class="muted" style="font-size:11px;margin-top:3px;color:var(--amarelo,#92400e)" title="' + esc(L.avisos.join("\n")) + '">' + L.avisos.map(function (a) { a = String(a); return esc(a.length > 220 ? a.slice(0, 217) + "…" : a); }).join("<br>") + "</div>" : "";
 var ver = (L.status === "propria" && L.comp) ? ' <button class="btn ghost sm" data-orcm-ver="' + L.i + '" title="Ver insumos e coeficientes">' + ic("tabela", 13) + "</button>" : "";
 linhas.push('<tr data-orcm-i="' + L.i + '"><td style="font-size:11px;color:var(--fraca)">' + esc(it.numero || (L.i + 1)) + "</td>" +
 "<td><div>" + esc(it.descricao) + '</div><div class="muted" style="font-size:11px">' + esc((it.fonte ? it.fonte + " " : "") + (L.codigoLido || "sem código")) + " · " + esc(Util.unidadeExibir(it.unidade)) + " · qtd " + Util.fmtNum(it.quantidade, 2) + "</div></td>" +
@@ -88063,7 +88100,13 @@ var esc = function (x) { return Util.esc(String(x == null ? "" : x)); };
 var timer = null, rodando = false, falhasSeguidas = 0, avisados = {}, pulados = {}, iniciado = false;
 function st() { try { return global.localStorage; } catch (e) { return null; } }
 function eid() { try { return Auth.empresaId(); } catch (e) { return "default"; } }
-function cliente() { return F.criar({ fetch: function (u, o) { return global.fetch(u, o); }, storage: st(), emp: eid() }); }
+function buscaComLimite(u, o) {
+var ctl = null, t = null, init = o || {};
+try { if (typeof global.AbortController === "function") { ctl = new global.AbortController(); init = {}; Object.keys(o || {}).forEach(function (k) { init[k] = o[k]; }); init.signal = ctl.signal; } } catch (e) { ctl = null; init = o; }
+if (ctl) t = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 60000);
+return global.fetch(u, init).then(function (r) { if (t) clearTimeout(t); return r; }, function (e) { if (t) clearTimeout(t); throw e; });
+}
+function cliente() { return F.criar({ fetch: buscaComLimite, storage: st(), emp: eid() }); }
 function avisar(chave, msg, tipo) {
 if (avisados[chave]) return;
 avisados[chave] = true;
@@ -88079,7 +88122,7 @@ var pv = r.previa, dec = F.decidirPareamento(F.estadoPublico(st(), eid()), pv), 
 var corpo = '<p style="font-size:13px;margin-top:0">O CertamePRO vai ligar <b>este computador</b> à conta abaixo, para o OrçaPRO buscar certames da fila e devolver orçamentos. Confira antes de confirmar.</p>' +
 '<ul style="font-size:13px"><li>Conta: <b>' + esc(pv.conta || "—") + '</b>' + (pv.papel ? " (" + esc(pv.papel) + ")" : "") + '</li>' +
 '<li>Empresas: ' + (pv.empresas.length ? pv.empresas.map(function (e) { return "<b>" + esc(e.nome) + "</b>"; }).join(", ") : (pv.todasAsDoUsuario ? "todas as do usuário" : "<i>nenhuma marcada (a fila fica vazia)</i>")) + '</li></ul>' +
-(dec.perguntarTroca ? '<p style="font-size:13px;color:#b91c1c"><b>Atenção: este OrçaPRO já está conectado à conta ' + esc(atual.conta || "—") + '.</b> Confirmar TROCA a conexão para a conta acima. Se você não pediu essa troca, cancele: um link de outra pessoa poderia ligar a sua base de preços à conta dela.</p>' : '') +
+(dec.perguntarTroca ? '<p style="font-size:13px;color:var(--vermelho,#b91c1c)"><b>Atenção: este OrçaPRO já está conectado à conta ' + esc(atual.conta || "—") + '.</b> Confirmar TROCA a conexão para a conta acima. Se você não pediu essa troca, cancele: um link de outra pessoa poderia ligar a sua base de preços à conta dela.</p>' : '') +
 '<p class="muted" style="font-size:12.5px">A conexão fica guardada só neste computador e pode ser desligada a qualquer hora. Nada é enviado antes de você ligar o interruptor da fila.</p>';
 UI.modal(dec.perguntarTroca ? "Trocar a conta do CertamePRO?" : "Conectar ao CertamePRO", corpo, [
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -88853,9 +88896,9 @@ return "<tr><td>" + esc(rot[L.status] || L.status) + "</td><td>" + esc(L.codigo 
 var g = st.escopoGerado || {};
 var corpo = '<p style="font-size:13.5px;margin-top:0"><b>' + plano.length + " serviços gravados no orçamento</b> — custo direto estimado " + Util.fmtMoeda(Math.round(custo * 100) / 100) + " (antes do BDI).</p>" +
 '<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
-'<span class="pill" style="background:#16a34a;color:#fff">' + n.casado + " da base oficial</span>" +
+'<span class="pill" style="background:#15803d;color:#fff">' + n.casado + " da base oficial</span>" +
 '<span class="pill" style="background:#2e6f9e;color:#fff">' + Object.keys(codsProprias).length + " composições próprias criadas" + (n.propria > Object.keys(codsProprias).length ? " (" + n.propria + " linhas)" : "") + "</span>" +
-'<span class="pill" style="background:#f59e0b;color:#fff">' + n.revisar + " a conferir</span>" +
+'<span class="pill" style="background:#b45309;color:#fff">' + n.revisar + " a conferir</span>" +
 (n.pendente ? '<span class="pill" style="background:#dc2626;color:#fff">' + n.pendente + " sem preço</span>" : "") +
 "</div>" +
 (info && info.blocos ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Texto estruturado pela IA em ' + info.blocos + " parte(s)" + (info.modelo ? " (" + esc(info.modelo) + ")" : "") + "." +
